@@ -72,9 +72,29 @@ IMPORTANT GUIDELINES FOR ASSESSMENT:
 - Be optimistic but not unreasonable. Give the seller the benefit of the doubt. Final verification happens in person.
 - Never use the word "AI" in any of your responses.
 
-Respond ONLY in this exact JSON format, no markdown fences:
+Respond ONLY in this exact JSON format, no markdown fences.
+
+FOR WATCHES, use these detail fields:
 {
-  "item_type": "ring | necklace | bracelet | watch | earrings | coin | bar | other",
+  "item_type": "watch",
+  "title": "e.g. 'Rolex Submariner Date 116610LN'",
+  "description": "2-3 sentence confident description. Assume box and papers are available and include that in the description, e.g. 'Complete set with original box and papers.'",
+  "confidence": "high | medium | low",
+  "details": [
+    {"label": "Brand/Maker", "value": "e.g. Rolex"},
+    {"label": "Model/Reference", "value": "e.g. Submariner Date 116610LN"},
+    {"label": "Condition", "value": "e.g. Excellent - light desk diving marks"},
+    {"label": "Est. Year of Production", "value": "e.g. 2018-2020"},
+    {"label": "Box & Papers", "value": "Assumed available"}
+  ],
+  "offer_low": 8000,
+  "offer_high": 12000,
+  "offer_notes": "Based on current market value for this reference with complete set (box & papers). Final offer depends on in-person verification of authenticity and condition."
+}
+
+FOR JEWELRY, GOLD, SILVER, COINS, AND OTHER PRECIOUS METALS, use these detail fields:
+{
+  "item_type": "ring | necklace | bracelet | earrings | coin | bar | other",
   "title": "Brief descriptive title, e.g. '14K Yellow Gold Cuban Link Chain'",
   "description": "2-3 sentence description of what you see including materials, quality indicators, brand if visible. Be confident in your assessment. Do not hedge with words like 'appears to be' or 'possibly' — state what it is.",
   "confidence": "high | medium | low",
@@ -82,7 +102,7 @@ Respond ONLY in this exact JSON format, no markdown fences:
     {"label": "Material", "value": "e.g. 14K Yellow Gold"},
     {"label": "Estimated Weight", "value": "e.g. 15-20 grams"},
     {"label": "Condition", "value": "e.g. Good - minor surface wear"},
-    {"label": "Brand/Maker", "value": "e.g. Unknown / Rolex / etc"}
+    {"label": "Brand/Maker", "value": "e.g. Unknown / Tiffany & Co. / etc"}
   ],
   "offer_low": 150,
   "offer_high": 400,
@@ -91,7 +111,7 @@ Respond ONLY in this exact JSON format, no markdown fences:
 
 If the image is not of jewelry, a watch, or precious metals, set item_type to "other", offer_low and offer_high to 0, and explain in description what you see instead.
 
-Price based on current market rates. Gold spot is roughly $2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.`
+Price based on current market rates. Gold spot is roughly $2,300-2,400/oz. Silver ~$30/oz. For watches, price based on current secondary market values for the specific reference.`
 
   if (corrections) {
     promptText += `\n\nIMPORTANT: The user has corrected the following details about this item. Use these corrections to provide a more accurate assessment and updated offer range:\n${corrections}`
