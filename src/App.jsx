@@ -206,7 +206,10 @@ If the image is not of jewelry, a watch, or precious metals, set item_type to "o
     body: JSON.stringify(body),
   })
 
-  if (!res.ok) throw new Error('Analysis request failed')
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => 'unknown')
+    throw new Error(`API ${res.status}: ${errBody.slice(0, 200)}`)
+  }
   const data = await res.json()
 
   const text = data.content
@@ -214,11 +217,15 @@ If the image is not of jewelry, a watch, or precious metals, set item_type to "o
     .join('')
     .trim()
 
-  if (!text) throw new Error('No analysis returned')
+  if (!text) throw new Error(`No text in response: ${JSON.stringify(data).slice(0, 200)}`)
 
   // Parse JSON from response (strip any accidental fences)
   const cleaned = text.replace(/```json|```/g, '').trim()
-  return JSON.parse(cleaned)
+  try {
+    return JSON.parse(cleaned)
+  } catch (parseErr) {
+    throw new Error(`JSON parse failed: ${cleaned.slice(0, 200)}`)
+  }
 }
 
 // ── Icons (inline SVG) ──
@@ -283,7 +290,7 @@ export default function App() {
       setStep(STEPS.OFFER)
     } catch (err) {
       console.error('Analysis error:', err)
-      setError('We could not analyze that image. Please try a clearer photo.')
+      setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
       setStep(STEPS.CAPTURE)
     }
   }, [])
