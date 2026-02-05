@@ -294,13 +294,34 @@ function Hero({ onStart, onCamera, onUpload }) {
   const [visible, setVisible] = useState(false)
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
 
-  const categories = ['Gold', 'Watches', 'Silver', 'Jewelry', 'Diamonds', 'Platinum', 'Coins']
+  const GoldBarIcon = () => <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M2 11L0 5h16l-2 6H2z" fill="#D4A017"/><path d="M0 5l3-5h10l3 5H0z" fill="#F0C75E"/><path d="M3 0h10l3 5H0L3 0z" fill="#F0C75E" opacity="0.9"/><path d="M2 11L0 5h16l-2 6H2z" fill="#C8953C" opacity="0.8"/></svg>
+  const SilverBarIcon = () => <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M2 11L0 5h16l-2 6H2z" fill="#A8A8A8"/><path d="M0 5l3-5h10l3 5H0z" fill="#D0D0D0"/><path d="M2 11L0 5h16l-2 6H2z" fill="#999" opacity="0.8"/></svg>
+  const PlatBarIcon = () => <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M2 11L0 5h16l-2 6H2z" fill="#B8C5D0"/><path d="M0 5l3-5h10l3 5H0z" fill="#DDE5EB"/><path d="M2 11L0 5h16l-2 6H2z" fill="#9EAEBB" opacity="0.8"/></svg>
+  const NecklaceIcon = () => <svg width="14" height="16" viewBox="0 0 14 16" fill="none"><path d="M1 1C1 1 0 8 7 12C14 8 13 1 13 1" stroke="#C8953C" strokeWidth="1.5" fill="none" strokeLinecap="round"/><circle cx="7" cy="13" r="2" fill="#C8953C"/></svg>
+  const DiamondIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 5L7 13L1 5L7 1Z" fill="#B8E0F0" stroke="#7CB9D0" strokeWidth="0.5"/><path d="M1 5H13L7 13L1 5Z" fill="#A0D4EA" opacity="0.6"/></svg>
+  const CoinIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" fill="#F0C75E" stroke="#C8953C" strokeWidth="1"/><text x="7" y="10" textAnchor="middle" fill="#A07608" fontSize="8" fontWeight="bold">$</text></svg>
+
+  const categories = [
+    { name: 'Gold', icon: <GoldBarIcon /> },
+    { name: 'Watches', icon: '⌚' },
+    { name: 'Silver', icon: <SilverBarIcon /> },
+    { name: 'Jewelry', icon: <NecklaceIcon /> },
+    { name: 'Diamonds', icon: <DiamondIcon /> },
+    { name: 'Platinum', icon: <PlatBarIcon /> },
+    { name: 'Coins', icon: <CoinIcon /> },
+  ]
 
   return (
     <section style={{ ...styles.heroSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
       <div style={styles.categoryBar}>
-        {categories.map((cat) => (
-          <span key={cat} style={styles.categoryTag}>{cat}</span>
+        {categories.map((cat, i) => (
+          <React.Fragment key={cat.name}>
+            <span style={styles.categoryItem}>
+              <span style={styles.categoryIcon}>{cat.icon}</span>
+              <span>{cat.name}</span>
+            </span>
+            {i < categories.length - 1 && <span style={styles.categorySep}>·</span>}
+          </React.Fragment>
         ))}
       </div>
       <h1 style={styles.heroTitle}>
@@ -740,19 +761,26 @@ const styles = {
     display: 'flex',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 10,
+    alignItems: 'center',
+    gap: '4px 6px',
     marginBottom: 28,
   },
-  categoryTag: {
+  categoryItem: {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '6px 16px',
-    borderRadius: 100,
-    background: goldBg,
-    color: gold,
-    fontSize: 13,
-    fontWeight: 600,
-    letterSpacing: '0.02em',
+    gap: 5,
+    fontSize: 14,
+    color: muted,
+    letterSpacing: '0.01em',
+  },
+  categoryIcon: {
+    fontSize: 12,
+  },
+  categorySep: {
+    color: '#D4C5A9',
+    fontSize: 18,
+    lineHeight: 1,
+    userSelect: 'none',
   },
   heroButtons: {
     display: 'flex',
