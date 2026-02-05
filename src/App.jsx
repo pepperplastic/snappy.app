@@ -151,17 +151,27 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
   "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification."
 }
 
-JEWELRY PRICING: Gold spot ~GOLD_SPOT_PRICE/oz (today's market price). Silver ~SILVER_SPOT_PRICE/oz. Factor in karat, estimated weight, brand premiums, and condition.
+JEWELRY PRICING — USE THESE EXACT SPOT PRICES (do NOT use older prices from memory):
+- GOLD: GOLD_SPOT_PRICE per troy ounce today. Use this number for ALL gold calculations.
+- SILVER: SILVER_SPOT_PRICE per troy ounce today. Use this number for ALL silver calculations.
+- 14K gold = 58.3% pure, so per-gram value = (spot / 31.1) × 0.583
+- 18K gold = 75.0% pure, so per-gram value = (spot / 31.1) × 0.750
+- 24K gold = 99.9% pure, so per-gram value = (spot / 31.1)
+- .999 fine silver = spot / 31.1 per gram, or simply spot price per troy ounce
+- For silver bullion bars/coins: offer should be 85-95% of spot × weight in troy ounces
+- Factor in brand premiums and condition on top of melt value.
 
 WEIGHT ESTIMATION — CRITICAL, DO NOT UNDERESTIMATE:
 - Gold is HEAVY. Items almost always weigh MORE than they appear in photos.
 - Chains are especially deceptive — a typical men's gold chain is 20-50+ grams, not 8-12.
+- If you can see a person wearing the chain, look at the thickness and length to estimate better.
+- A chain that hangs to mid-chest on a man is typically 22-24" and weighs 30-50g in solid 14K gold.
 - Estimate weight on the HIGHER end to give sellers a competitive offer. Use these minimums:
   - Thin women's chain (16-18"): 5-10g minimum
   - Standard women's chain/necklace: 10-20g
-  - Men's chain (20-24"): 25-45g minimum
-  - Thick/heavy men's chain: 40-80g+
-  - Chain with pendant: add 3-15g for the pendant depending on size
+  - Men's chain (20-24"): 30-50g minimum
+  - Thick/heavy men's chain: 50-80g+
+  - Chain with pendant: add 5-15g for the pendant depending on size
   - Ring (simple band): 3-8g
   - Ring (cocktail/statement): 8-15g
   - Bracelet: 15-35g
