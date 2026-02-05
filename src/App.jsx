@@ -168,7 +168,7 @@ export default function App() {
       setStep(STEPS.OFFER)
     } catch (err) {
       console.error('Analysis error:', err)
-      setError('We could not analyze that image. Please try a clearer photo.')
+      setError("We couldn't analyze that image. Please try a clearer photo.")
       setStep(STEPS.CAPTURE)
     }
   }, [])
