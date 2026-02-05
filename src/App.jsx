@@ -168,7 +168,7 @@ export default function App() {
       setStep(STEPS.OFFER)
     } catch (err) {
       console.error('Analysis error:', err)
-      setError("We couldn't analyze that image. Please try a clearer photo.")
+      setError('We could not analyze that image. Please try a clearer photo.')
       setStep(STEPS.CAPTURE)
     }
   }, [])
@@ -194,9 +194,28 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <span style={styles.logoMark}>S</span>
-            <span style={styles.logoText}>snappy</span>
-            <span style={styles.logoDot}>.gold</span>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              {/* Camera body */}
+              <rect x="1" y="8" width="30" height="20" rx="3" fill="url(#logoGrad)" />
+              {/* Camera top bump */}
+              <path d="M10 8L12 4H20L22 8" fill="url(#logoGrad)" />
+              {/* Lens outer */}
+              <circle cx="16" cy="18" r="8" fill="none" stroke="#fff" strokeWidth="1.5" opacity="0.5" />
+              {/* Lens inner */}
+              <circle cx="16" cy="18" r="5.5" fill="none" stroke="#fff" strokeWidth="1" opacity="0.3" />
+              {/* $ sign */}
+              <text x="16" y="22" textAnchor="middle" fill="#fff" fontFamily="Playfair Display, serif" fontWeight="700" fontSize="13">$</text>
+              <defs>
+                <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32">
+                  <stop stopColor="#B8860B" />
+                  <stop offset="1" stopColor="#C8953C" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <span style={styles.logoWordmark}>
+              <span style={styles.logoText}>snappy</span>
+              <span style={styles.logoDot}>.gold</span>
+            </span>
           </button>
           {step !== STEPS.HERO && (
             <button onClick={reset} style={styles.navReset}>Start Over</button>
@@ -205,7 +224,13 @@ export default function App() {
       </nav>
 
       <main style={styles.main}>
-        {step === STEPS.HERO && <Hero onStart={() => setStep(STEPS.CAPTURE)} />}
+        {step === STEPS.HERO && (
+          <Hero
+            onStart={() => setStep(STEPS.CAPTURE)}
+            onCamera={() => cameraInputRef.current?.click()}
+            onUpload={() => fileInputRef.current?.click()}
+          />
+        )}
         {step === STEPS.CAPTURE && (
           <CaptureScreen
             fileInputRef={fileInputRef}
@@ -265,28 +290,36 @@ export default function App() {
 // ═══════════════════════════════════════════════
 //  HERO SECTION
 // ═══════════════════════════════════════════════
-function Hero({ onStart }) {
+function Hero({ onStart, onCamera, onUpload }) {
   const [visible, setVisible] = useState(false)
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
 
+  const categories = ['Gold', 'Watches', 'Silver', 'Jewelry', 'Diamonds', 'Platinum', 'Coins']
+
   return (
     <section style={{ ...styles.heroSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-      <div style={styles.heroBadge}>
-        <SparkleIcon size={14} />
-        <span>AI-Powered Instant Estimates</span>
+      <div style={styles.categoryBar}>
+        {categories.map((cat) => (
+          <span key={cat} style={styles.categoryTag}>{cat}</span>
+        ))}
       </div>
       <h1 style={styles.heroTitle}>
         Snap a photo.<br />
         <span style={styles.heroTitleGold}>Get an offer.</span>
       </h1>
       <p style={styles.heroSubtitle}>
-        Gold, silver, diamonds, watches — photograph your valuables and receive an instant AI-generated estimate. No commitment, no hassle.
+        Photograph your valuables and receive an instant AI-generated estimate. No commitment, no hassle.
       </p>
-      <button onClick={onStart} style={styles.heroCta}>
-        <CameraIcon size={20} />
-        <span>Get Your Free Estimate</span>
-        <ArrowIcon size={18} />
-      </button>
+      <div style={styles.heroButtons}>
+        <button onClick={onCamera} style={styles.captureBtn}>
+          <CameraIcon size={20} />
+          <span>Take a Photo</span>
+        </button>
+        <button onClick={onUpload} style={styles.captureBtnSecondary}>
+          <UploadIcon size={20} />
+          <span>Upload a Photo</span>
+        </button>
+      </div>
       <div style={styles.trustRow}>
         {['Free & instant', 'No obligation', 'Fair market pricing'].map((t) => (
           <div key={t} style={styles.trustItem}>
@@ -633,6 +666,11 @@ const styles = {
     alignItems: 'center',
     gap: 6,
   },
+  logoWordmark: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 0,
+  },
   logoMark: {
     width: 32,
     height: 32,
@@ -697,6 +735,31 @@ const styles = {
     fontWeight: 600,
     marginBottom: 28,
     letterSpacing: '0.02em',
+  },
+  categoryBar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 28,
+  },
+  categoryTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 16px',
+    borderRadius: 100,
+    background: goldBg,
+    color: gold,
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '0.02em',
+  },
+  heroButtons: {
+    display: 'flex',
+    gap: 12,
+    justifyContent: 'center',
+    marginBottom: 8,
+    flexWrap: 'wrap',
   },
   heroTitle: {
     fontFamily: '"Playfair Display", serif',
