@@ -65,8 +65,8 @@ function injectSpotPrices(body, gold, silver) {
     for (const block of modified.messages[0].content) {
       if (block.type === 'text' && block.text) {
         block.text = block.text
-          .replace('{{GOLD_SPOT}}', gold.toLocaleString())
-          .replace('{{SILVER_SPOT}}', silver.toLocaleString());
+          .replace('GOLD_SPOT_PRICE', '$' + gold.toLocaleString())
+          .replace('SILVER_SPOT_PRICE', '$' + silver.toLocaleString());
       }
     }
   }
