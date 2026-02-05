@@ -84,32 +84,41 @@ You MUST use exactly these detail labels in this order. Do NOT use Material, Est
 {
   "item_type": "watch",
   "title": "Full name with reference, e.g. 'Rolex Day-Date 40 228235 Green Dial'",
-  "description": "2-3 sentence confident description. Always include 'Complete set with original box and papers.' State the case material (e.g. 18K Everose Gold, Stainless Steel, etc).",
+  "description": "2-3 sentence confident description. State the case material (e.g. 18K Yellow Gold, Stainless Steel, etc). Do NOT mention box and papers in description.",
   "confidence": "high | medium | low",
   "details": [
     {"label": "Brand", "value": "e.g. Rolex"},
     {"label": "Model / Reference", "value": "e.g. Day-Date 40 228235"},
     {"label": "Condition", "value": "e.g. Excellent - light wear consistent with regular use"},
-    {"label": "Est. Production Year", "value": "e.g. 2023-2024"},
-    {"label": "Box & Papers", "value": "Included"}
+    {"label": "Est. Production Year", "value": "e.g. 2023-2024"}
   ],
-  "offer_low": 35000,
-  "offer_high": 42000,
-  "offer_notes": "Based on current secondary market value for this reference as a complete set with box and papers. Final offer subject to in-person authentication."
+  "offer_low": 45000,
+  "offer_high": 55000,
+  "offer_notes": "Based on current secondary market value for this reference. Final offer subject to in-person authentication.",
+  "box_papers": true
 }
 
 WATCH PRICING RULES — THIS IS CRITICAL:
 - Price watches based on SECONDARY MARKET / PRE-OWNED DEALER VALUES, not metal melt value
-- Rolex Day-Date 40 in gold: $25,000-$55,000+ depending on dial/reference
-- Rolex Submariner steel: $9,000-$15,000
-- Rolex Daytona steel: $18,000-$35,000
-- Rolex GMT-Master II: $12,000-$22,000
-- Omega Speedmaster Moonwatch: $5,000-$8,000
-- Cartier Santos Medium: $5,000-$8,000
-- AP Royal Oak 15500ST: $25,000-$35,000
-- Patek Philippe Nautilus 5711: $80,000-$130,000
-- Always assume the watch is complete (box & papers) which commands a premium
+- Price at the HIGHER END of the market range to be competitive and optimistic — we want sellers to feel good about the estimate
+- Rolex Day-Date 40 228238 yellow gold green dial: $45,000-$55,000
+- Rolex Day-Date 40 228238 yellow gold (other dials): $35,000-$48,000
+- Rolex Day-Date 40 228235 Everose: $35,000-$50,000
+- Rolex Submariner Date 126610LN steel: $12,000-$16,000
+- Rolex Submariner Date gold/steel 126613: $15,000-$20,000
+- Rolex Daytona 116500LN steel: $25,000-$38,000
+- Rolex Daytona gold: $30,000-$55,000
+- Rolex GMT-Master II 126710 steel: $14,000-$22,000
+- Rolex Datejust 41 126334 steel: $10,000-$15,000
+- Omega Speedmaster Moonwatch 3861: $5,500-$8,000
+- Omega Seamaster 300M: $4,000-$6,000
+- Cartier Santos Medium: $5,500-$8,000
+- AP Royal Oak 15500ST: $28,000-$38,000
+- Patek Philippe Nautilus 5711: $85,000-$140,000
+- Patek Philippe Aquanaut 5167: $35,000-$50,000
+- All prices assume complete set with box and papers
 - If unsure of exact model, price based on the closest reference you can identify
+- ALWAYS lean toward the higher end of the range
 
 WATCH YEAR ESTIMATION — BE CAREFUL:
 - Base year estimates on the specific reference number and dial variant
@@ -623,6 +632,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
   const [isUpdated, setIsUpdated] = useState(false)
+  const [boxPapers, setBoxPapers] = useState(analysis.box_papers !== false)
   const detailsRef = useRef(null)
   const offerRangeRef = useRef(null)
   const offerTopRef = useRef(null)
@@ -636,6 +646,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     setCorrections((analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {}))
     setShowDetailsInput(false)
     setExtraNotes('')
+    setBoxPapers(analysis.box_papers !== false)
     // Scroll to top of offer card after a re-estimate (not initial load)
     if (hasLoadedOnce.current && offerTopRef.current) {
       setIsUpdated(true)
@@ -652,7 +663,10 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     const correctionLines = Object.entries(corrections)
       .map(([label, value]) => `${label}: ${value}`)
       .join('\n')
-    const full = extraNotes ? `${correctionLines}\nAdditional info: ${extraNotes}` : correctionLines
+    const bpNote = !boxPapers ? '\nBox & Papers: NOT available — adjust price accordingly (typically 10-20% lower)' : '\nBox & Papers: Included'
+    const full = extraNotes
+      ? `${correctionLines}${bpNote}\nAdditional info: ${extraNotes}`
+      : `${correctionLines}${bpNote}`
     onReEstimate(full)
   }
 
@@ -703,6 +717,29 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                 />
               ))}
             </div>
+
+            {analysis.item_type === 'watch' && (
+              <div style={styles.boxPapersNote}>
+                <label style={styles.boxPapersLabel}>
+                  <input
+                    type="checkbox"
+                    checked={boxPapers}
+                    onChange={(e) => setBoxPapers(e.target.checked)}
+                    style={styles.boxPapersCheckbox}
+                  />
+                  <span>Estimate assumes complete set with box & papers</span>
+                </label>
+                {!boxPapers && (
+                  <button
+                    onClick={handleReEstimate}
+                    disabled={isReEstimating}
+                    style={{ ...styles.captureBtn, opacity: isReEstimating ? 0.6 : 1, width: '100%', justifyContent: 'center', marginTop: 10, fontSize: 13, padding: '10px 16px' }}
+                  >
+                    {isReEstimating ? 'Updating...' : 'Update Estimate Without Box & Papers'}
+                  </button>
+                )}
+              </div>
+            )}
 
             <div ref={offerRangeRef} style={styles.offerRange}>
               <p style={styles.offerRangeLabel}>Estimated Offer Range</p>
@@ -1378,6 +1415,26 @@ const styles = {
     outline: 'none',
     width: '60%',
     textAlign: 'right',
+  },
+  boxPapersNote: {
+    padding: '10px 24px 14px',
+    borderTop: `1px solid ${border}`,
+  },
+  boxPapersLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    color: muted,
+    cursor: 'pointer',
+    fontStyle: 'italic',
+  },
+  boxPapersCheckbox: {
+    accentColor: goldLight,
+    width: 16,
+    height: 16,
+    cursor: 'pointer',
+    flexShrink: 0,
   },
   offerRange: {
     borderTop: `1px solid ${border}`,
