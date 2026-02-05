@@ -592,6 +592,8 @@ function EditableDetail({ label, value, onChange }) {
 function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating }) {
   const [visible, setVisible] = useState(false)
   const [showCorrections, setShowCorrections] = useState(false)
+  const [showDetailsInput, setShowDetailsInput] = useState(false)
+  const detailsRef = useRef(null)
   const [corrections, setCorrections] = useState(() =>
     (analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
   )
@@ -641,7 +643,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
               </div>
             </div>
 
-            <div style={styles.offerDetails}>
+            <div ref={detailsRef} style={styles.offerDetails}>
               {analysis.details?.map((d, i) => (
                 <EditableDetail
                   key={i}
@@ -667,31 +669,48 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             {/* Correction section */}
             </div>{/* close opacity wrapper */}
             <div style={styles.correctionSection}>
-              {!showCorrections ? (
-                <button onClick={() => setShowCorrections(true)} style={styles.correctionToggle}>
-                  Something not right? Edit the fields above or add details below →
+              <p style={styles.correctionTitle}>Something not right?</p>
+              <div style={styles.correctionActions}>
+                <button
+                  onClick={() => {
+                    if (detailsRef.current) {
+                      detailsRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    }
+                  }}
+                  style={styles.correctionLink}
+                >
+                  ✏️ Edit the fields above
                 </button>
-              ) : (
-                <div style={styles.correctionForm}>
-                  <p style={styles.correctionSub}>Edit any detail above using the pencil icon, or add extra info below.</p>
-                  <div style={styles.correctionRow}>
-                    <label style={styles.correctionLabel}>Additional details</label>
-                    <input
-                      type="text"
-                      value={extraNotes}
-                      onChange={(e) => setExtraNotes(e.target.value)}
-                      placeholder="e.g. It is 18K not 14K, weight is 25g, brand is Cartier..."
-                      style={styles.correctionInput}
-                    />
-                  </div>
-                  <button
-                    onClick={handleReEstimate}
-                    disabled={isReEstimating}
-                    style={{ ...styles.captureBtn, opacity: isReEstimating ? 0.6 : 1, width: '100%', justifyContent: 'center', marginTop: 8 }}
-                  >
-                    {isReEstimating ? 'Updating estimate...' : 'Update Estimate'}
-                  </button>
+                <button
+                  onClick={() => setShowDetailsInput(true)}
+                  style={styles.correctionLink}
+                >
+                  ＋ Add details below
+                </button>
+              </div>
+              {showDetailsInput && (
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    type="text"
+                    value={extraNotes}
+                    onChange={(e) => setExtraNotes(e.target.value)}
+                    placeholder="e.g. It is 18K not 14K, weight is 25g, brand is Cartier..."
+                    style={styles.correctionInput}
+                    autoFocus
+                  />
                 </div>
+              )}
+              {(showDetailsInput || Object.entries(corrections).some(([label]) => {
+                const orig = analysis.details?.find(d => d.label === label)
+                return orig && corrections[label] !== orig.value
+              })) && (
+                <button
+                  onClick={handleReEstimate}
+                  disabled={isReEstimating}
+                  style={{ ...styles.captureBtn, opacity: isReEstimating ? 0.6 : 1, width: '100%', justifyContent: 'center', marginTop: 12 }}
+                >
+                  {isReEstimating ? 'Updating estimate...' : 'Update Estimate'}
+                </button>
               )}
             </div>
           </div>
@@ -1360,8 +1379,27 @@ const styles = {
   correctionTitle: {
     fontSize: 15,
     fontWeight: 600,
-    marginBottom: 4,
+    marginBottom: 10,
     color: dark,
+    textAlign: 'center',
+  },
+  correctionActions: {
+    display: 'flex',
+    gap: 16,
+    justifyContent: 'center',
+  },
+  correctionLink: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 14,
+    fontFamily: 'inherit',
+    fontWeight: 500,
+    color: goldLight,
+    padding: '4px 0',
+    textDecoration: 'underline',
+    textUnderlineOffset: 3,
+    textDecorationColor: '#D4C5A9',
   },
   correctionSub: {
     fontSize: 13,
