@@ -15,20 +15,41 @@ const STEPS = {
 }
 
 // ── Utility: compress image before sending ──
-function compressImage(file, maxWidth = 1200) {
+function compressImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = (e) => {
       const img = new Image()
       img.onload = () => {
-        const canvas = document.createElement('canvas')
-        const ratio = Math.min(maxWidth / img.width, 1)
-        canvas.width = img.width * ratio
-        canvas.height = img.height * ratio
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        const base64 = canvas.toDataURL('image/jpeg', 0.85)
-        resolve(base64)
+        // Use createImageBitmap if available — it auto-corrects EXIF orientation
+        if (typeof createImageBitmap !== 'undefined') {
+          createImageBitmap(file).then((bitmap) => {
+            const canvas = document.createElement('canvas')
+            const scale = Math.min(maxDim / Math.max(bitmap.width, bitmap.height), 1)
+            canvas.width = bitmap.width * scale
+            canvas.height = bitmap.height * scale
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+            resolve(canvas.toDataURL('image/jpeg', 0.85))
+          }).catch(() => {
+            // Fallback
+            const canvas = document.createElement('canvas')
+            const scale = Math.min(maxDim / Math.max(img.width, img.height), 1)
+            canvas.width = img.width * scale
+            canvas.height = img.height * scale
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+            resolve(canvas.toDataURL('image/jpeg', 0.85))
+          })
+        } else {
+          const canvas = document.createElement('canvas')
+          const scale = Math.min(maxDim / Math.max(img.width, img.height), 1)
+          canvas.width = img.width * scale
+          canvas.height = img.height * scale
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          resolve(canvas.toDataURL('image/jpeg', 0.85))
+        }
       }
       img.src = e.target.result
     }
@@ -43,11 +64,19 @@ async function analyzeImage(base64Data, corrections) {
 
   let promptText = `You are an expert appraiser for Snappy, a modern precious metals and luxury goods buyer. Analyze this image and provide a preliminary assessment.
 
+IMPORTANT GUIDELINES FOR ASSESSMENT:
+- If an item appears to be gold, ASSUME it is real gold. Estimate the karat (10K, 14K, or 18K) based on the color/hue — lighter yellow suggests 10K, classic yellow suggests 14K, rich deep yellow suggests 18K.
+- If diamonds or gemstones are visible, ASSUME they are genuine unless there are obvious visual signs they are not (e.g. clearly plastic, costume jewelry construction).
+- If a watch appears to be a known brand (Rolex, Omega, Cartier, etc.), ASSUME it is authentic unless there are obvious signs of being counterfeit (misaligned text, poor finishing, wrong proportions).
+- If silver-colored metal is present, assess whether it is likely sterling silver, white gold, or platinum based on visual cues.
+- Be optimistic but not unreasonable. Give the seller the benefit of the doubt. Final verification happens in person.
+- Never use the word "AI" in any of your responses.
+
 Respond ONLY in this exact JSON format, no markdown fences:
 {
   "item_type": "ring | necklace | bracelet | watch | earrings | coin | bar | other",
   "title": "Brief descriptive title, e.g. '14K Yellow Gold Cuban Link Chain'",
-  "description": "2-3 sentence description of what you see including estimated materials, quality indicators, brand if visible",
+  "description": "2-3 sentence description of what you see including materials, quality indicators, brand if visible. Be confident in your assessment. Do not hedge with words like 'appears to be' or 'possibly' — state what it is.",
   "confidence": "high | medium | low",
   "details": [
     {"label": "Material", "value": "e.g. 14K Yellow Gold"},
@@ -57,12 +86,12 @@ Respond ONLY in this exact JSON format, no markdown fences:
   ],
   "offer_low": 150,
   "offer_high": 400,
-  "offer_notes": "Brief note on what drives the range, e.g. 'Based on current gold spot price and estimated karat/weight. Final offer depends on in-person verification.'"
+  "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification."
 }
 
 If the image is not of jewelry, a watch, or precious metals, set item_type to "other", offer_low and offer_high to 0, and explain in description what you see instead.
 
-Be realistic with pricing based on current market rates. Gold spot is roughly $2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.`
+Price based on current market rates. Gold spot is roughly $2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.`
 
   if (corrections) {
     promptText += `\n\nIMPORTANT: The user has corrected the following details about this item. Use these corrections to provide a more accurate assessment and updated offer range:\n${corrections}`
@@ -285,7 +314,7 @@ export default function App() {
       <footer style={styles.footer}>
         <p style={styles.footerText}>© 2025 Snappy · snappy.gold</p>
         <p style={styles.footerDisclaimer}>
-          AI estimates are preliminary and not binding. Final offers require in-person evaluation.
+          Estimates are preliminary and not binding. Final offers require in-person evaluation.
         </p>
       </footer>
 
@@ -351,7 +380,7 @@ function Hero({ onStart, onCamera, onUpload }) {
         <span style={styles.heroTitleGold}>Get an offer.</span>
       </h1>
       <p style={styles.heroSubtitle}>
-        Photograph your valuables and receive an instant AI-generated estimate. No commitment, no hassle.
+        Photograph your valuables and receive an instant estimate. No commitment, no hassle.
       </p>
       <div style={styles.heroButtons}>
         <button onClick={onCamera} style={styles.captureBtn}>
@@ -376,7 +405,7 @@ function Hero({ onStart, onCamera, onUpload }) {
       <div style={styles.stepsGrid}>
         {[
           { num: '1', title: 'Snap', desc: 'Take or upload a clear photo of your item' },
-          { num: '2', title: 'Review', desc: 'Our AI identifies materials, brand & condition' },
+          { num: '2', title: 'Review', desc: 'We identify materials, brand & condition' },
           { num: '3', title: 'Get Paid', desc: 'Accept your offer and ship with a prepaid label' },
         ].map((s) => (
           <div key={s.num} style={styles.stepCard}>
@@ -479,11 +508,61 @@ function AnalyzingScreen({ imageData }) {
           <div style={styles.spinner} />
           <h2 style={styles.analyzingTitle}>Analyzing your item{dots}</h2>
           <p style={styles.analyzingSub}>
-            Our AI is examining materials, craftsmanship, brand markers, and current market prices.
+            Examining materials, craftsmanship, brand markers, and current market prices.
           </p>
         </div>
       </div>
     </section>
+  )
+}
+
+// ── Inline editable detail field ──
+const PencilIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+  </svg>
+)
+
+function EditableDetail({ label, value, onChange }) {
+  const [editing, setEditing] = useState(false)
+  const [editValue, setEditValue] = useState(value)
+  const inputRef = useRef(null)
+
+  useEffect(() => { setEditValue(value) }, [value])
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
+
+  const save = () => {
+    setEditing(false)
+    if (editValue.trim() !== value) onChange(editValue.trim())
+  }
+
+  if (editing) {
+    return (
+      <div style={styles.detailRow}>
+        <span style={styles.detailLabel}>{label}</span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+          style={styles.detailEditInput}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div style={styles.detailRow}>
+      <span style={styles.detailLabel}>{label}</span>
+      <span style={styles.detailValueWrap}>
+        <span style={styles.detailValue}>{value}</span>
+        <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
+          <PencilIcon size={13} />
+        </button>
+      </span>
+    </div>
   )
 }
 
@@ -544,10 +623,12 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
 
             <div style={styles.offerDetails}>
               {analysis.details?.map((d, i) => (
-                <div key={i} style={styles.detailRow}>
-                  <span style={styles.detailLabel}>{d.label}</span>
-                  <span style={styles.detailValue}>{d.value}</span>
-                </div>
+                <EditableDetail
+                  key={i}
+                  label={d.label}
+                  value={corrections[d.label] || d.value}
+                  onChange={(newVal) => setCorrections(prev => ({ ...prev, [d.label]: newVal }))}
+                />
               ))}
             </div>
 
@@ -568,25 +649,13 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             <div style={styles.correctionSection}>
               {!showCorrections ? (
                 <button onClick={() => setShowCorrections(true)} style={styles.correctionToggle}>
-                  Something not right? Correct our assumptions →
+                  Something not right? Edit the fields above or add details below →
                 </button>
               ) : (
                 <div style={styles.correctionForm}>
-                  <p style={styles.correctionTitle}>Correct our assumptions</p>
-                  <p style={styles.correctionSub}>Edit any details below and we will update your estimate.</p>
-                  {Object.entries(corrections).map(([label, value]) => (
-                    <div key={label} style={styles.correctionRow}>
-                      <label style={styles.correctionLabel}>{label}</label>
-                      <input
-                        type="text"
-                        value={value}
-                        onChange={(e) => setCorrections(prev => ({ ...prev, [label]: e.target.value }))}
-                        style={styles.correctionInput}
-                      />
-                    </div>
-                  ))}
+                  <p style={styles.correctionSub}>Edit any detail above using the pencil icon, or add extra info below.</p>
                   <div style={styles.correctionRow}>
-                    <label style={styles.correctionLabel}>Anything else?</label>
+                    <label style={styles.correctionLabel}>Additional details</label>
                     <input
                       type="text"
                       value={extraNotes}
@@ -1071,12 +1140,12 @@ const styles = {
   analyzingImageWrap: {
     position: 'relative',
     overflow: 'hidden',
-    maxHeight: 300,
+    background: '#F5F0E8',
   },
   analyzingImage: {
     width: '100%',
-    height: 300,
-    objectFit: 'cover',
+    maxHeight: 400,
+    objectFit: 'contain',
     display: 'block',
     opacity: 0.85,
   },
@@ -1148,7 +1217,8 @@ const styles = {
     width: 120,
     height: 120,
     borderRadius: 12,
-    objectFit: 'cover',
+    objectFit: 'contain',
+    background: '#F5F0E8',
     flexShrink: 0,
   },
   offerInfo: { flex: 1, minWidth: 200 },
@@ -1178,6 +1248,35 @@ const styles = {
   },
   detailLabel: { color: muted },
   detailValue: { fontWeight: 500 },
+  detailValueWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pencilBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#C8B89A',
+    padding: 2,
+    display: 'flex',
+    alignItems: 'center',
+    opacity: 0.6,
+    transition: 'opacity 0.2s',
+  },
+  detailEditInput: {
+    padding: '4px 8px',
+    borderRadius: 6,
+    border: `1px solid ${goldLight}`,
+    fontSize: 14,
+    fontFamily: 'inherit',
+    fontWeight: 500,
+    background: '#FFFDF8',
+    color: dark,
+    outline: 'none',
+    width: '60%',
+    textAlign: 'right',
+  },
   offerRange: {
     borderTop: `1px solid ${border}`,
     padding: 24,
