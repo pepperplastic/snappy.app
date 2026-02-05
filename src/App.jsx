@@ -93,29 +93,29 @@ You MUST use exactly these detail labels in this order. Do NOT use Material, Est
     {"label": "Est. Production Year", "value": "e.g. 2023-2024"},
     {"label": "Completeness", "value": "Full set: box, papers, links"}
   ],
-  "offer_low": 45000,
-  "offer_high": 55000,
+  "offer_low": 50000,
+  "offer_high": 62000,
   "offer_notes": "Based on current secondary market value for this reference as a full set (box, papers, links). Final offer subject to in-person authentication."
 }
 
 WATCH PRICING RULES — THIS IS CRITICAL:
 - Price watches based on SECONDARY MARKET / PRE-OWNED DEALER VALUES, not metal melt value
 - Price at the HIGHER END of the market range to be competitive and optimistic — we want sellers to feel good about the estimate
-- Rolex Day-Date 40 228238 yellow gold green dial: $45,000-$55,000
-- Rolex Day-Date 40 228238 yellow gold (other dials): $35,000-$48,000
-- Rolex Day-Date 40 228235 Everose: $35,000-$50,000
-- Rolex Submariner Date 126610LN steel: $12,000-$16,000
-- Rolex Submariner Date gold/steel 126613: $15,000-$20,000
-- Rolex Daytona 116500LN steel: $25,000-$38,000
-- Rolex Daytona gold: $30,000-$55,000
-- Rolex GMT-Master II 126710 steel: $14,000-$22,000
-- Rolex Datejust 41 126334 steel: $10,000-$15,000
-- Omega Speedmaster Moonwatch 3861: $5,500-$8,000
-- Omega Seamaster 300M: $4,000-$6,000
-- Cartier Santos Medium: $5,500-$8,000
-- AP Royal Oak 15500ST: $28,000-$38,000
-- Patek Philippe Nautilus 5711: $85,000-$140,000
-- Patek Philippe Aquanaut 5167: $35,000-$50,000
+- Rolex Day-Date 40 228238 yellow gold green dial: $55,000-$66,000
+- Rolex Day-Date 40 228238 yellow gold (other dials): $42,000-$52,000
+- Rolex Day-Date 40 228235 Everose: $45,000-$60,000
+- Rolex Submariner Date 126610LN steel: $13,000-$17,000
+- Rolex Submariner Date gold/steel 126613: $17,000-$22,000
+- Rolex Daytona 116500LN steel: $28,000-$40,000
+- Rolex Daytona gold: $35,000-$60,000
+- Rolex GMT-Master II 126710 steel: $16,000-$24,000
+- Rolex Datejust 41 126334 steel: $11,000-$16,000
+- Omega Speedmaster Moonwatch 3861: $6,000-$9,000
+- Omega Seamaster 300M: $4,500-$7,000
+- Cartier Santos Medium: $6,000-$9,000
+- AP Royal Oak 15500ST: $30,000-$42,000
+- Patek Philippe Nautilus 5711: $90,000-$150,000
+- Patek Philippe Aquanaut 5167: $40,000-$55,000
 - All prices assume FULL SET (box, papers, links) which commands the highest premium
 - ALWAYS default Completeness to "Full set: box, papers, links"
 - If a user corrects completeness to indicate missing items, adjust pricing DOWN accordingly:
@@ -146,12 +146,12 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
     {"label": "Condition", "value": "e.g. Good - minor surface wear"},
     {"label": "Brand/Maker", "value": "e.g. Unknown / Tiffany & Co. / etc"}
   ],
-  "offer_low": 150,
-  "offer_high": 400,
+  "offer_low": 500,
+  "offer_high": 1200,
   "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification."
 }
 
-JEWELRY PRICING: Gold spot ~$2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.
+JEWELRY PRICING: Gold spot ~$4,800-5,000/oz (as of early 2026). Silver ~$90/oz. Factor in karat, estimated weight, brand premiums, and condition.
 
 WEIGHT ESTIMATION — CRITICAL, DO NOT UNDERESTIMATE:
 - Gold is HEAVY. Items almost always weigh MORE than they appear in photos.
