@@ -151,7 +151,7 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
   "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification."
 }
 
-JEWELRY PRICING: Gold spot ~$4,800-5,000/oz (as of early 2026). Silver ~$90/oz. Factor in karat, estimated weight, brand premiums, and condition.
+JEWELRY PRICING: Gold spot ~${{GOLD_SPOT}}/oz (today's market price). Silver ~${{SILVER_SPOT}}/oz. Factor in karat, estimated weight, brand premiums, and condition.
 
 WEIGHT ESTIMATION — CRITICAL, DO NOT UNDERESTIMATE:
 - Gold is HEAVY. Items almost always weigh MORE than they appear in photos.
