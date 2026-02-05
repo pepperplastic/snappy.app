@@ -594,15 +594,25 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
   const detailsRef = useRef(null)
+  const offerRangeRef = useRef(null)
+  const offerTopRef = useRef(null)
   const [corrections, setCorrections] = useState(() =>
     (analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
   )
   const [extraNotes, setExtraNotes] = useState('')
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
+  const hasLoadedOnce = useRef(false)
   useEffect(() => {
     setCorrections((analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {}))
-    setShowCorrections(false)
+    setShowDetailsInput(false)
     setExtraNotes('')
+    // Scroll to top of offer card after a re-estimate (not initial load)
+    if (hasLoadedOnce.current && offerTopRef.current) {
+      setTimeout(() => {
+        offerTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+    hasLoadedOnce.current = true
   }, [analysis])
 
   const isValidItem = analysis.offer_low > 0 || analysis.offer_high > 0
@@ -619,7 +629,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     <section style={{ ...styles.centeredSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(15px)', transition: 'all 0.6s ease' }}>
       {isValidItem ? (
         <>
-          <div style={styles.offerBadge}>
+          <div ref={offerTopRef} style={styles.offerBadge}>
             <SparkleIcon size={14} />
             <span>Preliminary Estimate</span>
           </div>
@@ -654,7 +664,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
               ))}
             </div>
 
-            <div style={styles.offerRange}>
+            <div ref={offerRangeRef} style={styles.offerRange}>
               <p style={styles.offerRangeLabel}>Estimated Offer Range</p>
               <div style={styles.offerPrices}>
                 <span style={styles.offerPrice}>${analysis.offer_low?.toLocaleString()}</span>
