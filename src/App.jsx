@@ -593,6 +593,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
   const [visible, setVisible] = useState(false)
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
+  const [isUpdated, setIsUpdated] = useState(false)
   const detailsRef = useRef(null)
   const offerRangeRef = useRef(null)
   const offerTopRef = useRef(null)
@@ -608,6 +609,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     setExtraNotes('')
     // Scroll to top of offer card after a re-estimate (not initial load)
     if (hasLoadedOnce.current && offerTopRef.current) {
+      setIsUpdated(true)
       setTimeout(() => {
         offerTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 100)
@@ -629,9 +631,18 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     <section style={{ ...styles.centeredSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(15px)', transition: 'all 0.6s ease' }}>
       {isValidItem ? (
         <>
-          <div ref={offerTopRef} style={styles.offerBadge}>
-            <SparkleIcon size={14} />
-            <span>Preliminary Estimate</span>
+          <div ref={offerTopRef} style={isUpdated ? styles.offerBadgeUpdated : styles.offerBadge}>
+            {isUpdated ? (
+              <>
+                <CheckIcon size={14} />
+                <span>Updated Estimate</span>
+              </>
+            ) : (
+              <>
+                <SparkleIcon size={14} />
+                <span>Preliminary Estimate</span>
+              </>
+            )}
           </div>
 
           <div style={{ ...styles.offerCard, position: 'relative', overflow: 'hidden' }}>
@@ -1248,6 +1259,19 @@ const styles = {
     fontWeight: 600,
     marginBottom: 24,
   },
+  offerBadgeUpdated: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '6px 16px',
+    borderRadius: 100,
+    background: 'rgba(34, 197, 94, 0.1)',
+    color: '#16A34A',
+    fontSize: 13,
+    fontWeight: 600,
+    marginBottom: 24,
+    animation: 'badgeFlash 1.5s ease',
+  },
   offerCard: {
     borderRadius: 20,
     border: `1px solid ${border}`,
@@ -1608,6 +1632,11 @@ styleSheet.textContent = `
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
     50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  }
+  @keyframes badgeFlash {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+    20% { transform: scale(1.08); box-shadow: 0 0 0 8px rgba(34, 197, 94, 0.2); }
+    40% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
   }
   input:focus, textarea:focus { border-color: ${goldLight} !important; box-shadow: 0 0 0 3px rgba(200,149,60,0.1); }
   button:hover { opacity: 0.92; transform: translateY(-1px); }
