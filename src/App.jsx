@@ -84,18 +84,18 @@ You MUST use exactly these detail labels in this order. Do NOT use Material, Est
 {
   "item_type": "watch",
   "title": "Full name with reference, e.g. 'Rolex Day-Date 40 228235 Green Dial'",
-  "description": "2-3 sentence confident description. State the case material (e.g. 18K Yellow Gold, Stainless Steel, etc). Do NOT mention box and papers in description.",
+  "description": "2-3 sentence confident description. State the case material (e.g. 18K Yellow Gold, Stainless Steel, etc).",
   "confidence": "high | medium | low",
   "details": [
     {"label": "Brand", "value": "e.g. Rolex"},
     {"label": "Model / Reference", "value": "e.g. Day-Date 40 228235"},
     {"label": "Condition", "value": "e.g. Excellent - light wear consistent with regular use"},
-    {"label": "Est. Production Year", "value": "e.g. 2023-2024"}
+    {"label": "Est. Production Year", "value": "e.g. 2023-2024"},
+    {"label": "Completeness", "value": "Full set: box, papers, links"}
   ],
   "offer_low": 45000,
   "offer_high": 55000,
-  "offer_notes": "Based on current secondary market value for this reference. Final offer subject to in-person authentication.",
-  "box_papers": true
+  "offer_notes": "Based on current secondary market value for this reference as a full set (box, papers, links). Final offer subject to in-person authentication."
 }
 
 WATCH PRICING RULES — THIS IS CRITICAL:
@@ -116,7 +116,13 @@ WATCH PRICING RULES — THIS IS CRITICAL:
 - AP Royal Oak 15500ST: $28,000-$38,000
 - Patek Philippe Nautilus 5711: $85,000-$140,000
 - Patek Philippe Aquanaut 5167: $35,000-$50,000
-- All prices assume complete set with box and papers
+- All prices assume FULL SET (box, papers, links) which commands the highest premium
+- ALWAYS default Completeness to "Full set: box, papers, links"
+- If a user corrects completeness to indicate missing items, adjust pricing DOWN accordingly:
+  - Watch only (no box, no papers): reduce 15-25% from full set price
+  - Watch + box only (no papers): reduce 10-15%
+  - Watch + papers only (no box): reduce 5-10%
+  - Missing extra links: reduce 2-5%
 - If unsure of exact model, price based on the closest reference you can identify
 - ALWAYS lean toward the higher end of the range
 
@@ -136,7 +142,7 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
   "confidence": "high | medium | low",
   "details": [
     {"label": "Material", "value": "e.g. 14K Yellow Gold"},
-    {"label": "Estimated Weight", "value": "e.g. 15-20 grams"},
+    {"label": "Estimated Weight", "value": "e.g. 25-35 grams"},
     {"label": "Condition", "value": "e.g. Good - minor surface wear"},
     {"label": "Brand/Maker", "value": "e.g. Unknown / Tiffany & Co. / etc"}
   ],
@@ -146,6 +152,21 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
 }
 
 JEWELRY PRICING: Gold spot ~$2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.
+
+WEIGHT ESTIMATION — CRITICAL, DO NOT UNDERESTIMATE:
+- Gold is HEAVY. Items almost always weigh MORE than they appear in photos.
+- Chains are especially deceptive — a typical men's gold chain is 20-50+ grams, not 8-12.
+- Estimate weight on the HIGHER end to give sellers a competitive offer. Use these minimums:
+  - Thin women's chain (16-18"): 5-10g minimum
+  - Standard women's chain/necklace: 10-20g
+  - Men's chain (20-24"): 25-45g minimum
+  - Thick/heavy men's chain: 40-80g+
+  - Chain with pendant: add 3-15g for the pendant depending on size
+  - Ring (simple band): 3-8g
+  - Ring (cocktail/statement): 8-15g
+  - Bracelet: 15-35g
+  - Heavy bracelet/bangle: 30-60g+
+- When in doubt, estimate HIGHER. The seller knows the actual weight — a lowball guess loses credibility. It's better to overestimate and adjust down after in-person weighing than to insult the seller with an obviously low number.
 
 ═══════════════════════════════════════
 
@@ -632,7 +653,6 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
   const [isUpdated, setIsUpdated] = useState(false)
-  const [boxPapers, setBoxPapers] = useState(analysis.box_papers !== false)
   const detailsRef = useRef(null)
   const offerRangeRef = useRef(null)
   const offerTopRef = useRef(null)
@@ -646,7 +666,6 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     setCorrections((analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {}))
     setShowDetailsInput(false)
     setExtraNotes('')
-    setBoxPapers(analysis.box_papers !== false)
     // Scroll to top of offer card after a re-estimate (not initial load)
     if (hasLoadedOnce.current && offerTopRef.current) {
       setIsUpdated(true)
@@ -663,10 +682,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     const correctionLines = Object.entries(corrections)
       .map(([label, value]) => `${label}: ${value}`)
       .join('\n')
-    const bpNote = !boxPapers ? '\nBox & Papers: NOT available — adjust price accordingly (typically 10-20% lower)' : '\nBox & Papers: Included'
-    const full = extraNotes
-      ? `${correctionLines}${bpNote}\nAdditional info: ${extraNotes}`
-      : `${correctionLines}${bpNote}`
+    const full = extraNotes ? `${correctionLines}\nAdditional info: ${extraNotes}` : correctionLines
     onReEstimate(full)
   }
 
@@ -717,29 +733,6 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                 />
               ))}
             </div>
-
-            {analysis.item_type === 'watch' && (
-              <div style={styles.boxPapersNote}>
-                <label style={styles.boxPapersLabel}>
-                  <input
-                    type="checkbox"
-                    checked={boxPapers}
-                    onChange={(e) => setBoxPapers(e.target.checked)}
-                    style={styles.boxPapersCheckbox}
-                  />
-                  <span>Estimate assumes complete set with box & papers</span>
-                </label>
-                {!boxPapers && (
-                  <button
-                    onClick={handleReEstimate}
-                    disabled={isReEstimating}
-                    style={{ ...styles.captureBtn, opacity: isReEstimating ? 0.6 : 1, width: '100%', justifyContent: 'center', marginTop: 10, fontSize: 13, padding: '10px 16px' }}
-                  >
-                    {isReEstimating ? 'Updating...' : 'Update Estimate Without Box & Papers'}
-                  </button>
-                )}
-              </div>
-            )}
 
             <div ref={offerRangeRef} style={styles.offerRange}>
               <p style={styles.offerRangeLabel}>Estimated Offer Range</p>
@@ -1415,26 +1408,6 @@ const styles = {
     outline: 'none',
     width: '60%',
     textAlign: 'right',
-  },
-  boxPapersNote: {
-    padding: '10px 24px 14px',
-    borderTop: `1px solid ${border}`,
-  },
-  boxPapersLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: 13,
-    color: muted,
-    cursor: 'pointer',
-    fontStyle: 'italic',
-  },
-  boxPapersCheckbox: {
-    accentColor: goldLight,
-    width: 16,
-    height: 16,
-    cursor: 'pointer',
-    flexShrink: 0,
   },
   offerRange: {
     borderTop: `1px solid ${border}`,
