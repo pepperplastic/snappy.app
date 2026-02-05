@@ -523,7 +523,17 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             <span>Preliminary Estimate</span>
           </div>
 
-          <div style={styles.offerCard}>
+          <div style={{ ...styles.offerCard, position: 'relative', overflow: 'hidden' }}>
+            {isReEstimating && (
+              <div style={styles.reEstimateOverlay}>
+                <div style={styles.reEstimateScanLine} />
+                <div style={styles.reEstimateText}>
+                  <div style={styles.spinnerGreen} />
+                  <span>Updating estimate...</span>
+                </div>
+              </div>
+            )}
+            <div style={{ opacity: isReEstimating ? 0.3 : 1, transition: 'opacity 0.3s', filter: isReEstimating ? 'blur(1px)' : 'none' }}>
             <div style={styles.offerTop}>
               {imageData && <img src={imageData} alt="Your item" style={styles.offerImage} />}
               <div style={styles.offerInfo}>
@@ -554,6 +564,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             </div>
 
             {/* Correction section */}
+            </div>{/* close opacity wrapper */}
             <div style={styles.correctionSection}>
               {!showCorrections ? (
                 <button onClick={() => setShowCorrections(true)} style={styles.correctionToggle}>
@@ -596,7 +607,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             </div>
           </div>
 
-          <button onClick={onGetOffer} style={styles.heroCta}>
+          <button onClick={onGetOffer} style={styles.firmOfferBtn}>
             <span>Get My Firm Offer</span>
             <ArrowIcon size={18} />
           </button>
@@ -1075,8 +1086,9 @@ const styles = {
     left: 0,
     right: 0,
     height: 3,
-    background: `linear-gradient(90deg, transparent, ${goldLight}, transparent)`,
+    background: 'linear-gradient(90deg, transparent, #22C55E, transparent)',
     animation: 'scan 2s ease-in-out infinite',
+    boxShadow: '0 0 12px rgba(34, 197, 94, 0.5)',
   },
   analyzingText: {
     padding: '32px 24px',
@@ -1211,12 +1223,17 @@ const styles = {
   correctionToggle: {
     background: 'none',
     border: 'none',
-    color: goldLight,
+    color: muted,
     cursor: 'pointer',
     fontSize: 14,
     fontFamily: 'inherit',
     fontWeight: 500,
-    padding: 0,
+    padding: '10px 0',
+    width: '100%',
+    textAlign: 'center',
+    textDecoration: 'underline',
+    textUnderlineOffset: 3,
+    textDecorationColor: '#D4C5A9',
   },
   correctionForm: {
     textAlign: 'left',
@@ -1252,6 +1269,63 @@ const styles = {
     background: '#FFFDF8',
     color: dark,
     outline: 'none',
+  },
+  reEstimateOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(255, 253, 248, 0.6)',
+    backdropFilter: 'blur(2px)',
+  },
+  reEstimateScanLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    background: 'linear-gradient(90deg, transparent, #22C55E, transparent)',
+    animation: 'scan 1.5s ease-in-out infinite',
+    boxShadow: '0 0 16px rgba(34, 197, 94, 0.5)',
+  },
+  reEstimateText: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    fontSize: 15,
+    fontWeight: 600,
+    color: '#16A34A',
+  },
+  spinnerGreen: {
+    width: 20,
+    height: 20,
+    border: '2.5px solid #E0E0E0',
+    borderTop: '2.5px solid #22C55E',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
+  firmOfferBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '16px 32px',
+    borderRadius: 12,
+    background: 'linear-gradient(135deg, #16A34A, #22C55E)',
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 600,
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'all 0.25s ease',
+    boxShadow: '0 4px 16px rgba(34, 197, 94, 0.3)',
+    animation: 'pulseGreen 2s ease-in-out infinite',
   },
   offerCaveat: {
     fontSize: 13,
@@ -1364,6 +1438,10 @@ const styleSheet = document.createElement('style')
 styleSheet.textContent = `
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
+  @keyframes pulseGreen {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
+    50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  }
   input:focus, textarea:focus { border-color: ${goldLight} !important; box-shadow: 0 0 0 3px rgba(200,149,60,0.1); }
   button:hover { opacity: 0.92; transform: translateY(-1px); }
   button:active { transform: translateY(0); }
