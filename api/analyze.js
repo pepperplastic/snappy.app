@@ -64,9 +64,12 @@ function injectSpotPrices(body, gold, silver) {
   if (modified.messages && modified.messages[0] && modified.messages[0].content) {
     for (const block of modified.messages[0].content) {
       if (block.type === 'text' && block.text) {
+        const hadGold = block.text.includes('GOLD_SPOT_PRICE');
+        const hadSilver = block.text.includes('SILVER_SPOT_PRICE');
         block.text = block.text
           .replace('GOLD_SPOT_PRICE', '$' + gold.toLocaleString())
           .replace('SILVER_SPOT_PRICE', '$' + silver.toLocaleString());
+        console.log(`Price injection: gold=$${gold} (replaced: ${hadGold}), silver=$${silver} (replaced: ${hadSilver})`);
       }
     }
   }
