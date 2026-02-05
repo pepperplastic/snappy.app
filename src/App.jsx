@@ -62,14 +62,20 @@ async function analyzeImage(base64Data, corrections) {
   const mediaType = 'image/jpeg'
   const rawBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '')
 
-  let promptText = `You are an expert appraiser for Snappy, a modern precious metals and luxury goods buyer. Analyze this image and provide a preliminary assessment.
+  let promptText = `You are an expert appraiser for Snappy, a modern luxury goods and precious metals buyer. Analyze this image and provide a preliminary assessment.
 
-CRITICAL: FIRST determine if this is a WATCH or JEWELRY/METAL. This affects EVERYTHING about your response — the detail fields, pricing method, and description style are completely different. If you see a wristwatch, you MUST use the WATCH format below.
+CRITICAL: FIRST determine what category this item falls into:
+1. WATCH — any wristwatch (Rolex, Omega, Cartier, AP, Patek Philippe, etc.)
+2. JEWELRY/METAL — rings, necklaces, chains, bracelets, earrings, gold/silver bars, coins
+3. LUXURY GOODS — designer handbags, purses, wallets, belts, shoes, sunglasses (Louis Vuitton, Chanel, Hermès, Gucci, Dior, Prada, Goyard, Bottega Veneta, Balenciaga, Fendi, YSL, Celine, Cartier accessories, etc.)
+
+This affects EVERYTHING about your response — the detail fields, pricing method, and description style are completely different.
 
 IMPORTANT GUIDELINES FOR ASSESSMENT:
 - If an item appears to be gold, ASSUME it is real gold. Estimate the karat (10K, 14K, or 18K) based on the color/hue — lighter yellow suggests 10K, classic yellow suggests 14K, rich deep yellow suggests 18K.
 - If diamonds or gemstones are visible, ASSUME they are genuine unless there are obvious visual signs they are not (e.g. clearly plastic, costume jewelry construction).
-- If a watch appears to be a known brand (Rolex, Omega, Cartier, AP, Patek Philippe, etc.), ASSUME it is authentic unless there are obvious signs of being counterfeit.
+- If a watch appears to be a known brand, ASSUME it is authentic unless there are obvious signs of being counterfeit.
+- If a luxury good appears to be a known brand, ASSUME it is authentic. Look for brand stamps, logos, hardware, stitching quality, and material texture.
 - If silver-colored metal is present, assess whether it is likely sterling silver, white gold, or platinum based on visual cues.
 - Be optimistic but not unreasonable. Give the seller the benefit of the doubt. Final verification happens in person.
 - Never use the word "AI" in any of your responses.
@@ -180,7 +186,52 @@ WEIGHT ESTIMATION — CRITICAL, DO NOT UNDERESTIMATE:
 
 ═══════════════════════════════════════
 
-If the image is not of jewelry, a watch, or precious metals, set item_type to "other", offer_low and offer_high to 0, and explain in description what you see instead.`
+═══════════════════════════════════════
+FORMAT C — LUXURY GOODS (use for designer handbags, purses, wallets, belts, shoes, sunglasses, accessories)
+═══════════════════════════════════════
+{
+  "item_type": "handbag | wallet | belt | shoes | sunglasses | accessory",
+  "title": "Full name, e.g. 'Louis Vuitton Neverfull MM Monogram Canvas'",
+  "description": "2-3 sentence confident description. Note the brand, model if identifiable, material, color, hardware finish, and overall condition.",
+  "confidence": "high | medium | low",
+  "details": [
+    {"label": "Brand", "value": "e.g. Louis Vuitton"},
+    {"label": "Model", "value": "e.g. Neverfull MM"},
+    {"label": "Material", "value": "e.g. Monogram Canvas with Vachetta leather trim"},
+    {"label": "Condition", "value": "e.g. Very Good - light patina on leather, clean interior"},
+    {"label": "Completeness", "value": "Full set: dust bag, box, receipt"}
+  ],
+  "offer_low": 800,
+  "offer_high": 1200,
+  "offer_notes": "Based on current resale market for this model and condition. Final offer subject to in-person authentication."
+}
+
+LUXURY GOODS PRICING — REFERENCE RANGES (pre-owned, good condition, complete sets):
+- Hermès Birkin 25/30/35: $8,000-$25,000+ (exotic leathers much higher)
+- Hermès Kelly 25/28/32: $8,000-$22,000+
+- Chanel Classic Flap Medium: $5,000-$9,000
+- Chanel Classic Flap Jumbo: $5,500-$10,000
+- Chanel Boy Bag: $3,500-$6,000
+- Louis Vuitton Neverfull MM/GM: $1,000-$1,800
+- Louis Vuitton Speedy 25/30: $600-$1,200
+- Louis Vuitton Pochette Accessoires: $800-$1,500
+- Goyard St. Louis PM/GM: $1,200-$2,000
+- Dior Lady Dior Medium: $3,000-$5,500
+- Dior Saddle Bag: $2,000-$4,000
+- Gucci GG Marmont: $1,000-$2,000
+- Prada Re-Edition: $1,200-$2,200
+- Bottega Veneta Cassette: $1,800-$3,000
+- YSL Loulou Medium: $1,200-$2,000
+- Celine Luggage Mini: $1,500-$2,800
+- Designer belts (LV, Gucci, Hermès): $200-$800
+- Designer sunglasses: $100-$400
+- ALWAYS default Completeness to "Full set: dust bag, box, receipt" — assume full set for pricing
+- If user corrects to missing accessories, reduce 10-20%
+- Price at the HIGHER end of ranges to be competitive
+
+═══════════════════════════════════════
+
+If the image is not of jewelry, a watch, precious metals, or luxury goods, set item_type to "other", offer_low and offer_high to 0, and explain in description what you see instead.`
 
   if (corrections) {
     promptText += `\n\nIMPORTANT: The user has corrected the following details about this item. Use these corrections to provide a more accurate assessment and updated offer range:\n${corrections}`
@@ -447,29 +498,43 @@ function Hero({ onStart, onCamera, onUpload }) {
   const NecklaceIcon = () => <svg width="14" height="16" viewBox="0 0 14 16" fill="none"><path d="M1 1C1 1 0 8 7 12C14 8 13 1 13 1" stroke="#C8953C" strokeWidth="1.5" fill="none" strokeLinecap="round"/><circle cx="7" cy="13" r="2" fill="#C8953C"/></svg>
   const DiamondIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 5L7 13L1 5L7 1Z" fill="#B8E0F0" stroke="#7CB9D0" strokeWidth="0.5"/><path d="M1 5H13L7 13L1 5Z" fill="#A0D4EA" opacity="0.6"/></svg>
   const CoinIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" fill="#F0C75E" stroke="#C8953C" strokeWidth="1"/><text x="7" y="10" textAnchor="middle" fill="#A07608" fontSize="8" fontWeight="bold">$</text></svg>
+  const PurseIcon = () => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3 6V4a4.5 4.5 0 0 1 9 0v2" stroke="#9B7B5E" strokeWidth="1.2" fill="none" strokeLinecap="round"/><rect x="1" y="6" width="13" height="8" rx="2" fill="#C4A57B" stroke="#9B7B5E" strokeWidth="0.8"/><rect x="5" y="9" width="5" height="1.5" rx="0.75" fill="#9B7B5E" opacity="0.6"/></svg>
+  const WatchIcon = () => <svg width="14" height="16" viewBox="0 0 14 16" fill="none"><rect x="3" y="0" width="8" height="3" rx="1" fill="#C8953C" opacity="0.6"/><rect x="3" y="13" width="8" height="3" rx="1" fill="#C8953C" opacity="0.6"/><circle cx="7" cy="8" r="6" fill="#F5ECD7" stroke="#C8953C" strokeWidth="1.2"/><circle cx="7" cy="8" r="4.5" stroke="#C8953C" strokeWidth="0.5" fill="none"/><line x1="7" y1="8" x2="7" y2="5" stroke="#C8953C" strokeWidth="0.8" strokeLinecap="round"/><line x1="7" y1="8" x2="9.5" y2="8" stroke="#C8953C" strokeWidth="0.8" strokeLinecap="round"/></svg>
+  const RingIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><ellipse cx="7" cy="8" rx="5.5" ry="4.5" stroke="#C8953C" strokeWidth="1.5" fill="none"/><circle cx="7" cy="3.5" r="2.5" fill="#B8E0F0" stroke="#7CB9D0" strokeWidth="0.5"/></svg>
+  const BeltIcon = () => <svg width="16" height="10" viewBox="0 0 16 10" fill="none"><rect x="0" y="2" width="16" height="6" rx="1" fill="#9B7B5E"/><rect x="5" y="1" width="6" height="8" rx="1" fill="#C4A57B" stroke="#7B6040" strokeWidth="0.6"/><circle cx="8" cy="5" r="1.2" fill="#7B6040"/></svg>
+  const SunglassesIcon = () => <svg width="16" height="10" viewBox="0 0 16 10" fill="none"><path d="M1 4C1 4 2 1 4.5 1H6C6 1 7 1 7.5 3H8.5C9 1 10 1 10 1H11.5C14 1 15 4 15 4" stroke="#4A4A4A" strokeWidth="1" fill="none" strokeLinecap="round"/><ellipse cx="4" cy="5.5" rx="3" ry="3.5" fill="#4A4A4A" opacity="0.8"/><ellipse cx="12" cy="5.5" rx="3" ry="3.5" fill="#4A4A4A" opacity="0.8"/><path d="M7 4.5Q8 3.5 9 4.5" stroke="#4A4A4A" strokeWidth="0.8" fill="none"/></svg>
 
   const categories = [
     { name: 'Gold', icon: <GoldBarIcon /> },
-    { name: 'Watches', icon: '⌚' },
+    { name: 'Watches', icon: <WatchIcon /> },
+    { name: 'Diamonds', icon: <DiamondIcon /> },
+    { name: 'Handbags', icon: <PurseIcon /> },
     { name: 'Silver', icon: <SilverBarIcon /> },
     { name: 'Jewelry', icon: <NecklaceIcon /> },
-    { name: 'Diamonds', icon: <DiamondIcon /> },
+    { name: 'Rings', icon: <RingIcon /> },
     { name: 'Platinum', icon: <PlatBarIcon /> },
     { name: 'Coins', icon: <CoinIcon /> },
+    { name: 'Belts', icon: <BeltIcon /> },
+    { name: 'Sunglasses', icon: <SunglassesIcon /> },
   ]
+
+  // Double the list for seamless loop
+  const tickerItems = [...categories, ...categories]
 
   return (
     <section style={{ ...styles.heroSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
-      <div style={styles.categoryBar}>
-        {categories.map((cat, i) => (
-          <React.Fragment key={cat.name}>
-            <span style={styles.categoryItem}>
-              <span style={styles.categoryIcon}>{cat.icon}</span>
-              <span>{cat.name}</span>
-            </span>
-            {i < categories.length - 1 && <span style={styles.categorySep}>·</span>}
-          </React.Fragment>
-        ))}
+      <div style={styles.tickerWrap}>
+        <div style={styles.tickerTrack}>
+          {tickerItems.map((cat, i) => (
+            <React.Fragment key={i}>
+              <span style={styles.tickerItem}>
+                <span style={styles.categoryIcon}>{cat.icon}</span>
+                <span>{cat.name}</span>
+              </span>
+              <span style={styles.tickerDot}>·</span>
+            </React.Fragment>
+          ))}
+        </div>
       </div>
       <h1 style={styles.heroTitle}>
         Snap a photo.<br />
@@ -1055,30 +1120,40 @@ const styles = {
     marginBottom: 28,
     letterSpacing: '0.02em',
   },
-  categoryBar: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '4px 6px',
+  tickerWrap: {
+    overflow: 'hidden',
+    width: '100%',
     marginBottom: 28,
+    maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)',
+    WebkitMaskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)',
   },
-  categoryItem: {
+  tickerTrack: {
+    display: 'flex',
+    gap: 24,
+    width: 'max-content',
+    animation: 'tickerScroll 25s linear infinite',
+  },
+  tickerItem: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
-    fontSize: 14,
+    gap: 6,
+    fontSize: 13,
     color: muted,
     letterSpacing: '0.01em',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
   categoryIcon: {
     fontSize: 12,
+    display: 'inline-flex',
+    alignItems: 'center',
   },
-  categorySep: {
+  tickerDot: {
     color: '#D4C5A9',
-    fontSize: 18,
+    fontSize: 16,
     lineHeight: 1,
     userSelect: 'none',
+    flexShrink: 0,
   },
   heroButtons: {
     display: 'flex',
@@ -1709,6 +1784,7 @@ const styleSheet = document.createElement('style')
 styleSheet.textContent = `
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
+  @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
     50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
