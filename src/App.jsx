@@ -37,28 +37,11 @@ function compressImage(file, maxWidth = 1200) {
 }
 
 // ── API: Send image to Claude for analysis ──
-async function analyzeImage(base64Data) {
+async function analyzeImage(base64Data, corrections) {
   const mediaType = 'image/jpeg'
   const rawBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '')
 
-  const body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: mediaType,
-              data: rawBase64,
-            },
-          },
-          {
-            type: 'text',
-            text: `You are an expert appraiser for Snappy, a modern precious metals and luxury goods buyer. Analyze this image and provide a preliminary assessment.
+  let promptText = `You are an expert appraiser for Snappy, a modern precious metals and luxury goods buyer. Analyze this image and provide a preliminary assessment.
 
 Respond ONLY in this exact JSON format, no markdown fences:
 {
@@ -79,7 +62,30 @@ Respond ONLY in this exact JSON format, no markdown fences:
 
 If the image is not of jewelry, a watch, or precious metals, set item_type to "other", offer_low and offer_high to 0, and explain in description what you see instead.
 
-Be realistic with pricing based on current market rates. Gold spot is roughly $2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.`,
+Be realistic with pricing based on current market rates. Gold spot is roughly $2,300-2,400/oz. Silver ~$30/oz. Factor in karat, estimated weight, brand premiums, and condition.`
+
+  if (corrections) {
+    promptText += `\n\nIMPORTANT: The user has corrected the following details about this item. Use these corrections to provide a more accurate assessment and updated offer range:\n${corrections}`
+  }
+
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mediaType,
+              data: rawBase64,
+            },
+          },
+          {
+            type: 'text',
+            text: promptText,
           },
         ],
       },
@@ -151,6 +157,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState(null)
   const [leadData, setLeadData] = useState({ name: '', email: '', phone: '', notes: '' })
+  const [isReEstimating, setIsReEstimating] = useState(false)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
 
@@ -172,6 +179,19 @@ export default function App() {
       setStep(STEPS.CAPTURE)
     }
   }, [])
+
+  // Re-analyze with user corrections
+  const handleReEstimate = useCallback(async (corrections) => {
+    if (!imageData) return
+    setIsReEstimating(true)
+    try {
+      const result = await analyzeImage(imageData, corrections)
+      setAnalysis(result)
+    } catch (err) {
+      console.error('Re-estimate error:', err)
+    }
+    setIsReEstimating(false)
+  }, [imageData])
 
   const reset = () => {
     setStep(STEPS.HERO)
@@ -246,6 +266,8 @@ export default function App() {
             imageData={imageData}
             onGetOffer={() => setStep(STEPS.LEAD_FORM)}
             onRetry={() => setStep(STEPS.CAPTURE)}
+            onReEstimate={handleReEstimate}
+            isReEstimating={isReEstimating}
           />
         )}
         {step === STEPS.LEAD_FORM && (
@@ -468,11 +490,29 @@ function AnalyzingScreen({ imageData }) {
 // ═══════════════════════════════════════════════
 //  OFFER SCREEN
 // ═══════════════════════════════════════════════
-function OfferScreen({ analysis, imageData, onGetOffer, onRetry }) {
+function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating }) {
   const [visible, setVisible] = useState(false)
+  const [showCorrections, setShowCorrections] = useState(false)
+  const [corrections, setCorrections] = useState(() =>
+    (analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
+  )
+  const [extraNotes, setExtraNotes] = useState('')
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
+  useEffect(() => {
+    setCorrections((analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {}))
+    setShowCorrections(false)
+    setExtraNotes('')
+  }, [analysis])
 
   const isValidItem = analysis.offer_low > 0 || analysis.offer_high > 0
+
+  const handleReEstimate = () => {
+    const correctionLines = Object.entries(corrections)
+      .map(([label, value]) => `${label}: ${value}`)
+      .join('\n')
+    const full = extraNotes ? `${correctionLines}\nAdditional info: ${extraNotes}` : correctionLines
+    onReEstimate(full)
+  }
 
   return (
     <section style={{ ...styles.centeredSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(15px)', transition: 'all 0.6s ease' }}>
@@ -480,7 +520,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry }) {
         <>
           <div style={styles.offerBadge}>
             <SparkleIcon size={14} />
-            <span>AI Preliminary Estimate</span>
+            <span>Preliminary Estimate</span>
           </div>
 
           <div style={styles.offerCard}>
@@ -510,6 +550,48 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry }) {
               </div>
               {analysis.offer_notes && (
                 <p style={styles.offerNotes}>{analysis.offer_notes}</p>
+              )}
+            </div>
+
+            {/* Correction section */}
+            <div style={styles.correctionSection}>
+              {!showCorrections ? (
+                <button onClick={() => setShowCorrections(true)} style={styles.correctionToggle}>
+                  Something not right? Correct our assumptions →
+                </button>
+              ) : (
+                <div style={styles.correctionForm}>
+                  <p style={styles.correctionTitle}>Correct our assumptions</p>
+                  <p style={styles.correctionSub}>Edit any details below and we will update your estimate.</p>
+                  {Object.entries(corrections).map(([label, value]) => (
+                    <div key={label} style={styles.correctionRow}>
+                      <label style={styles.correctionLabel}>{label}</label>
+                      <input
+                        type="text"
+                        value={value}
+                        onChange={(e) => setCorrections(prev => ({ ...prev, [label]: e.target.value }))}
+                        style={styles.correctionInput}
+                      />
+                    </div>
+                  ))}
+                  <div style={styles.correctionRow}>
+                    <label style={styles.correctionLabel}>Anything else?</label>
+                    <input
+                      type="text"
+                      value={extraNotes}
+                      onChange={(e) => setExtraNotes(e.target.value)}
+                      placeholder="e.g. It is 18K not 14K, weight is 25g, brand is Cartier..."
+                      style={styles.correctionInput}
+                    />
+                  </div>
+                  <button
+                    onClick={handleReEstimate}
+                    disabled={isReEstimating}
+                    style={{ ...styles.captureBtn, opacity: isReEstimating ? 0.6 : 1, width: '100%', justifyContent: 'center', marginTop: 8 }}
+                  >
+                    {isReEstimating ? 'Updating estimate...' : 'Update Estimate'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1121,6 +1203,55 @@ const styles = {
     lineHeight: 1.5,
     maxWidth: 400,
     margin: '12px auto 0',
+  },
+  correctionSection: {
+    borderTop: `1px solid ${border}`,
+    padding: '16px 24px',
+  },
+  correctionToggle: {
+    background: 'none',
+    border: 'none',
+    color: goldLight,
+    cursor: 'pointer',
+    fontSize: 14,
+    fontFamily: 'inherit',
+    fontWeight: 500,
+    padding: 0,
+  },
+  correctionForm: {
+    textAlign: 'left',
+  },
+  correctionTitle: {
+    fontSize: 15,
+    fontWeight: 600,
+    marginBottom: 4,
+    color: dark,
+  },
+  correctionSub: {
+    fontSize: 13,
+    color: muted,
+    marginBottom: 14,
+  },
+  correctionRow: {
+    marginBottom: 10,
+  },
+  correctionLabel: {
+    display: 'block',
+    fontSize: 12,
+    fontWeight: 500,
+    color: muted,
+    marginBottom: 3,
+  },
+  correctionInput: {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: `1px solid ${border}`,
+    fontSize: 14,
+    fontFamily: 'inherit',
+    background: '#FFFDF8',
+    color: dark,
+    outline: 'none',
   },
   offerCaveat: {
     fontSize: 13,
