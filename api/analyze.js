@@ -20,22 +20,29 @@ async function getSpotPrices() {
   try {
     const apiKey = process.env.METALS_API_KEY;
     if (apiKey) {
-      const res = await fetch(
-        `https://api.metalpriceapi.com/v1/latest?api_key=${apiKey}&base=USD&currencies=XAU,XAG`,
-        { signal: AbortSignal.timeout(5000) }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.rates) {
-          // API returns rate as USD-per-unit, XAU/XAG are inverted
-          const gold = data.rates.USDXAU ? Math.round(1 / data.rates.USDXAU) : null;
-          const silver = data.rates.USDXAG ? Math.round(1 / data.rates.USDXAG) : null;
-          if (gold && gold > 1000) {
-            priceCache = { date: today, gold, silver: silver || FALLBACK_SILVER };
-            console.log(`Spot prices updated: Gold $${gold}/oz, Silver $${silver}/oz`);
-            return priceCache;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(
+          `https://api.metalpriceapi.com/v1/latest?api_key=${apiKey}&base=USD&currencies=XAU,XAG`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.rates) {
+            const gold = data.rates.USDXAU ? Math.round(1 / data.rates.USDXAU) : null;
+            const silver = data.rates.USDXAG ? Math.round(1 / data.rates.USDXAG) : null;
+            if (gold && gold > 1000) {
+              priceCache = { date: today, gold, silver: silver || FALLBACK_SILVER };
+              console.log(`Spot prices updated: Gold $${gold}/oz, Silver $${silver}/oz`);
+              return priceCache;
+            }
           }
         }
+      } catch (fetchErr) {
+        clearTimeout(timeout);
+        throw fetchErr;
       }
     }
   } catch (err) {
@@ -81,7 +88,15 @@ export default async function handler(req, res) {
 
   try {
     // Fetch today's spot prices (cached after first call of the day)
-    const { gold, silver } = await getSpotPrices();
+    let gold = FALLBACK_GOLD;
+    let silver = FALLBACK_SILVER;
+    try {
+      const prices = await getSpotPrices();
+      gold = prices.gold;
+      silver = prices.silver;
+    } catch (priceErr) {
+      console.warn('Price fetch error (using fallback):', priceErr.message);
+    }
 
     // Inject live prices into the prompt
     const modifiedBody = injectSpotPrices(req.body, gold, silver);
