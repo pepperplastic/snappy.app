@@ -1375,15 +1375,19 @@ const styles = {
   detailRow: {
     display: 'flex',
     justifyContent: 'space-between',
+    alignItems: 'baseline',
     fontSize: 14,
-    padding: '6px 0',
+    padding: '8px 0',
+    gap: 16,
   },
-  detailLabel: { color: muted },
-  detailValue: { fontWeight: 500 },
+  detailLabel: { color: muted, flexShrink: 0, minWidth: 110 },
+  detailValue: { fontWeight: 500, textAlign: 'right' },
   detailValueWrap: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 6,
+    textAlign: 'right',
   },
   pencilBtn: {
     background: 'none',
