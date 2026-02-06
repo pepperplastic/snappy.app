@@ -721,7 +721,7 @@ function EditableDetail({ label, value, onChange }) {
       <span style={styles.detailValueWrap}>
         <span style={styles.detailValue}>{value}</span>
         <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
-          <PencilIcon size={13} />
+          ✏️
         </button>
       </span>
     </div>
@@ -848,7 +848,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                   onClick={() => setShowDetailsInput(true)}
                   style={styles.correctionLink}
                 >
-                  ＋ Add details below
+                  ＋ Add or correct details
                 </button>
               </div>
               {showDetailsInput && (
@@ -1486,11 +1486,11 @@ const styles = {
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    color: '#C8B89A',
     padding: 2,
     display: 'flex',
     alignItems: 'center',
-    opacity: 0.6,
+    fontSize: 12,
+    opacity: 0.5,
     transition: 'opacity 0.2s',
   },
   detailEditInput: {
