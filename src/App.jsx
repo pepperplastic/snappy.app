@@ -258,7 +258,7 @@ If the image is not of jewelry, a watch, precious metals, or luxury goods, set i
   })
 
   const body = {
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-20250514',
     max_tokens: 1024,
     messages: [
       {
