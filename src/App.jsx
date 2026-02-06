@@ -741,7 +741,7 @@ function EditableDetail({ label, value, onChange }) {
     <div style={styles.detailRow}>
       <span style={styles.detailLabel}>{label}</span>
       <span style={styles.detailValueWrap}>
-        <span style={styles.detailValue}>{value}</span>
+        <span style={{ ...styles.detailValue, cursor: 'pointer' }} onClick={() => setEditing(true)}>{value}</span>
         <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
           <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}>✏️</span>
         </button>
