@@ -568,6 +568,7 @@ function Hero({ onStart, onCamera, onUpload }) {
           { num: '1', title: 'Snap', desc: 'Take or upload a clear photo of your item' },
           { num: '2', title: 'Review', desc: 'We identify materials, brand & condition' },
           { num: '3', title: 'Get Paid', desc: 'Accept your offer and ship with a prepaid label' },
+          { num: '4', title: 'Do It Again!', desc: 'After being paid, come back when you have more to sell' },
         ].map((s) => (
           <div key={s.num} style={styles.stepCard}>
             <div style={styles.stepNum}>{s.num}</div>
@@ -1213,12 +1214,12 @@ const styles = {
   },
   stepsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: 24,
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: 16,
     marginTop: 64,
   },
   stepCard: {
-    padding: 28,
+    padding: 20,
     borderRadius: 16,
     border: `1px solid ${border}`,
     background: '#FFFDF8',
@@ -1239,7 +1240,7 @@ const styles = {
   },
   stepTitle: {
     fontFamily: '"Playfair Display", serif',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 600,
     marginBottom: 6,
   },
