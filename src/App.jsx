@@ -58,13 +58,28 @@ function compressImage(file, maxDim = 1600) {
 }
 
 // ── API: Send image to Claude for analysis ──
-async function analyzeImage(base64Data, corrections) {
+async function analyzeImage(imagesArray, corrections) {
   const mediaType = 'image/jpeg'
-  const rawBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '')
 
-  let promptText = `You are an expert appraiser for Snappy, a modern luxury goods and precious metals buyer. Analyze this image and provide a preliminary assessment.
+  // Build content array: all images first, then the prompt
+  const content = imagesArray.map((base64Data, i) => ({
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: mediaType,
+      data: base64Data.replace(/^data:image\/\w+;base64,/, ''),
+    },
+  }))
 
-CRITICAL: FIRST determine what category this item falls into:
+  let promptText = `You are an expert appraiser for Snappy, a modern luxury goods and precious metals buyer. Analyze ${imagesArray.length > 1 ? 'these images' : 'this image'} and provide a preliminary assessment.
+
+${imagesArray.length > 1 ? `You have been provided ${imagesArray.length} photos of the same item from different angles. Use ALL photos together to make the most accurate assessment possible. Look for:
+- Hallmarks, stamps, or karat markings in close-up shots
+- Brand logos, serial numbers, or maker's marks
+- Overall condition from multiple angles
+- Weight clues from thickness, size relative to known objects
+- Clasp type, chain construction, setting quality
+` : ''}CRITICAL: FIRST determine what category this item falls into:
 1. WATCH — any wristwatch (Rolex, Omega, Cartier, AP, Patek Philippe, etc.)
 2. JEWELRY/METAL — rings, necklaces, chains, bracelets, earrings, gold/silver bars, coins
 3. LUXURY GOODS — designer handbags, purses, wallets, belts, shoes, sunglasses (Louis Vuitton, Chanel, Hermès, Gucci, Dior, Prada, Goyard, Bottega Veneta, Balenciaga, Fendi, YSL, Celine, Cartier accessories, etc.)
@@ -237,26 +252,18 @@ If the image is not of jewelry, a watch, precious metals, or luxury goods, set i
     promptText += `\n\nIMPORTANT: The user has corrected the following details about this item. Use these corrections to provide a more accurate assessment and updated offer range:\n${corrections}`
   }
 
+  content.push({
+    type: 'text',
+    text: promptText,
+  })
+
   const body = {
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1024,
     messages: [
       {
         role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: mediaType,
-              data: rawBase64,
-            },
-          },
-          {
-            type: 'text',
-            text: promptText,
-          },
-        ],
+        content,
       },
     ],
   }
@@ -338,15 +345,18 @@ export default function App() {
   const cameraInputRef = useRef(null)
 
   // Handle file selection (gallery or camera)
-  const handleFile = useCallback(async (file) => {
-    if (!file) return
+  const handleFiles = useCallback(async (files) => {
+    const fileList = Array.from(files).filter(f => f && f.type.startsWith('image/'))
+    if (fileList.length === 0) return
     setError(null)
-    const base64 = await compressImage(file)
-    setImageData(base64)
+
+    // Compress all images
+    const compressed = await Promise.all(fileList.map(f => compressImage(f)))
+    setImageData(compressed)
     setStep(STEPS.ANALYZING)
 
     try {
-      const result = await analyzeImage(base64)
+      const result = await analyzeImage(compressed)
       setAnalysis(result)
       setStep(STEPS.OFFER)
     } catch (err) {
@@ -431,7 +441,7 @@ export default function App() {
           <CaptureScreen
             fileInputRef={fileInputRef}
             cameraInputRef={cameraInputRef}
-            onFile={handleFile}
+            onFile={handleFiles}
             error={error}
           />
         )}
@@ -470,8 +480,9 @@ export default function App() {
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        multiple
         style={{ display: 'none' }}
-        onChange={(e) => handleFile(e.target.files?.[0])}
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
       />
       <input
         ref={cameraInputRef}
@@ -479,7 +490,7 @@ export default function App() {
         accept="image/*"
         capture="environment"
         style={{ display: 'none' }}
-        onChange={(e) => handleFile(e.target.files?.[0])}
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
       />
     </div>
   )
@@ -550,7 +561,7 @@ function Hero({ onStart, onCamera, onUpload }) {
         </button>
         <button onClick={onUpload} style={styles.captureBtnSecondary}>
           <UploadIcon size={20} />
-          <span>Upload a Photo</span>
+          <span>Upload Photo(s)</span>
         </button>
       </div>
       <div style={styles.trustRow}>
@@ -590,14 +601,14 @@ function CaptureScreen({ fileInputRef, cameraInputRef, onFile, error }) {
   const handleDrop = (e) => {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file && file.type.startsWith('image/')) onFile(file)
+    const files = e.dataTransfer.files
+    if (files?.length) onFile(files)
   }
 
   return (
     <section style={styles.centeredSection}>
       <h2 style={styles.sectionTitle}>What are you selling?</h2>
-      <p style={styles.sectionSub}>Take a clear photo or upload one from your gallery.</p>
+      <p style={styles.sectionSub}>Take a clear photo or upload from your gallery. Multiple angles help!</p>
 
       {error && <div style={styles.errorMsg}>{error}</div>}
 
@@ -615,7 +626,7 @@ function CaptureScreen({ fileInputRef, cameraInputRef, onFile, error }) {
           <div style={styles.dropIcon}>
             <CameraIcon size={40} />
           </div>
-          <p style={styles.dropText}>Drag & drop an image here</p>
+          <p style={styles.dropText}>Drag & drop image(s) here</p>
           <p style={styles.dropSubtext}>or use the buttons below</p>
         </div>
       </div>
@@ -633,13 +644,13 @@ function CaptureScreen({ fileInputRef, cameraInputRef, onFile, error }) {
           style={styles.captureBtnSecondary}
         >
           <UploadIcon size={20} />
-          <span>Upload Image</span>
+          <span>Upload Photo(s)</span>
         </button>
       </div>
 
       <div style={styles.tipBox}>
         <strong>Tips for the best estimate:</strong>
-        <span> Use good lighting · Show any stamps or hallmarks · Include a coin for scale</span>
+        <span> Use good lighting · Show any stamps or hallmarks · Include multiple angles</span>
       </div>
     </section>
   )
@@ -657,13 +668,24 @@ function AnalyzingScreen({ imageData }) {
     return () => clearInterval(interval)
   }, [])
 
+  const images = Array.isArray(imageData) ? imageData : [imageData]
+
   return (
     <section style={styles.centeredSection}>
       <div style={styles.analyzingCard}>
-        {imageData && (
+        {images.length === 1 ? (
           <div style={styles.analyzingImageWrap}>
-            <img src={imageData} alt="Your item" style={styles.analyzingImage} />
+            <img src={images[0]} alt="Your item" style={styles.analyzingImage} />
             <div style={styles.scanLine} />
+          </div>
+        ) : (
+          <div style={styles.analyzingMultiWrap}>
+            {images.map((img, i) => (
+              <div key={i} style={styles.analyzingThumbWrap}>
+                <img src={img} alt={`Photo ${i + 1}`} style={styles.analyzingThumb} />
+                {i === 0 && <div style={styles.scanLine} />}
+              </div>
+            ))}
           </div>
         )}
         <div style={styles.analyzingText}>
@@ -799,7 +821,21 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             )}
             <div style={{ opacity: isReEstimating ? 0.3 : 1, transition: 'opacity 0.3s', filter: isReEstimating ? 'blur(1px)' : 'none' }}>
             <div style={styles.offerTop}>
-              {imageData && <img src={imageData} alt="Your item" style={styles.offerImage} />}
+              {imageData && (() => {
+                const images = Array.isArray(imageData) ? imageData : [imageData]
+                return (
+                  <div style={styles.offerImageWrap}>
+                    <img src={images[0]} alt="Your item" style={styles.offerImage} />
+                    {images.length > 1 && (
+                      <div style={styles.offerThumbRow}>
+                        {images.map((img, i) => (
+                          <img key={i} src={img} alt={`Photo ${i + 1}`} style={styles.offerThumb} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               <div style={styles.offerInfo}>
                 <h2 style={styles.offerTitle}>{analysis.title}</h2>
                 <p style={styles.offerDesc}>{analysis.description}</p>
@@ -1362,6 +1398,26 @@ const styles = {
     display: 'block',
     opacity: 0.85,
   },
+  analyzingMultiWrap: {
+    display: 'flex',
+    gap: 4,
+    overflow: 'hidden',
+    borderRadius: '16px 16px 0 0',
+  },
+  analyzingThumbWrap: {
+    position: 'relative',
+    flex: 1,
+    minWidth: 0,
+    maxHeight: 250,
+    overflow: 'hidden',
+  },
+  analyzingThumb: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+    opacity: 0.85,
+  },
   scanLine: {
     position: 'absolute',
     top: 0,
@@ -1439,13 +1495,30 @@ const styles = {
     padding: 24,
     flexWrap: 'wrap',
   },
+  offerImageWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    flexShrink: 0,
+  },
   offerImage: {
     width: 120,
     height: 120,
     borderRadius: 12,
     objectFit: 'contain',
     background: '#F5F0E8',
-    flexShrink: 0,
+  },
+  offerThumbRow: {
+    display: 'flex',
+    gap: 4,
+  },
+  offerThumb: {
+    width: 38,
+    height: 38,
+    borderRadius: 6,
+    objectFit: 'cover',
+    background: '#F5F0E8',
+    border: '1px solid #E8DCC8',
   },
   offerInfo: { flex: 1, minWidth: 200 },
   offerTitle: {
