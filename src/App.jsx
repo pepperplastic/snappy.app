@@ -11,6 +11,7 @@ const STEPS = {
   ANALYZING: 'analyzing',
   OFFER: 'offer',
   LEAD_FORM: 'lead_form',
+  SHIPPING: 'shipping',
   SUBMITTED: 'submitted',
 }
 
@@ -462,6 +463,7 @@ export default function App() {
   const [leadData, setLeadData] = useState({ name: '', email: '', phone: '', notes: '' })
   const [isReEstimating, setIsReEstimating] = useState(false)
   const [showWebcam, setShowWebcam] = useState(false)
+  const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: 'kit' })
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
@@ -528,12 +530,18 @@ export default function App() {
     setAnalysis(null)
     setError(null)
     setLeadData({ name: '', email: '', phone: '', notes: '' })
+    setShippingData({ address: '', city: '', state: '', zip: '', method: 'kit' })
   }
 
   const handleLeadSubmit = (e) => {
     e.preventDefault()
-    // In production, POST this to your CRM / email service / Airtable / etc.
     console.log('Lead submitted:', { ...leadData, analysis, imageData: '[base64]' })
+    setStep(STEPS.SHIPPING)
+  }
+
+  const handleShippingSubmit = (e) => {
+    e.preventDefault()
+    console.log('Shipping submitted:', { ...leadData, ...shippingData, analysis, imageData: '[base64]' })
     setStep(STEPS.SUBMITTED)
   }
 
@@ -607,7 +615,15 @@ export default function App() {
             analysis={analysis}
           />
         )}
-        {step === STEPS.SUBMITTED && <SubmittedScreen onReset={reset} />}
+        {step === STEPS.SHIPPING && (
+          <ShippingScreen
+            shippingData={shippingData}
+            setShippingData={setShippingData}
+            onSubmit={handleShippingSubmit}
+            leadData={leadData}
+          />
+        )}
+        {step === STEPS.SUBMITTED && <SubmittedScreen onReset={reset} shippingMethod={shippingData.method} />}
       </main>
 
       {/* ── FOOTER ── */}
@@ -1260,7 +1276,7 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis }) {
           />
         </div>
         <button type="submit" style={styles.heroCta}>
-          <span>Send Me a Shipping Label</span>
+          <span>Continue</span>
           <ArrowIcon size={18} />
         </button>
         <p style={styles.formDisclaimer}>
@@ -1272,9 +1288,123 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis }) {
 }
 
 // ═══════════════════════════════════════════════
+//  SHIPPING OPTIONS
+// ═══════════════════════════════════════════════
+function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData }) {
+  const update = (field) => (e) =>
+    setShippingData((prev) => ({ ...prev, [field]: e.target.value }))
+
+  const isKit = shippingData.method === 'kit'
+
+  return (
+    <section style={styles.centeredSection}>
+      <h2 style={styles.sectionTitle}>How would you like to ship?</h2>
+      <p style={styles.sectionSub}>
+        Choose how you'd like to send us your item, {leadData.name?.split(' ')[0] || 'there'}. Either way, shipping is <strong>completely free</strong> and fully insured.
+      </p>
+
+      <form onSubmit={onSubmit} style={styles.form}>
+        {/* Shipping method toggle */}
+        <div style={styles.shippingOptions}>
+          <button
+            type="button"
+            onClick={() => setShippingData(prev => ({ ...prev, method: 'kit' }))}
+            style={isKit ? styles.shippingOptionActive : styles.shippingOption}
+          >
+            <span style={styles.shippingOptionIcon}>📦</span>
+            <span style={styles.shippingOptionTitle}>Send Me a Kit</span>
+            <span style={styles.shippingOptionDesc}>We mail you a box, padding & prepaid label — everything you need</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShippingData(prev => ({ ...prev, method: 'label' }))}
+            style={!isKit ? styles.shippingOptionActive : styles.shippingOption}
+          >
+            <span style={styles.shippingOptionIcon}>🏷️</span>
+            <span style={styles.shippingOptionTitle}>Just the Label</span>
+            <span style={styles.shippingOptionDesc}>We email you a prepaid label to print — use your own packaging</span>
+          </button>
+        </div>
+
+        {isKit && (
+          <>
+            <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
+              We'll ship your free kit to the address below — arrives in 2-3 business days.
+            </p>
+            <div style={styles.formGroup}>
+              <label style={styles.formLabel}>Street Address *</label>
+              <input
+                type="text"
+                required
+                value={shippingData.address}
+                onChange={update('address')}
+                placeholder="123 Main Street, Apt 4B"
+                style={styles.formInput}
+              />
+            </div>
+            <div style={styles.formRow}>
+              <div style={{ ...styles.formGroup, flex: 2 }}>
+                <label style={styles.formLabel}>City *</label>
+                <input
+                  type="text"
+                  required
+                  value={shippingData.city}
+                  onChange={update('city')}
+                  placeholder="Miami"
+                  style={styles.formInput}
+                />
+              </div>
+              <div style={{ ...styles.formGroup, flex: 1 }}>
+                <label style={styles.formLabel}>State *</label>
+                <input
+                  type="text"
+                  required
+                  value={shippingData.state}
+                  onChange={update('state')}
+                  placeholder="FL"
+                  maxLength={2}
+                  style={{ ...styles.formInput, textTransform: 'uppercase' }}
+                />
+              </div>
+              <div style={{ ...styles.formGroup, flex: 1 }}>
+                <label style={styles.formLabel}>ZIP *</label>
+                <input
+                  type="text"
+                  required
+                  value={shippingData.zip}
+                  onChange={update('zip')}
+                  placeholder="33101"
+                  maxLength={10}
+                  style={styles.formInput}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {!isKit && (
+          <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
+            We'll send the prepaid shipping label to <strong>{leadData.email}</strong>. Just print it, stick it on your package, and drop it off.
+          </p>
+        )}
+
+        <button type="submit" style={styles.heroCta}>
+          <span>{isKit ? 'Send My Free Kit' : 'Email My Label'}</span>
+          <ArrowIcon size={18} />
+        </button>
+        <p style={styles.formDisclaimer}>
+          Free & insured shipping both ways. Don't like our offer? We return your item at no cost.
+        </p>
+      </form>
+    </section>
+  )
+}
+
+// ═══════════════════════════════════════════════
 //  SUBMITTED CONFIRMATION
 // ═══════════════════════════════════════════════
-function SubmittedScreen({ onReset }) {
+function SubmittedScreen({ onReset, shippingMethod }) {
+  const isKit = shippingMethod === 'kit'
   return (
     <section style={styles.centeredSection}>
       <div style={styles.successIcon}>
@@ -1282,15 +1412,23 @@ function SubmittedScreen({ onReset }) {
       </div>
       <h2 style={styles.sectionTitle}>You're all set!</h2>
       <p style={styles.sectionSub}>
-        Check your email for a prepaid shipping label and instructions. Once we receive your item, expect a firm offer within 24 hours.
+        {isKit
+          ? 'Your free shipping kit is on its way! You\'ll receive a box with padding and a prepaid return label within 2-3 business days.'
+          : 'Check your email for a prepaid shipping label. Print it, attach it to your package, and drop it off at any shipping location.'
+        }
       </p>
       <div style={styles.successSteps}>
-        {[
-          'Prepaid label emailed to you',
-          'Ship your item (free & insured)',
+        {(isKit ? [
+          'Shipping kit arrives in 2-3 days',
+          'Pack your item & drop it off',
           'Expert evaluation within 24 hours',
           'Accept offer → get paid instantly',
-        ].map((s, i) => (
+        ] : [
+          'Prepaid label emailed to you',
+          'Print, pack & drop off your item',
+          'Expert evaluation within 24 hours',
+          'Accept offer → get paid instantly',
+        ]).map((s, i) => (
           <div key={i} style={styles.successStep}>
             <div style={styles.successStepNum}>{i + 1}</div>
             <span>{s}</span>
@@ -2097,6 +2235,63 @@ const styles = {
     color: muted,
     marginTop: 14,
     textAlign: 'center',
+  },
+
+  // ── Shipping ──
+  formRow: {
+    display: 'flex',
+    gap: 12,
+  },
+  shippingOptions: {
+    display: 'flex',
+    gap: 12,
+    marginBottom: 20,
+  },
+  shippingOption: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    padding: '20px 16px',
+    borderRadius: 14,
+    border: `2px solid ${border}`,
+    background: '#FFFDF8',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    fontFamily: 'inherit',
+    gap: 6,
+  },
+  shippingOptionActive: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    padding: '20px 16px',
+    borderRadius: 14,
+    border: `2px solid ${goldLight}`,
+    background: goldBg,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    fontFamily: 'inherit',
+    gap: 6,
+    boxShadow: `0 0 0 3px rgba(200,149,60,0.1)`,
+  },
+  shippingOptionIcon: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  shippingOptionTitle: {
+    fontFamily: '"Playfair Display", serif',
+    fontWeight: 600,
+    fontSize: 16,
+    color: '#1A1A1A',
+  },
+  shippingOptionDesc: {
+    fontSize: 12,
+    color: muted,
+    lineHeight: 1.4,
   },
 
   // ── Success ──
