@@ -152,12 +152,15 @@ ROLEX DAY-DATE 40 (distinguish by case metal and dial color):
 - Everose gold, sundust/brown dial: ref 228235
 - Platinum, ice blue dial: ref 228206
 
-ROLEX DATEJUST (distinguish by size, bezel, bracelet):
-- 41mm, fluted bezel + jubilee bracelet: most common modern config
-- 41mm, smooth bezel + oyster bracelet: sportier look
+ROLEX DATEJUST (distinguish by size, bezel, dial, bracelet):
+- 41mm, fluted bezel + jubilee bracelet: most common modern config (ref 126334)
+- 41mm, smooth bezel + oyster bracelet: sportier look (ref 126300)
 - 36mm: older generation or ladies' size
-- Blue dial commands premium over silver/white
+- "Wimbledon" dial: slate grey dial with GREEN Roman numeral hour markers — very popular, premium variant
+- Blue dial: commands premium over silver/white
 - Diamond dial/bezel: significant premium over standard
+- Palm motif / floral motif dials: newer limited variants, premium
+- IMPORTANT: If watch is on an aftermarket rubber strap (like Rubber B, Oysterflex-style), note this — it means the ORIGINAL BRACELET may be missing, which significantly reduces value. Always mention in the description and Completeness field.
 
 OMEGA (distinguish by subdial layout and case):
 - Speedmaster "Moonwatch": hesalite crystal, tachymeter bezel, 3 subdials
@@ -219,6 +222,7 @@ WATCH PRICING RULES — THIS IS CRITICAL:
 - Price watches based on SECONDARY MARKET / PRE-OWNED DEALER VALUES, not metal melt value
 - Use your knowledge of current pre-owned market values for the exact reference you identified above
 - Price at the HIGHER END of the market range to be competitive — we want sellers to feel good about the estimate
+- AFTERMARKET MODIFICATIONS: If a watch is on a non-original strap/band (rubber strap, NATO, aftermarket bracelet), ALWAYS note this. The original bracelet is a significant portion of the watch's value — if missing, reduce estimate 15-25%. Mention this clearly in description and Completeness field.
 - All prices assume FULL SET (box, papers, links) which commands the highest premium
 - ALWAYS default Completeness to "Full set: box, papers, links"
 - If a user corrects completeness to indicate missing items, adjust pricing DOWN accordingly:
@@ -405,8 +409,31 @@ export default function App() {
   const [error, setError] = useState(null)
   const [leadData, setLeadData] = useState({ name: '', email: '', phone: '', notes: '' })
   const [isReEstimating, setIsReEstimating] = useState(false)
+  const [showWebcam, setShowWebcam] = useState(false)
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
+
+  const handleCamera = () => {
+    if (isMobile) {
+      cameraInputRef.current?.click()
+    } else {
+      setShowWebcam(true)
+    }
+  }
+
+  const handleWebcamCapture = (base64) => {
+    setShowWebcam(false)
+    setImageData([base64])
+    setStep(STEPS.ANALYZING)
+    analyzeImage([base64])
+      .then(result => { setAnalysis(result); setStep(STEPS.OFFER) })
+      .catch(err => {
+        console.error('Analysis error:', err)
+        setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
+        setStep(STEPS.CAPTURE)
+      })
+  }
 
   // Handle file selection (gallery or camera)
   const handleFiles = useCallback(async (files) => {
@@ -497,14 +524,14 @@ export default function App() {
         {step === STEPS.HERO && (
           <Hero
             onStart={() => setStep(STEPS.CAPTURE)}
-            onCamera={() => cameraInputRef.current?.click()}
+            onCamera={handleCamera}
             onUpload={() => fileInputRef.current?.click()}
           />
         )}
         {step === STEPS.CAPTURE && (
           <CaptureScreen
             fileInputRef={fileInputRef}
-            cameraInputRef={cameraInputRef}
+            onCamera={handleCamera}
             onFile={handleFiles}
             error={error}
           />
@@ -539,6 +566,14 @@ export default function App() {
         </p>
       </footer>
 
+      {/* Webcam modal (desktop) */}
+      {showWebcam && (
+        <WebcamModal
+          onCapture={handleWebcamCapture}
+          onClose={() => setShowWebcam(false)}
+        />
+      )}
+
       {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
@@ -556,6 +591,71 @@ export default function App() {
         style={{ display: 'none' }}
         onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
       />
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════
+//  WEBCAM MODAL (desktop camera capture)
+// ═══════════════════════════════════════════════
+function WebcamModal({ onCapture, onClose }) {
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const [ready, setReady] = useState(false)
+  const [camError, setCamError] = useState(null)
+
+  useEffect(() => {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } })
+      .then(stream => {
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.onloadedmetadata = () => setReady(true)
+        }
+      })
+      .catch(() => setCamError('Camera access denied. Please allow camera permissions and try again.'))
+
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
+    }
+  }, [])
+
+  const capture = () => {
+    const video = videoRef.current
+    if (!video) return
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d').drawImage(video, 0, 0)
+    const base64 = canvas.toDataURL('image/jpeg', 0.85)
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
+    onCapture(base64)
+  }
+
+  return (
+    <div style={styles.webcamOverlay} onClick={onClose}>
+      <div style={styles.webcamModal} onClick={e => e.stopPropagation()}>
+        <div style={styles.webcamHeader}>
+          <span style={{ fontWeight: 600, fontSize: 16 }}>Take a Photo</span>
+          <button onClick={onClose} style={styles.webcamCloseBtn}>✕</button>
+        </div>
+        {camError ? (
+          <div style={styles.webcamError}>{camError}</div>
+        ) : (
+          <>
+            <div style={styles.webcamVideoWrap}>
+              <video ref={videoRef} autoPlay playsInline muted style={styles.webcamVideo} />
+              {!ready && <div style={styles.webcamLoading}>Starting camera...</div>}
+            </div>
+            <div style={styles.webcamControls}>
+              <button onClick={capture} disabled={!ready} style={{ ...styles.webcamShutter, opacity: ready ? 1 : 0.4 }}>
+                <div style={styles.webcamShutterInner} />
+              </button>
+              <p style={{ fontSize: 12, color: '#9B8E7B', marginTop: 8 }}>Position your item and tap to capture</p>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -659,7 +759,7 @@ function Hero({ onStart, onCamera, onUpload }) {
 // ═══════════════════════════════════════════════
 //  CAPTURE SCREEN
 // ═══════════════════════════════════════════════
-function CaptureScreen({ fileInputRef, cameraInputRef, onFile, error }) {
+function CaptureScreen({ fileInputRef, onCamera, onFile, error }) {
   const [dragOver, setDragOver] = useState(false)
 
   const handleDrop = (e) => {
@@ -697,7 +797,7 @@ function CaptureScreen({ fileInputRef, cameraInputRef, onFile, error }) {
 
       <div style={styles.captureButtons}>
         <button
-          onClick={() => cameraInputRef.current?.click()}
+          onClick={onCamera}
           style={styles.captureBtn}
         >
           <CameraIcon size={20} />
@@ -1915,6 +2015,92 @@ const styles = {
   footerDisclaimer: {
     fontSize: 12,
     color: '#B5A992',
+  },
+  webcamOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: 20,
+  },
+  webcamModal: {
+    background: '#FFFDF8',
+    borderRadius: 20,
+    overflow: 'hidden',
+    maxWidth: 520,
+    width: '100%',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+  },
+  webcamHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderBottom: `1px solid ${border}`,
+  },
+  webcamCloseBtn: {
+    background: 'none',
+    border: 'none',
+    fontSize: 18,
+    cursor: 'pointer',
+    color: '#9B8E7B',
+    padding: '4px 8px',
+  },
+  webcamVideoWrap: {
+    position: 'relative',
+    background: '#000',
+    aspectRatio: '4/3',
+    overflow: 'hidden',
+  },
+  webcamVideo: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
+  },
+  webcamLoading: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: 14,
+  },
+  webcamError: {
+    padding: 40,
+    textAlign: 'center',
+    color: '#9B8E7B',
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+  webcamControls: {
+    padding: '20px 20px 24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  webcamShutter: {
+    width: 64,
+    height: 64,
+    borderRadius: '50%',
+    border: '3px solid #C8953C',
+    background: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'transform 0.1s',
+  },
+  webcamShutterInner: {
+    width: 50,
+    height: 50,
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #1A1A1A, #333)',
   },
 }
 
