@@ -673,7 +673,7 @@ function Hero({ onStart, onCamera, onUpload }) {
   const NecklaceIcon = () => <svg width="14" height="16" viewBox="0 0 14 16" fill="none"><path d="M1 1C1 1 0 8 7 12C14 8 13 1 13 1" stroke="#C8953C" strokeWidth="1.5" fill="none" strokeLinecap="round"/><circle cx="7" cy="13" r="2" fill="#C8953C"/></svg>
   const DiamondIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 5L7 13L1 5L7 1Z" fill="#B8E0F0" stroke="#7CB9D0" strokeWidth="0.5"/><path d="M1 5H13L7 13L1 5Z" fill="#A0D4EA" opacity="0.6"/></svg>
   const CoinIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" fill="#F0C75E" stroke="#C8953C" strokeWidth="1"/><text x="7" y="10" textAnchor="middle" fill="#A07608" fontSize="8" fontWeight="bold">$</text></svg>
-  const PurseIcon = () => <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3 6V4a4.5 4.5 0 0 1 9 0v2" stroke="#9B7B5E" strokeWidth="1.2" fill="none" strokeLinecap="round"/><rect x="1" y="6" width="13" height="8" rx="2" fill="#C4A57B" stroke="#9B7B5E" strokeWidth="0.8"/><rect x="5" y="9" width="5" height="1.5" rx="0.75" fill="#9B7B5E" opacity="0.6"/></svg>
+  const PurseIcon = () => <svg width="15" height="16" viewBox="-0.5 -1 16 17" fill="none"><path d="M3 6V4a4.5 4.5 0 0 1 9 0v2" stroke="#9B7B5E" strokeWidth="1.2" fill="none" strokeLinecap="round"/><rect x="1" y="6" width="13" height="8" rx="2" fill="#C4A57B" stroke="#9B7B5E" strokeWidth="0.8"/><rect x="5" y="9" width="5" height="1.5" rx="0.75" fill="#9B7B5E" opacity="0.6"/></svg>
   const WatchIcon = () => <svg width="14" height="16" viewBox="0 0 14 16" fill="none"><rect x="3" y="0" width="8" height="3" rx="1" fill="#C8953C" opacity="0.6"/><rect x="3" y="13" width="8" height="3" rx="1" fill="#C8953C" opacity="0.6"/><circle cx="7" cy="8" r="6" fill="#F5ECD7" stroke="#C8953C" strokeWidth="1.2"/><circle cx="7" cy="8" r="4.5" stroke="#C8953C" strokeWidth="0.5" fill="none"/><line x1="7" y1="8" x2="7" y2="5" stroke="#C8953C" strokeWidth="0.8" strokeLinecap="round"/><line x1="7" y1="8" x2="9.5" y2="8" stroke="#C8953C" strokeWidth="0.8" strokeLinecap="round"/></svg>
   const RingIcon = () => <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><ellipse cx="7" cy="8" rx="5.5" ry="4.5" stroke="#C8953C" strokeWidth="1.5" fill="none"/><circle cx="7" cy="3.5" r="2.5" fill="#B8E0F0" stroke="#7CB9D0" strokeWidth="0.5"/></svg>
   const BeltIcon = () => <svg width="16" height="10" viewBox="0 0 16 10" fill="none"><rect x="0" y="2" width="16" height="6" rx="1" fill="#9B7B5E"/><rect x="5" y="1" width="6" height="8" rx="1" fill="#C4A57B" stroke="#7B6040" strokeWidth="0.6"/><circle cx="8" cy="5" r="1.2" fill="#7B6040"/></svg>
@@ -1012,7 +1012,19 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                   key={i}
                   label={d.label}
                   value={corrections[d.label] || d.value}
-                  onChange={(newVal) => setCorrections(prev => ({ ...prev, [d.label]: newVal }))}
+                  onChange={(newVal) => {
+                    const updated = { ...corrections, [d.label]: newVal }
+                    setCorrections(updated)
+                    // Auto re-estimate if the value actually changed
+                    const orig = analysis.details?.find(det => det.label === d.label)
+                    if (orig && newVal !== orig.value) {
+                      const correctionLines = Object.entries(updated)
+                        .map(([label, value]) => `${label}: ${value}`)
+                        .join('\n')
+                      const full = extraNotes ? `${correctionLines}\nAdditional info: ${extraNotes}` : correctionLines
+                      onReEstimate(full)
+                    }
+                  }}
                 />
               ))}
             </div>
@@ -1057,16 +1069,14 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                     type="text"
                     value={extraNotes}
                     onChange={(e) => setExtraNotes(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && extraNotes.trim()) handleReEstimate() }}
                     placeholder="e.g. It is 18K not 14K, weight is 25g, brand is Cartier..."
                     style={styles.correctionInput}
                     autoFocus
                   />
                 </div>
               )}
-              {(showDetailsInput || Object.entries(corrections).some(([label]) => {
-                const orig = analysis.details?.find(d => d.label === label)
-                return orig && corrections[label] !== orig.value
-              })) && (
+              {showDetailsInput && extraNotes.trim() && (
                 <button
                   onClick={handleReEstimate}
                   disabled={isReEstimating}
