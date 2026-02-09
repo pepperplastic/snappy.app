@@ -1532,7 +1532,7 @@ const styles = {
     fontWeight: 500,
     fontSize: 22,
     color: gold,
-    margin: '0 -2px 0 -4px',
+    margin: '0 -1px 0 -2px',
     textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25)',
   },
   logoGold: {
