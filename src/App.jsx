@@ -551,27 +551,28 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              {/* Camera body */}
-              <rect x="1" y="8" width="30" height="20" rx="3" fill="url(#logoGrad)" />
-              {/* Camera top bump */}
-              <path d="M10 8L12 4H20L22 8" fill="url(#logoGrad)" />
-              {/* Lens outer */}
-              <circle cx="16" cy="18" r="8" fill="none" stroke="#fff" strokeWidth="1.5" opacity="0.5" />
-              {/* Lens inner */}
-              <circle cx="16" cy="18" r="5.5" fill="none" stroke="#fff" strokeWidth="1" opacity="0.3" />
-              {/* $ sign */}
-              <text x="16" y="22" textAnchor="middle" fill="#fff" fontFamily="Playfair Display, serif" fontWeight="700" fontSize="13">$</text>
+            <svg width="32" height="32" viewBox="0 0 80 80" fill="none">
               <defs>
-                <linearGradient id="logoGrad" x1="0" y1="0" x2="32" y2="32">
-                  <stop stopColor="#B8860B" />
-                  <stop offset="1" stopColor="#C8953C" />
+                <linearGradient id="logoGrad" x1="0" y1="0" x2="80" y2="80">
+                  <stop stopColor="#D4A344" />
+                  <stop offset="1" stopColor="#8B6914" />
                 </linearGradient>
               </defs>
+              {/* Camera body */}
+              <rect x="8" y="22" width="64" height="46" rx="10" stroke="url(#logoGrad)" strokeWidth="3" fill="none" />
+              {/* Camera bump */}
+              <path d="M28 22 L32 12 H48 L52 22" stroke="url(#logoGrad)" strokeWidth="3" fill="none" strokeLinejoin="round" />
+              {/* Lens circle */}
+              <circle cx="40" cy="45" r="15" stroke="url(#logoGrad)" strokeWidth="2.5" fill="none" />
+              {/* $ inside lens */}
+              <text x="40" y="52" textAnchor="middle" fill="url(#logoGrad)" fontFamily="Playfair Display, serif" fontWeight="700" fontSize="22">$</text>
+              {/* Flash dot */}
+              <circle cx="60" cy="30" r="2.5" fill="url(#logoGrad)" />
             </svg>
             <span style={styles.logoWordmark}>
               <span style={styles.logoText}>snappy</span>
-              <span style={styles.logoDot}>.gold</span>
+              <span style={styles.logoDot}>.</span>
+              <span style={styles.logoGold}>gold</span>
             </span>
           </button>
           {step !== STEPS.HERO && (
@@ -1498,7 +1499,7 @@ const styles = {
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 3,
   },
   logoWordmark: {
     display: 'flex',
@@ -1514,21 +1515,33 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontFamily: '"Playfair Display", serif',
-    fontWeight: 700,
+    fontFamily: '"EB Garamond", serif',
+    fontWeight: 500,
     fontSize: 18,
   },
   logoText: {
-    fontWeight: 600,
-    fontSize: 20,
-    color: dark,
-    letterSpacing: '-0.02em',
+    fontFamily: '"EB Garamond", serif',
+    fontWeight: 500,
+    fontSize: 22,
+    color: '#2A2015',
+    letterSpacing: '0.01em',
+    textShadow: '0 0 10px rgba(212,163,68,0.4), 0 0 20px rgba(212,163,68,0.2), 0 0 3px rgba(212,163,68,0.15)',
   },
   logoDot: {
-    fontWeight: 600,
-    fontSize: 20,
+    fontFamily: '"EB Garamond", serif',
+    fontWeight: 500,
+    fontSize: 22,
     color: gold,
-    letterSpacing: '-0.02em',
+    margin: '0 -2px 0 -4px',
+    textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25)',
+  },
+  logoGold: {
+    fontFamily: '"EB Garamond", serif',
+    fontWeight: 500,
+    fontSize: 22,
+    color: gold,
+    letterSpacing: '0.01em',
+    textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25), 0 0 3px rgba(212,163,68,0.2)',
   },
   navReset: {
     background: 'none',
