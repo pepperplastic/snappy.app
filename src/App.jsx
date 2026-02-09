@@ -257,15 +257,39 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
   "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification."
 }
 
-JEWELRY PRICING — USE THESE EXACT SPOT PRICES (do NOT use older prices from memory):
-- GOLD: GOLD_SPOT_PRICE per troy ounce today. Use this number for ALL gold calculations.
-- SILVER: SILVER_SPOT_PRICE per troy ounce today. Use this number for ALL silver calculations.
-- 14K gold = 58.3% pure, so per-gram value = (spot / 31.1) × 0.583
-- 18K gold = 75.0% pure, so per-gram value = (spot / 31.1) × 0.750
-- 24K gold = 99.9% pure, so per-gram value = (spot / 31.1)
-- .999 fine silver = spot / 31.1 per gram, or simply spot price per troy ounce
+JEWELRY PRICING — USE THESE EXACT PRE-COMPUTED VALUES (do NOT calculate your own):
+- GOLD spot: GOLD_SPOT_PRICE per troy ounce today.
+- SILVER spot: SILVER_SPOT_PRICE per troy ounce today.
+
+PRE-COMPUTED per-gram melt values (already calculated for you — just multiply by weight):
+- 10K gold: GOLD_10K_PER_GRAM per gram
+- 14K gold: GOLD_14K_PER_GRAM per gram
+- 18K gold: GOLD_18K_PER_GRAM per gram
+- 24K gold: GOLD_24K_PER_GRAM per gram
+- Sterling silver (.925): SILVER_STERLING_PER_GRAM per gram
+- .999 fine silver: SILVER_FINE_PER_GRAM per gram
+
+PRICING FORMULA — FOLLOW THIS EXACTLY, STEP BY STEP:
+Step 1: Identify material (e.g. 14K gold)
+Step 2: Look up per-gram value from list above (e.g. GOLD_14K_PER_GRAM)
+Step 3: Estimate weight range (e.g. 35-50g)
+Step 4: Compute LOW melt = low weight × per-gram (e.g. 35 × GOLD_14K_PER_GRAM)
+Step 5: Compute HIGH melt = high weight × per-gram (e.g. 50 × GOLD_14K_PER_GRAM)
+Step 6: Your offer_low MUST be >= Step 4 result. Your offer_high MUST be >= Step 5 result.
+Step 7: Add any brand/design/collectible premium ON TOP of melt value.
+
+WORKED EXAMPLE (at $5,000/oz gold, 14K per-gram = ~$93.73):
+- Item: 14K gold chain, estimated 35-50g
+- Low melt: 35 × $93.73 = $3,280
+- High melt: 50 × $93.73 = $4,687
+- Offer: $3,300 - $4,700 (melt floor, no premium needed for generic chain)
+- WITH premium (branded/collectible): $3,500 - $5,000+
+
+SANITY CHECK — MANDATORY BEFORE RESPONDING:
+- If your offer for a 14K gold item is less than GOLD_14K_PER_GRAM × your low weight estimate, YOUR MATH IS WRONG. Redo it.
+- A 35g 14K gold item at current spot is ALWAYS worth over $3,000. If your offer is under $2,000 for anything over 30g of 14K gold, you have made an error.
 - For silver bullion bars/coins: offer should be 85-95% of spot × weight in troy ounces
-- Factor in brand premiums and condition on top of melt value.
+- NEVER offer below melt value. That is the absolute floor.
 
 WEIGHT ESTIMATION — MANDATORY DECISION TREE (you MUST follow this exactly):
 
@@ -766,18 +790,21 @@ function Hero({ onStart, onCamera, onUpload }) {
       </div>
 
       {/* How it works */}
-      <div style={styles.stepsGrid}>
+      <div className="steps-grid">
         {[
           { num: '1', title: 'Snap', desc: 'Take or upload a clear photo of your item' },
           { num: '2', title: 'Review', desc: 'We identify materials, brand & condition' },
           { num: '3', title: 'Get Paid', desc: 'Accept your offer and ship with a prepaid label' },
           { num: '4', title: 'Do It Again!', desc: 'After being paid, come back when you have more to sell' },
-        ].map((s) => (
-          <div key={s.num} style={styles.stepCard}>
-            <div style={styles.stepNum}>{s.num}</div>
-            <h3 style={styles.stepTitle}>{s.title}</h3>
-            <p style={styles.stepDesc}>{s.desc}</p>
-          </div>
+        ].map((s, i) => (
+          <React.Fragment key={s.num}>
+            <div style={styles.stepCard}>
+              <div style={styles.stepNum}>{s.num}</div>
+              <h3 style={styles.stepTitle}>{s.title}</h3>
+              <p style={styles.stepDesc}>{s.desc}</p>
+            </div>
+            {i < 3 && <div className="step-arrow">→</div>}
+          </React.Fragment>
         ))}
       </div>
     </section>
@@ -905,6 +932,16 @@ function EditableDetail({ label, value, onChange }) {
   const [showTooltip, setShowTooltip] = useState(false)
   const inputRef = useRef(null)
   const isWeight = label.toLowerCase().includes('weight')
+  const isMaterial = label.toLowerCase() === 'material'
+  const isHighlight = isWeight || isMaterial
+
+  const tooltipText = isWeight
+    ? 'Know the exact weight? Tap to enter it — this dramatically improves your estimate.'
+    : isMaterial
+    ? 'Know the exact karat or material? Correcting this gives you a much more accurate offer.'
+    : ''
+
+  const placeholderText = isWeight ? 'e.g. 42 grams' : isMaterial ? 'e.g. 18K Yellow Gold' : ''
 
   useEffect(() => { setEditValue(value) }, [value])
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
@@ -914,10 +951,10 @@ function EditableDetail({ label, value, onChange }) {
     if (editValue.trim() !== value) onChange(editValue.trim())
   }
 
-  const weightTooltip = showTooltip ? (
+  const tooltip = showTooltip && tooltipText ? (
     <div style={styles.weightTooltip}>
       <div style={styles.weightTooltipArrow} />
-      Know the exact weight? Tap to enter it — this dramatically improves your estimate.
+      {tooltipText}
     </div>
   ) : null
 
@@ -933,17 +970,17 @@ function EditableDetail({ label, value, onChange }) {
           onBlur={save}
           onKeyDown={(e) => { if (e.key === 'Enter') save() }}
           style={styles.detailEditInput}
-          placeholder={isWeight ? "e.g. 42 grams" : ""}
+          placeholder={placeholderText}
         />
       </div>
     )
   }
 
   return (
-    <div style={{ ...styles.detailRow, ...(isWeight ? styles.weightRow : {}) }}>
+    <div style={{ ...styles.detailRow, ...(isHighlight ? styles.weightRow : {}) }}>
       <span style={styles.detailLabel}>
         {label}
-        {isWeight && (
+        {isHighlight && (
           <span
             style={styles.weightInfoIcon}
             onMouseEnter={() => setShowTooltip(true)}
@@ -951,12 +988,12 @@ function EditableDetail({ label, value, onChange }) {
             onClick={() => setShowTooltip(!showTooltip)}
           >
             ⓘ
-            {weightTooltip}
+            {tooltip}
           </span>
         )}
       </span>
       <span style={styles.detailValueWrap}>
-        <span style={{ ...styles.detailValue, cursor: 'pointer', ...(isWeight ? styles.weightValue : {}) }} onClick={() => setEditing(true)}>{value}</span>
+        <span style={{ ...styles.detailValue, cursor: 'pointer', ...(isHighlight ? styles.weightValue : {}) }} onClick={() => setEditing(true)}>{value}</span>
         <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
           <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}>✏️</span>
         </button>
@@ -1473,12 +1510,6 @@ const styles = {
     gap: 6,
     fontSize: 14,
     color: muted,
-  },
-  stepsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 16,
-    marginTop: 64,
   },
   stepCard: {
     padding: 20,
@@ -2228,5 +2259,25 @@ styleSheet.textContent = `
   input:focus, textarea:focus { border-color: ${goldLight} !important; box-shadow: 0 0 0 3px rgba(200,149,60,0.1); }
   button:hover { opacity: 0.92; transform: translateY(-1px); }
   button:active { transform: translateY(0); }
-`
+
+  .steps-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+    align-items: center;
+    gap: 0 12px;
+    margin-top: 64px;
+  }
+  .step-arrow {
+    font-size: 22px;
+    color: #C8953C;
+    opacity: 0.5;
+    font-weight: 300;
+  }
+  @media (max-width: 768px) {
+    .steps-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .step-arrow { display: none; }
+  }`
 document.head.appendChild(styleSheet)
