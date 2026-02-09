@@ -926,22 +926,22 @@ const PencilIcon = ({ size = 14 }) => (
   </svg>
 )
 
-function EditableDetail({ label, value, onChange }) {
+function EditableDetail({ label, value, onChange, itemType }) {
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
   const [showTooltip, setShowTooltip] = useState(false)
   const inputRef = useRef(null)
   const isWeight = label.toLowerCase().includes('weight')
-  const isMaterial = label.toLowerCase() === 'material'
-  const isHighlight = isWeight || isMaterial
+  const isJewelryMaterial = label.toLowerCase() === 'material' && ['ring','necklace','bracelet','earrings','coin','bar','other'].includes(itemType)
+  const isHighlight = isWeight || isJewelryMaterial
 
   const tooltipText = isWeight
     ? 'Know the exact weight? Tap to enter it — this dramatically improves your estimate.'
-    : isMaterial
+    : isJewelryMaterial
     ? 'Know the exact karat or material? Correcting this gives you a much more accurate offer.'
     : ''
 
-  const placeholderText = isWeight ? 'e.g. 42 grams' : isMaterial ? 'e.g. 18K Yellow Gold' : ''
+  const placeholderText = isWeight ? 'e.g. 42 grams' : isJewelryMaterial ? 'e.g. 18K Yellow Gold' : ''
 
   useEffect(() => { setEditValue(value) }, [value])
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
@@ -1100,6 +1100,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                   key={i}
                   label={d.label}
                   value={corrections[d.label] || d.value}
+                  itemType={analysis.item_type}
                   onChange={(newVal) => {
                     const updated = { ...corrections, [d.label]: newVal }
                     setCorrections(updated)
