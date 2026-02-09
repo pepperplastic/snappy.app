@@ -267,22 +267,50 @@ JEWELRY PRICING — USE THESE EXACT SPOT PRICES (do NOT use older prices from me
 - For silver bullion bars/coins: offer should be 85-95% of spot × weight in troy ounces
 - Factor in brand premiums and condition on top of melt value.
 
-WEIGHT ESTIMATION — CRITICAL, DO NOT UNDERESTIMATE:
-- Gold is HEAVY. Items almost always weigh MORE than they appear in photos.
-- Chains are especially deceptive — a typical men's gold chain is 20-50+ grams, not 8-12.
-- If you can see a person wearing the chain, look at the thickness and length to estimate better.
-- A chain that hangs to mid-chest on a man is typically 22-24" and weighs 30-50g in solid 14K gold.
-- Estimate weight on the HIGHER end to give sellers a competitive offer. Use these minimums:
-  - Thin women's chain (16-18"): 5-10g minimum
-  - Standard women's chain/necklace: 10-20g
-  - Men's chain (20-24"): 30-50g minimum
-  - Thick/heavy men's chain: 50-80g+
-  - Chain with pendant: add 5-15g for the pendant depending on size
-  - Ring (simple band): 3-8g
-  - Ring (cocktail/statement): 8-15g
-  - Bracelet: 15-35g
-  - Heavy bracelet/bangle: 30-60g+
-- When in doubt, estimate HIGHER. The seller knows the actual weight — a lowball guess loses credibility. It's better to overestimate and adjust down after in-person weighing than to insult the seller with an obviously low number.
+WEIGHT ESTIMATION — MANDATORY DECISION TREE (you MUST follow this exactly):
+
+Gold is DENSE (19.3 g/cm³). Items almost always weigh MORE than they look. You CANNOT eyeball gold weight accurately from a photo. Instead, CLASSIFY the item and USE THE CORRESPONDING WEIGHT RANGE below. Do NOT estimate below these floors under any circumstances.
+
+STEP 1: Classify the item into ONE of these categories:
+STEP 2: Use the weight range for that category. Always use the MIDDLE TO HIGH end.
+
+CHAINS / NECKLACES:
+- Thin women's chain (delicate, 16-18"): 8-15g
+- Standard women's necklace (pendant chain, layering): 12-20g
+- Men's chain, standard (20-24", any link style): 35-50g
+- Men's chain, heavy/thick (Cuban, Mariner, rope): 50-80g+
+- ADD 5-15g if pendant is attached
+
+RINGS:
+- Thin band / wedding band: 3-6g
+- Standard ring with setting: 5-10g
+- Cocktail / statement ring: 10-20g
+- Men's signet or class ring: 10-25g
+
+BRACELETS:
+- Thin women's bracelet / bangle: 8-20g
+- Standard bracelet (tennis, link): 15-35g
+- Men's / heavy bracelet: 30-60g+
+
+EARRINGS:
+- Studs: 1-3g per pair
+- Drops / dangles: 3-10g per pair
+- Large hoops: 5-15g per pair
+
+PENDANTS (standalone, no chain):
+- Small charm: 2-5g
+- Medium pendant: 5-15g
+- Large / heavy pendant: 15-30g
+
+BARS / COINS:
+- Estimate from visible markings (1 oz, 10 oz, etc.)
+- If no markings visible, estimate by apparent size
+
+CRITICAL RULES:
+- A chain that a man is wearing or holding that reaches mid-chest is AT LEAST 35g in 14K gold. NEVER estimate below 30g for any men's chain.
+- If you estimated under 15g for anything other than earrings, a thin women's chain, or a thin ring — you are almost certainly wrong. Re-check your classification.
+- ALWAYS show weight as a range (e.g. "35-50 grams") not a single number.
+- When in doubt, round UP. The seller knows the actual weight — a lowball guess loses credibility instantly.
 
 ═══════════════════════════════════════
 
@@ -874,7 +902,9 @@ const PencilIcon = ({ size = 14 }) => (
 function EditableDetail({ label, value, onChange }) {
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(value)
+  const [showTooltip, setShowTooltip] = useState(false)
   const inputRef = useRef(null)
+  const isWeight = label.toLowerCase().includes('weight')
 
   useEffect(() => { setEditValue(value) }, [value])
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
@@ -883,6 +913,13 @@ function EditableDetail({ label, value, onChange }) {
     setEditing(false)
     if (editValue.trim() !== value) onChange(editValue.trim())
   }
+
+  const weightTooltip = showTooltip ? (
+    <div style={styles.weightTooltip}>
+      <div style={styles.weightTooltipArrow} />
+      Know the exact weight? Tap to enter it — this dramatically improves your estimate.
+    </div>
+  ) : null
 
   if (editing) {
     return (
@@ -896,16 +933,30 @@ function EditableDetail({ label, value, onChange }) {
           onBlur={save}
           onKeyDown={(e) => { if (e.key === 'Enter') save() }}
           style={styles.detailEditInput}
+          placeholder={isWeight ? "e.g. 42 grams" : ""}
         />
       </div>
     )
   }
 
   return (
-    <div style={styles.detailRow}>
-      <span style={styles.detailLabel}>{label}</span>
+    <div style={{ ...styles.detailRow, ...(isWeight ? styles.weightRow : {}) }}>
+      <span style={styles.detailLabel}>
+        {label}
+        {isWeight && (
+          <span
+            style={styles.weightInfoIcon}
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            onClick={() => setShowTooltip(!showTooltip)}
+          >
+            ⓘ
+            {weightTooltip}
+          </span>
+        )}
+      </span>
       <span style={styles.detailValueWrap}>
-        <span style={{ ...styles.detailValue, cursor: 'pointer' }} onClick={() => setEditing(true)}>{value}</span>
+        <span style={{ ...styles.detailValue, cursor: 'pointer', ...(isWeight ? styles.weightValue : {}) }} onClick={() => setEditing(true)}>{value}</span>
         <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
           <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}>✏️</span>
         </button>
@@ -1741,6 +1792,50 @@ const styles = {
     opacity: 0.5,
     transition: 'opacity 0.2s',
   },
+  weightRow: {
+    animation: 'weightPulse 2s ease-in-out 1s 2',
+    borderRadius: 8,
+    position: 'relative',
+  },
+  weightValue: {
+    color: goldAccent,
+    fontWeight: 600,
+  },
+  weightInfoIcon: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    marginLeft: 6,
+    fontSize: 13,
+    color: goldAccent,
+    cursor: 'pointer',
+    position: 'relative',
+  },
+  weightTooltip: {
+    position: 'absolute',
+    bottom: 'calc(100% + 8px)',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    background: '#1A1A1A',
+    color: '#fff',
+    fontSize: 12,
+    lineHeight: 1.4,
+    padding: '10px 14px',
+    borderRadius: 10,
+    width: 220,
+    zIndex: 10,
+    textAlign: 'center',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+    fontWeight: 400,
+  },
+  weightTooltipArrow: {
+    position: 'absolute',
+    bottom: -5,
+    left: '50%',
+    transform: 'translateX(-50%) rotate(45deg)',
+    width: 10,
+    height: 10,
+    background: '#1A1A1A',
+  },
   detailEditInput: {
     padding: '4px 8px',
     borderRadius: 6,
@@ -2119,6 +2214,7 @@ const styleSheet = document.createElement('style')
 styleSheet.textContent = `
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
+  @keyframes weightPulse { 0%, 100% { background: transparent; } 50% { background: rgba(200, 149, 60, 0.08); } }
   @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
