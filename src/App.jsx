@@ -918,7 +918,7 @@ function AnalyzingScreen({ imageData }) {
             {images.map((img, i) => (
               <div key={i} style={styles.analyzingThumbWrap}>
                 <img src={img} alt={`Photo ${i + 1}`} style={styles.analyzingThumb} />
-                {i === 0 && <div style={styles.scanLine} />}
+                <div style={{ ...styles.scanLine, animationDelay: `${i * 0.4}s` }} />
               </div>
             ))}
           </div>
