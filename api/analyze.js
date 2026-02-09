@@ -5,8 +5,8 @@ let priceCache = {
   silver: null,
 };
 
-const FALLBACK_GOLD = 4900;
-const FALLBACK_SILVER = 90;
+const FALLBACK_GOLD = 5000;
+const FALLBACK_SILVER = 81;
 
 async function getSpotPrices() {
   const today = new Date().toISOString().slice(0, 10);
@@ -61,15 +61,28 @@ async function getSpotPrices() {
 function injectSpotPrices(body, gold, silver) {
   const modified = JSON.parse(JSON.stringify(body));
 
+  // Pre-compute per-gram melt values
+  const perGramPure = gold / 31.1;
+  const gold10k = (perGramPure * 0.417).toFixed(2);
+  const gold14k = (perGramPure * 0.583).toFixed(2);
+  const gold18k = (perGramPure * 0.750).toFixed(2);
+  const gold24k = (perGramPure * 0.999).toFixed(2);
+  const silverSterling = ((silver / 31.1) * 0.925).toFixed(2);
+  const silverFine = (silver / 31.1).toFixed(2);
+
   if (modified.messages && modified.messages[0] && modified.messages[0].content) {
     for (const block of modified.messages[0].content) {
       if (block.type === 'text' && block.text) {
-        const hadGold = block.text.includes('GOLD_SPOT_PRICE');
-        const hadSilver = block.text.includes('SILVER_SPOT_PRICE');
         block.text = block.text
           .replace('GOLD_SPOT_PRICE', '$' + gold.toLocaleString())
-          .replace('SILVER_SPOT_PRICE', '$' + silver.toLocaleString());
-        console.log(`Price injection: gold=$${gold} (replaced: ${hadGold}), silver=$${silver} (replaced: ${hadSilver})`);
+          .replace('SILVER_SPOT_PRICE', '$' + silver.toLocaleString())
+          .replace(/GOLD_10K_PER_GRAM/g, '$' + gold10k)
+          .replace(/GOLD_14K_PER_GRAM/g, '$' + gold14k)
+          .replace(/GOLD_18K_PER_GRAM/g, '$' + gold18k)
+          .replace(/GOLD_24K_PER_GRAM/g, '$' + gold24k)
+          .replace(/SILVER_STERLING_PER_GRAM/g, '$' + silverSterling)
+          .replace(/SILVER_FINE_PER_GRAM/g, '$' + silverFine);
+        console.log(`Price injection: gold=$${gold}, 14K/g=$${gold14k}, 18K/g=$${gold18k}, silver=$${silver}`);
       }
     }
   }
