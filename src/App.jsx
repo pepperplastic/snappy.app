@@ -1313,7 +1313,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData }) {
           >
             <span style={styles.shippingOptionIcon}>📦</span>
             <span style={styles.shippingOptionTitle}>Send Me a Kit</span>
-            <span style={styles.shippingOptionDesc}>We mail you a box, padding & prepaid label — everything you need</span>
+            <span style={styles.shippingOptionDesc}>Free box, padding & pre-paid label mailed to you</span>
           </button>
           <button
             type="button"
@@ -1322,71 +1322,70 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData }) {
           >
             <span style={styles.shippingOptionIcon}>🏷️</span>
             <span style={styles.shippingOptionTitle}>Just the Label</span>
-            <span style={styles.shippingOptionDesc}>We email you a prepaid label to print — use your own packaging</span>
+            <span style={styles.shippingOptionDesc}>Pre-paid label emailed in minutes — use your own box</span>
           </button>
         </div>
 
         {isKit && (
-          <>
-            <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-              We'll ship your free kit to the address below — arrives in 2-3 business days.
-            </p>
-            <div style={styles.formGroup}>
-              <label style={styles.formLabel}>Street Address *</label>
-              <input
-                type="text"
-                required
-                value={shippingData.address}
-                onChange={update('address')}
-                placeholder="123 Main Street, Apt 4B"
-                style={styles.formInput}
-              />
-            </div>
-            <div style={styles.formRow}>
-              <div style={{ ...styles.formGroup, flex: 2 }}>
-                <label style={styles.formLabel}>City *</label>
-                <input
-                  type="text"
-                  required
-                  value={shippingData.city}
-                  onChange={update('city')}
-                  placeholder="Miami"
-                  style={styles.formInput}
-                />
-              </div>
-              <div style={{ ...styles.formGroup, flex: 1 }}>
-                <label style={styles.formLabel}>State *</label>
-                <input
-                  type="text"
-                  required
-                  value={shippingData.state}
-                  onChange={update('state')}
-                  placeholder="FL"
-                  maxLength={2}
-                  style={{ ...styles.formInput, textTransform: 'uppercase' }}
-                />
-              </div>
-              <div style={{ ...styles.formGroup, flex: 1 }}>
-                <label style={styles.formLabel}>ZIP *</label>
-                <input
-                  type="text"
-                  required
-                  value={shippingData.zip}
-                  onChange={update('zip')}
-                  placeholder="33101"
-                  maxLength={10}
-                  style={styles.formInput}
-                />
-              </div>
-            </div>
-          </>
+          <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
+            We'll mail you a free box and pre-paid shipping label — everything you need. Arrives in 2-3 business days.
+          </p>
         )}
 
         {!isKit && (
           <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll send the prepaid shipping label to <strong>{leadData.email}</strong>. Just print it, stick it on your package, and drop it off.
+            We'll email you a pre-paid shipping label to print — you use your own packaging. Label reaches your inbox in minutes.
           </p>
         )}
+
+        <div style={styles.formGroup}>
+          <label style={styles.formLabel}>Street Address *</label>
+          <input
+            type="text"
+            required
+            value={shippingData.address}
+            onChange={update('address')}
+            placeholder="123 Main Street, Apt 4B"
+            style={styles.formInput}
+          />
+        </div>
+        <div style={styles.formRow}>
+          <div style={{ ...styles.formGroup, flex: 2 }}>
+            <label style={styles.formLabel}>City *</label>
+            <input
+              type="text"
+              required
+              value={shippingData.city}
+              onChange={update('city')}
+              placeholder="Miami"
+              style={styles.formInput}
+            />
+          </div>
+          <div style={{ ...styles.formGroup, flex: 1 }}>
+            <label style={styles.formLabel}>State *</label>
+            <input
+              type="text"
+              required
+              value={shippingData.state}
+              onChange={update('state')}
+              placeholder="FL"
+              maxLength={2}
+              style={{ ...styles.formInput, textTransform: 'uppercase' }}
+            />
+          </div>
+          <div style={{ ...styles.formGroup, flex: 1 }}>
+            <label style={styles.formLabel}>ZIP *</label>
+            <input
+              type="text"
+              required
+              value={shippingData.zip}
+              onChange={update('zip')}
+              placeholder="33101"
+              maxLength={10}
+              style={styles.formInput}
+            />
+          </div>
+        </div>
 
         <button type="submit" style={styles.heroCta}>
           <span>{isKit ? 'Send My Free Kit' : 'Email My Label'}</span>
