@@ -1798,7 +1798,7 @@ const styles = {
     position: 'relative',
   },
   weightValue: {
-    color: goldAccent,
+    color: goldLight,
     fontWeight: 600,
   },
   weightInfoIcon: {
@@ -1806,7 +1806,7 @@ const styles = {
     alignItems: 'center',
     marginLeft: 6,
     fontSize: 13,
-    color: goldAccent,
+    color: goldLight,
     cursor: 'pointer',
     position: 'relative',
   },
