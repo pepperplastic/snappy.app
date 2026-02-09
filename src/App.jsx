@@ -460,7 +460,7 @@ export default function App() {
   const [imageData, setImageData] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState(null)
-  const [leadData, setLeadData] = useState({ name: '', email: '', phone: '', notes: '' })
+  const [leadData, setLeadData] = useState({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
   const [isReEstimating, setIsReEstimating] = useState(false)
   const [showWebcam, setShowWebcam] = useState(false)
   const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: 'kit' })
@@ -529,7 +529,7 @@ export default function App() {
     setImageData(null)
     setAnalysis(null)
     setError(null)
-    setLeadData({ name: '', email: '', phone: '', notes: '' })
+    setLeadData({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
     setShippingData({ address: '', city: '', state: '', zip: '', method: 'kit' })
   }
 
@@ -1233,16 +1233,29 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis }) {
       </p>
 
       <form onSubmit={onSubmit} style={styles.form}>
-        <div style={styles.formGroup}>
-          <label style={styles.formLabel}>Full Name *</label>
-          <input
-            type="text"
-            required
-            value={leadData.name}
-            onChange={update('name')}
-            placeholder="Jane Smith"
-            style={styles.formInput}
-          />
+        <div style={styles.formRow}>
+          <div style={{ ...styles.formGroup, flex: 1 }}>
+            <label style={styles.formLabel}>First Name *</label>
+            <input
+              type="text"
+              required
+              value={leadData.firstName}
+              onChange={update('firstName')}
+              placeholder="Jane"
+              style={styles.formInput}
+            />
+          </div>
+          <div style={{ ...styles.formGroup, flex: 1 }}>
+            <label style={styles.formLabel}>Last Name *</label>
+            <input
+              type="text"
+              required
+              value={leadData.lastName}
+              onChange={update('lastName')}
+              placeholder="Smith"
+              style={styles.formInput}
+            />
+          </div>
         </div>
         <div style={styles.formGroup}>
           <label style={styles.formLabel}>Email *</label>
@@ -1300,7 +1313,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData }) {
     <section style={styles.centeredSection}>
       <h2 style={styles.sectionTitle}>How would you like to ship?</h2>
       <p style={styles.sectionSub}>
-        Choose how you'd like to send us your item, {leadData.name?.split(' ')[0] || 'there'}. Either way, shipping is <strong>completely free</strong> and fully insured.
+        Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong> and fully insured.
       </p>
 
       <form onSubmit={onSubmit} style={styles.form}>
