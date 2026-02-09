@@ -1532,7 +1532,7 @@ const styles = {
     fontWeight: 500,
     fontSize: 22,
     color: gold,
-    margin: '0 -1px 0 -2px',
+    margin: '0 -1px 0 -1.5px',
     textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25)',
   },
   logoGold: {
@@ -1664,16 +1664,17 @@ const styles = {
   trustRow: {
     display: 'flex',
     justifyContent: 'center',
-    gap: 24,
+    gap: 16,
     marginTop: 28,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
   },
   trustItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    fontSize: 14,
+    gap: 4,
+    fontSize: 12,
     color: muted,
+    whiteSpace: 'nowrap',
   },
   stepCard: {
     padding: 20,
