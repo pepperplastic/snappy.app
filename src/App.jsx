@@ -539,11 +539,7 @@ export default function App() {
   const handleLeadSubmit = (e) => {
     e.preventDefault()
     console.log('Lead submitted:', { ...leadData, analysis, imageData: imageData ? '[base64]' : null, directQuote })
-    if (directQuote) {
-      setStep(STEPS.SUBMITTED)
-    } else {
-      setStep(STEPS.SHIPPING)
-    }
+    setStep(STEPS.SHIPPING)
   }
 
   const handleShippingSubmit = (e) => {
@@ -583,7 +579,7 @@ export default function App() {
             </span>
           </button>
           <div style={styles.navLinks}>
-            {step !== STEPS.HERO && (
+            {step !== STEPS.HERO && !directQuote && (
               <button onClick={reset} style={styles.navLink}>Start Over</button>
             )}
             <button onClick={() => { setDirectQuote(true); setStep(STEPS.LEAD_FORM); }} style={styles.navLink}>Get a Quote</button>
@@ -1466,9 +1462,13 @@ function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
         </div>
         <h2 style={styles.sectionTitle}>Quote request received!</h2>
         <p style={styles.sectionSub}>
-          We'll review your submission and get back to you with an offer within a few hours. Check your email for a confirmation.
+          We'll review your submission and get back to you with an offer. Want a faster estimate? Snap a photo of your item and get an instant AI-powered appraisal right now.
         </p>
-        <button onClick={onReset} style={styles.captureBtnSecondary}>
+        <button onClick={onReset} style={styles.heroCta}>
+          <CameraIcon size={20} />
+          <span>Snap a Photo for Instant Estimate</span>
+        </button>
+        <button onClick={onReset} style={{ ...styles.captureBtnSecondary, marginTop: 12 }}>
           Back to Home
         </button>
       </section>
