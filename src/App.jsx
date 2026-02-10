@@ -542,8 +542,26 @@ export default function App() {
     setStep(STEPS.SHIPPING)
   }
 
-  const submitLead = (extraData = {}) => {
+  const compressImage = (dataUrl, maxWidth = 800) => {
+    return new Promise((resolve) => {
+      if (!dataUrl) return resolve('')
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ratio = Math.min(maxWidth / img.width, 1)
+        canvas.width = img.width * ratio
+        canvas.height = img.height * ratio
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/jpeg', 0.6))
+      }
+      img.src = dataUrl
+    })
+  }
+
+  const submitLead = async (extraData = {}) => {
     const fullAddress = [shippingData.address, shippingData.city, shippingData.state, shippingData.zip].filter(Boolean).join(', ')
+    const compressedImage = await compressImage(imageData)
     const payload = {
       firstName: leadData.firstName,
       lastName: leadData.lastName,
@@ -555,7 +573,7 @@ export default function App() {
       shippingMethod: shippingData.method,
       address: fullAddress,
       source: directQuote ? 'direct_quote' : 'photo_flow',
-      image: imageData || '',
+      image: compressedImage,
     }
     fetch('/api/submit-lead', {
       method: 'POST',
