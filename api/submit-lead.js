@@ -9,13 +9,15 @@ export default async function handler(req, res) {
     const response = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
       body: JSON.stringify(req.body),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain' },
       redirect: 'follow',
     });
 
+    const text = await response.text();
+    console.log('Google Script response:', response.status, text);
     res.status(200).json({ status: 'ok' });
   } catch (err) {
     console.error('Lead submit error:', err);
-    res.status(200).json({ status: 'ok' }); // Don't block the user even if email fails
+    res.status(200).json({ status: 'ok' });
   }
 }
