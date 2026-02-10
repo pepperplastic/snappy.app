@@ -539,16 +539,33 @@ export default function App() {
   const handleLeadSubmit = (e) => {
     e.preventDefault()
     console.log('Lead submitted:', { ...leadData, analysis, imageData: imageData ? '[base64]' : null, directQuote })
-    if (directQuote) {
-      setStep(STEPS.SUBMITTED)
-    } else {
-      setStep(STEPS.SHIPPING)
+    setStep(STEPS.SHIPPING)
+  }
+
+  const submitLead = (extraData = {}) => {
+    const fullAddress = [shippingData.address, shippingData.city, shippingData.state, shippingData.zip].filter(Boolean).join(', ')
+    const payload = {
+      firstName: leadData.firstName,
+      lastName: leadData.lastName,
+      email: leadData.email,
+      phone: leadData.phone,
+      notes: leadData.notes,
+      item: analysis?.title || '',
+      offerRange: analysis?.offer_range || '',
+      shippingMethod: shippingData.method,
+      address: fullAddress,
+      source: directQuote ? 'direct_quote' : 'photo_flow',
     }
+    fetch('/api/submit-lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(err => console.error('Lead submit error:', err))
   }
 
   const handleShippingSubmit = (e) => {
     e.preventDefault()
-    console.log('Shipping submitted:', { ...leadData, ...shippingData, analysis, imageData: '[base64]' })
+    submitLead()
     setStep(STEPS.SUBMITTED)
   }
 
@@ -583,10 +600,12 @@ export default function App() {
             </span>
           </button>
           <div style={styles.navLinks}>
-            {step !== STEPS.HERO && (
-              <button onClick={reset} style={styles.navLink}>Start Over</button>
+            {step !== STEPS.HERO && !directQuote && step !== STEPS.SUBMITTED && (
+              <button onClick={reset} style={styles.navLink}>↩ Reset</button>
             )}
-            <button onClick={() => { setDirectQuote(true); setStep(STEPS.LEAD_FORM); }} style={styles.navLink}>Get a Quote</button>
+            {step !== STEPS.SUBMITTED && (
+              <button onClick={() => { setDirectQuote(true); setStep(STEPS.LEAD_FORM); }} style={styles.navLink}>Quote</button>
+            )}
             <button onClick={() => setShowContact(true)} style={styles.navLink}>Contact</button>
           </div>
         </div>
@@ -1466,9 +1485,13 @@ function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
         </div>
         <h2 style={styles.sectionTitle}>Quote request received!</h2>
         <p style={styles.sectionSub}>
-          We'll review your submission and get back to you with an offer within a few hours. Check your email for a confirmation.
+          We'll review your submission and get back to you with an offer. Want a faster estimate? Snap a photo of your item and get an instant AI-powered appraisal right now.
         </p>
-        <button onClick={onReset} style={styles.captureBtnSecondary}>
+        <button onClick={onReset} style={styles.heroCta}>
+          <CameraIcon size={20} />
+          <span>Snap a Photo for Instant Estimate</span>
+        </button>
+        <button onClick={onReset} style={{ ...styles.captureBtnSecondary, marginTop: 12 }}>
           Back to Home
         </button>
       </section>
@@ -1603,18 +1626,20 @@ const styles = {
   navLinks: {
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
+    flexShrink: 0,
   },
   navLink: {
     background: 'none',
     border: 'none',
-    padding: '7px 12px',
+    padding: '7px 10px',
     borderRadius: 8,
     cursor: 'pointer',
     fontSize: 13,
     color: muted,
     fontFamily: 'inherit',
     transition: 'all 0.2s',
+    whiteSpace: 'nowrap',
   },
   modalOverlay: {
     position: 'fixed',
