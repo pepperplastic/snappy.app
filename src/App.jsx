@@ -472,14 +472,14 @@ export default function App() {
 
   const handleCamera = () => {
     if (isMobile) {
-      fileInputRef.current?.click()
+      cameraInputRef.current?.click()
     } else {
       setShowWebcam(true)
     }
   }
 
   const notifyPhoto = async (result, photos) => {
-    const smallPhoto = await compressImage(photos?.[0])
+    const smallPhoto = await compressForEmail(photos?.[0])
     fetch('/api/submit-lead', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -564,7 +564,7 @@ export default function App() {
     setStep(STEPS.SHIPPING)
   }
 
-  const compressImage = (dataUrl, maxWidth = 800) => {
+  const compressForEmail = (dataUrl, maxWidth = 800) => {
     return new Promise((resolve) => {
       if (!dataUrl) return resolve('')
       const img = new Image()
@@ -583,7 +583,7 @@ export default function App() {
 
   const submitLead = async (extraData = {}) => {
     const fullAddress = [shippingData.address, shippingData.city, shippingData.state, shippingData.zip].filter(Boolean).join(', ')
-    const compressedImage = await compressImage(Array.isArray(imageData) ? imageData[0] : imageData)
+    const compressedImage = await compressForEmail(Array.isArray(imageData) ? imageData[0] : imageData)
     const payload = {
       firstName: leadData.firstName,
       lastName: leadData.lastName,
@@ -743,6 +743,14 @@ export default function App() {
         type="file"
         accept="image/*"
         multiple
+        style={{ display: 'none' }}
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
         style={{ display: 'none' }}
         onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
       />
