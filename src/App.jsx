@@ -478,12 +478,33 @@ export default function App() {
     }
   }
 
+  const notifyPhoto = async (result, photos) => {
+    const smallPhoto = await compressImage(photos?.[0])
+    fetch('/api/submit-lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        firstName: '(anonymous)',
+        lastName: '',
+        email: '',
+        phone: '',
+        notes: '',
+        item: result?.title || '',
+        offerRange: result?.offer_range || '',
+        shippingMethod: '',
+        address: '',
+        source: 'photo_browse',
+        image: smallPhoto,
+      }),
+    }).catch(err => console.error('Photo notify error:', err))
+  }
+
   const handleWebcamCapture = (base64) => {
     setShowWebcam(false)
     setImageData([base64])
     setStep(STEPS.ANALYZING)
     analyzeImage([base64])
-      .then(result => { setAnalysis(result); setStep(STEPS.OFFER) })
+      .then(result => { setAnalysis(result); setStep(STEPS.OFFER); notifyPhoto(result, [base64]); })
       .catch(err => {
         console.error('Analysis error:', err)
         setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
@@ -506,6 +527,7 @@ export default function App() {
       const result = await analyzeImage(compressed)
       setAnalysis(result)
       setStep(STEPS.OFFER)
+      notifyPhoto(result, compressed)
     } catch (err) {
       console.error('Analysis error:', err)
       setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
@@ -561,7 +583,7 @@ export default function App() {
 
   const submitLead = async (extraData = {}) => {
     const fullAddress = [shippingData.address, shippingData.city, shippingData.state, shippingData.zip].filter(Boolean).join(', ')
-    const compressedImage = await compressImage(imageData)
+    const compressedImage = await compressImage(Array.isArray(imageData) ? imageData[0] : imageData)
     const payload = {
       firstName: leadData.firstName,
       lastName: leadData.lastName,
