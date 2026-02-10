@@ -555,6 +555,7 @@ export default function App() {
       shippingMethod: shippingData.method,
       address: fullAddress,
       source: directQuote ? 'direct_quote' : 'photo_flow',
+      image: imageData || '',
     }
     fetch('/api/submit-lead', {
       method: 'POST',
@@ -600,10 +601,7 @@ export default function App() {
             </span>
           </button>
           <div style={styles.navLinks}>
-            {step !== STEPS.HERO && !directQuote && step !== STEPS.SUBMITTED && (
-              <button onClick={reset} style={styles.navLink}>↩ Reset</button>
-            )}
-            {step !== STEPS.SUBMITTED && (
+            {step === STEPS.HERO && (
               <button onClick={() => { setDirectQuote(true); setStep(STEPS.LEAD_FORM); }} style={styles.navLink}>Quote</button>
             )}
             <button onClick={() => setShowContact(true)} style={styles.navLink}>Contact</button>
