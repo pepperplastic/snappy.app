@@ -472,7 +472,7 @@ export default function App() {
 
   const handleCamera = () => {
     if (isMobile) {
-      cameraInputRef.current?.click()
+      fileInputRef.current?.click()
     } else {
       setShowWebcam(true)
     }
@@ -743,14 +743,6 @@ export default function App() {
         type="file"
         accept="image/*"
         multiple
-        style={{ display: 'none' }}
-        onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
-      />
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
         style={{ display: 'none' }}
         onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
       />
