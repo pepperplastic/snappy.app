@@ -464,6 +464,8 @@ export default function App() {
   const [isReEstimating, setIsReEstimating] = useState(false)
   const [showWebcam, setShowWebcam] = useState(false)
   const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: 'kit' })
+  const [showContact, setShowContact] = useState(false)
+  const [directQuote, setDirectQuote] = useState(false)
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
@@ -531,12 +533,17 @@ export default function App() {
     setError(null)
     setLeadData({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
     setShippingData({ address: '', city: '', state: '', zip: '', method: 'kit' })
+    setDirectQuote(false)
   }
 
   const handleLeadSubmit = (e) => {
     e.preventDefault()
-    console.log('Lead submitted:', { ...leadData, analysis, imageData: '[base64]' })
-    setStep(STEPS.SHIPPING)
+    console.log('Lead submitted:', { ...leadData, analysis, imageData: imageData ? '[base64]' : null, directQuote })
+    if (directQuote) {
+      setStep(STEPS.SUBMITTED)
+    } else {
+      setStep(STEPS.SHIPPING)
+    }
   }
 
   const handleShippingSubmit = (e) => {
@@ -575,11 +582,36 @@ export default function App() {
               <span style={styles.logoGold}>gold</span>
             </span>
           </button>
-          {step !== STEPS.HERO && (
-            <button onClick={reset} style={styles.navReset}>Start Over</button>
-          )}
+          <div style={styles.navLinks}>
+            {step !== STEPS.HERO && (
+              <button onClick={reset} style={styles.navLink}>Start Over</button>
+            )}
+            <button onClick={() => { setDirectQuote(true); setStep(STEPS.LEAD_FORM); }} style={styles.navLink}>Get a Quote</button>
+            <button onClick={() => setShowContact(true)} style={styles.navLink}>Contact</button>
+          </div>
         </div>
       </nav>
+
+      {/* ── Contact Modal ── */}
+      {showContact && (
+        <div style={styles.modalOverlay} onClick={() => setShowContact(false)}>
+          <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowContact(false)} style={styles.modalClose}>✕</button>
+            <h3 style={{ fontFamily: '"Playfair Display", serif', fontSize: 24, marginBottom: 8, color: '#1A1A1A' }}>Get in Touch</h3>
+            <p style={{ color: '#888', fontSize: 14, marginBottom: 24 }}>We'd love to hear from you.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <a href="mailto:hello@snappy.gold" style={styles.contactItem}>
+                <span style={styles.contactIcon}>✉</span>
+                <span>hello@snappy.gold</span>
+              </a>
+              <a href="tel:+1" style={styles.contactItem}>
+                <span style={styles.contactIcon}>☎</span>
+                <span>Call us</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main style={styles.main}>
         {step === STEPS.HERO && (
@@ -614,6 +646,7 @@ export default function App() {
             setLeadData={setLeadData}
             onSubmit={handleLeadSubmit}
             analysis={analysis}
+            directQuote={directQuote}
           />
         )}
         {step === STEPS.SHIPPING && (
@@ -624,12 +657,12 @@ export default function App() {
             leadData={leadData}
           />
         )}
-        {step === STEPS.SUBMITTED && <SubmittedScreen onReset={reset} shippingMethod={shippingData.method} />}
+        {step === STEPS.SUBMITTED && <SubmittedScreen onReset={reset} shippingMethod={shippingData.method} directQuote={directQuote} />}
       </main>
 
       {/* ── FOOTER ── */}
       <footer style={styles.footer}>
-        <p style={styles.footerText}>© 2025 Snappy · snappy.gold</p>
+        <p style={styles.footerText}>© 2026 Snappy · snappy.gold</p>
         <p style={styles.footerDisclaimer}>
           Estimates are preliminary and not binding. Final offers require in-person evaluation.
         </p>
@@ -1221,16 +1254,19 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
 // ═══════════════════════════════════════════════
 //  LEAD FORM
 // ═══════════════════════════════════════════════
-function LeadForm({ leadData, setLeadData, onSubmit, analysis }) {
+function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
   const update = (field) => (e) =>
     setLeadData((prev) => ({ ...prev, [field]: e.target.value }))
 
   return (
     <section style={styles.centeredSection}>
-      <h2 style={styles.sectionTitle}>Almost there!</h2>
+      <h2 style={styles.sectionTitle}>{directQuote ? 'Get a Quote' : 'Almost there!'}</h2>
       <p style={styles.sectionSub}>
-        Enter your details and we'll send a prepaid shipping label. Once we receive and verify your{' '}
-        <strong>{analysis?.title?.toLowerCase() || 'item'}</strong>, we'll make a firm offer — typically within 24 hours.
+        {directQuote
+          ? 'Tell us about what you\'d like to sell and we\'ll get back to you with an offer.'
+          : <>Enter your details and we'll send a prepaid shipping label. Once we receive and verify your{' '}
+            <strong>{analysis?.title?.toLowerCase() || 'item'}</strong>, we'll make a firm offer — typically within 24 hours.</>
+        }
       </p>
 
       <form onSubmit={onSubmit} style={styles.form}>
@@ -1280,21 +1316,24 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis }) {
           />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.formLabel}>Anything else about this item?</label>
+          <label style={styles.formLabel}>{directQuote ? 'Describe your item(s) *' : 'Anything else about this item?'}</label>
           <textarea
             value={leadData.notes}
             onChange={update('notes')}
-            placeholder="e.g. inherited from grandmother, purchased at Tiffany's in 2018, has original box..."
-            rows={3}
+            required={directQuote}
+            placeholder={directQuote
+              ? 'e.g. 14K gold chain, approx 30g; Rolex Submariner 2019; collection of silver coins...'
+              : 'e.g. inherited from grandmother, purchased at Tiffany\'s in 2018, has original box...'}
+            rows={directQuote ? 4 : 3}
             style={{ ...styles.formInput, resize: 'vertical', fontFamily: 'inherit' }}
           />
         </div>
         <button type="submit" style={styles.heroCta}>
-          <span>Continue</span>
+          <span>{directQuote ? 'Submit' : 'Continue'}</span>
           <ArrowIcon size={18} />
         </button>
         <p style={styles.formDisclaimer}>
-          No cost, no commitment. If you don't like our offer, we ship your item back free.
+          No cost, no commitment. {directQuote ? 'We\'ll respond within a few hours.' : 'If you don\'t like our offer, we ship your item back free.'}
         </p>
       </form>
     </section>
@@ -1416,8 +1455,26 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData }) {
 // ═══════════════════════════════════════════════
 //  SUBMITTED CONFIRMATION
 // ═══════════════════════════════════════════════
-function SubmittedScreen({ onReset, shippingMethod }) {
+function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
   const isKit = shippingMethod === 'kit'
+
+  if (directQuote) {
+    return (
+      <section style={styles.centeredSection}>
+        <div style={styles.successIcon}>
+          <CheckIcon size={40} />
+        </div>
+        <h2 style={styles.sectionTitle}>Quote request received!</h2>
+        <p style={styles.sectionSub}>
+          We'll review your submission and get back to you with an offer within a few hours. Check your email for a confirmation.
+        </p>
+        <button onClick={onReset} style={styles.captureBtnSecondary}>
+          Back to Home
+        </button>
+      </section>
+    )
+  }
+
   return (
     <section style={styles.centeredSection}>
       <div style={styles.successIcon}>
@@ -1543,16 +1600,72 @@ const styles = {
     letterSpacing: '0.01em',
     textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25), 0 0 3px rgba(212,163,68,0.2)',
   },
-  navReset: {
+  navLinks: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  navLink: {
     background: 'none',
-    border: `1px solid ${border}`,
-    padding: '7px 16px',
+    border: 'none',
+    padding: '7px 12px',
     borderRadius: 8,
     cursor: 'pointer',
     fontSize: 13,
     color: muted,
     fontFamily: 'inherit',
     transition: 'all 0.2s',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0,0,0,0.4)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 200,
+    padding: 20,
+  },
+  modalContent: {
+    background: '#FFFDF8',
+    borderRadius: 16,
+    padding: 32,
+    maxWidth: 380,
+    width: '100%',
+    position: 'relative',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+  },
+  modalClose: {
+    position: 'absolute',
+    top: 12,
+    right: 16,
+    background: 'none',
+    border: 'none',
+    fontSize: 18,
+    cursor: 'pointer',
+    color: muted,
+    padding: 4,
+  },
+  contactItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: '14px 16px',
+    borderRadius: 10,
+    border: `1px solid ${border}`,
+    textDecoration: 'none',
+    color: dark,
+    fontSize: 15,
+    transition: 'all 0.2s',
+  },
+  contactIcon: {
+    fontSize: 20,
+    width: 24,
+    textAlign: 'center',
   },
 
   // ── Main ──
