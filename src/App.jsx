@@ -585,7 +585,11 @@ export default function App() {
   const handleShippingSubmit = (e) => {
     e.preventDefault()
     submitLead()
-    setStep(STEPS.SUBMITTED)
+    if (directQuote) {
+      setStep(STEPS.CAPTURE)
+    } else {
+      setStep(STEPS.SUBMITTED)
+    }
   }
 
   return (
@@ -1305,6 +1309,19 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
       </p>
 
       <form onSubmit={onSubmit} style={styles.form}>
+        {directQuote && (
+          <div style={styles.formGroup}>
+            <label style={styles.formLabel}>Describe your item(s) *</label>
+            <textarea
+              value={leadData.notes}
+              onChange={update('notes')}
+              required
+              placeholder="e.g. 14K gold chain, approx 30g; Rolex Submariner 2019; collection of silver coins..."
+              rows={4}
+              style={{ ...styles.formInput, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
+        )}
         <div style={styles.formRow}>
           <div style={{ ...styles.formGroup, flex: 1 }}>
             <label style={styles.formLabel}>First Name *</label>
@@ -1350,19 +1367,18 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
             style={styles.formInput}
           />
         </div>
-        <div style={styles.formGroup}>
-          <label style={styles.formLabel}>{directQuote ? 'Describe your item(s) *' : 'Anything else about this item?'}</label>
-          <textarea
-            value={leadData.notes}
-            onChange={update('notes')}
-            required={directQuote}
-            placeholder={directQuote
-              ? 'e.g. 14K gold chain, approx 30g; Rolex Submariner 2019; collection of silver coins...'
-              : 'e.g. inherited from grandmother, purchased at Tiffany\'s in 2018, has original box...'}
-            rows={directQuote ? 4 : 3}
-            style={{ ...styles.formInput, resize: 'vertical', fontFamily: 'inherit' }}
-          />
-        </div>
+        {!directQuote && (
+          <div style={styles.formGroup}>
+            <label style={styles.formLabel}>Anything else about this item?</label>
+            <textarea
+              value={leadData.notes}
+              onChange={update('notes')}
+              placeholder="e.g. inherited from grandmother, purchased at Tiffany's in 2018, has original box..."
+              rows={3}
+              style={{ ...styles.formInput, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
+        )}
         <button type="submit" style={styles.heroCta}>
           <span>{directQuote ? 'Submit' : 'Continue'}</span>
           <ArrowIcon size={18} />
