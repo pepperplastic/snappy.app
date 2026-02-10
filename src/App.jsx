@@ -538,7 +538,7 @@ export default function App() {
 
   const handleLeadSubmit = (e) => {
     e.preventDefault()
-    console.log('Lead submitted:', { ...leadData, analysis, imageData: imageData ? '[base64]' : null, directQuote })
+    submitLead()
     setStep(STEPS.SHIPPING)
   }
 
