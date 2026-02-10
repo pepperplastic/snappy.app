@@ -542,9 +542,30 @@ export default function App() {
     setStep(STEPS.SHIPPING)
   }
 
+  const submitLead = (extraData = {}) => {
+    const fullAddress = [shippingData.address, shippingData.city, shippingData.state, shippingData.zip].filter(Boolean).join(', ')
+    const payload = {
+      firstName: leadData.firstName,
+      lastName: leadData.lastName,
+      email: leadData.email,
+      phone: leadData.phone,
+      notes: leadData.notes,
+      item: analysis?.title || '',
+      offerRange: analysis?.offer_range || '',
+      shippingMethod: shippingData.method,
+      address: fullAddress,
+      source: directQuote ? 'direct_quote' : 'photo_flow',
+    }
+    fetch('/api/submit-lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(err => console.error('Lead submit error:', err))
+  }
+
   const handleShippingSubmit = (e) => {
     e.preventDefault()
-    console.log('Shipping submitted:', { ...leadData, ...shippingData, analysis, imageData: '[base64]' })
+    submitLead()
     setStep(STEPS.SUBMITTED)
   }
 
