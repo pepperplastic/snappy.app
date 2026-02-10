@@ -846,14 +846,13 @@ function Hero({ onStart, onCamera, onUpload }) {
     { name: 'Gold', icon: <GoldBarIcon /> },
     { name: 'Watches', icon: <WatchIcon /> },
     { name: 'Diamonds', icon: <DiamondIcon /> },
-    { name: 'Handbags', icon: <PurseIcon /> },
+    { name: 'Designer Belts', icon: <BeltIcon /> },
     { name: 'Silver', icon: <SilverBarIcon /> },
     { name: 'Jewelry', icon: <NecklaceIcon /> },
     { name: 'Rings', icon: <RingIcon /> },
-    { name: 'Platinum', icon: <PlatBarIcon /> },
+    { name: 'Handbags', icon: <PurseIcon /> },
     { name: 'Coins', icon: <CoinIcon /> },
-    { name: 'Belts', icon: <BeltIcon /> },
-    { name: 'Sunglasses', icon: <SunglassesIcon /> },
+    { name: 'Designer Glasses', icon: <SunglassesIcon /> },
   ]
 
   // Double the list for seamless loop
