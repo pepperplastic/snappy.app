@@ -490,7 +490,14 @@ export default function App() {
         phone: '',
         notes: '',
         item: result?.title || '',
-        offerRange: result?.offer_range || '',
+        offerRange: result?.offer_low && result?.offer_high
+          ? `$${result.offer_low.toLocaleString()} – $${result.offer_high.toLocaleString()}`
+          : '',
+        description: result?.description || '',
+        details: result?.details || [],
+        offerNotes: result?.offer_notes || '',
+        confidence: result?.confidence || '',
+        itemType: result?.item_type || '',
         shippingMethod: '',
         address: '',
         source: 'photo_browse',
@@ -591,7 +598,14 @@ export default function App() {
       phone: leadData.phone,
       notes: leadData.notes,
       item: analysis?.title || '',
-      offerRange: analysis?.offer_range || '',
+      offerRange: analysis?.offer_low && analysis?.offer_high
+        ? `$${analysis.offer_low.toLocaleString()} – $${analysis.offer_high.toLocaleString()}`
+        : '',
+      description: analysis?.description || '',
+      details: analysis?.details || [],
+      offerNotes: analysis?.offer_notes || '',
+      confidence: analysis?.confidence || '',
+      itemType: analysis?.item_type || '',
       shippingMethod: shippingData.method,
       address: fullAddress,
       source: directQuote ? 'direct_quote' : 'photo_flow',
