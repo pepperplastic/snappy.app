@@ -79,6 +79,47 @@ function getCookie(name) {
   return match ? match[2] : null
 }
 
+// ── Daily analysis limit (prevent API abuse) ──
+const MAX_FREE_ANALYSES = 2
+
+function getAnalysisCount() {
+  const today = new Date().toISOString().slice(0, 10)
+  const raw = getCookie('snappy_usage')
+  if (!raw) return 0
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw))
+    if (parsed.date === today) return parsed.count
+    return 0 // different day, reset
+  } catch { return 0 }
+}
+
+function incrementAnalysisCount() {
+  const today = new Date().toISOString().slice(0, 10)
+  const current = getAnalysisCount()
+  const data = encodeURIComponent(JSON.stringify({ date: today, count: current + 1 }))
+  setCookie('snappy_usage', data, 1)
+  return current + 1
+}
+
+function hasReachedLimit() {
+  return getAnalysisCount() >= MAX_FREE_ANALYSES
+}
+
+function clearAnalysisLimit() {
+  // Call this after they submit lead info to unlock more analyses
+  const today = new Date().toISOString().slice(0, 10)
+  const data = encodeURIComponent(JSON.stringify({ date: today, count: 0, unlocked: true }))
+  setCookie('snappy_usage', data, 1)
+}
+
+function isUnlocked() {
+  const raw = getCookie('snappy_usage')
+  if (!raw) return false
+  try {
+    return JSON.parse(decodeURIComponent(raw)).unlocked === true
+  } catch { return false }
+}
+
 // ── Utility: compress image before sending ──
 function compressImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
@@ -536,6 +577,7 @@ export default function App() {
 
   // A/B/C variant + GA4
   const [variant] = useState(() => getVariant())
+  const [limitReached, setLimitReached] = useState(() => hasReachedLimit() && !isUnlocked())
   useEffect(() => {
     initGA4()
     trackEvent('page_view', { page: 'home' })
@@ -564,7 +606,19 @@ export default function App() {
     }
   }, [step])
 
+  // Check limit before allowing camera/upload
+  const checkLimit = () => {
+    if (isUnlocked()) return true
+    if (hasReachedLimit()) {
+      setLimitReached(true)
+      trackEvent('limit_reached', { count: getAnalysisCount() })
+      return false
+    }
+    return true
+  }
+
   const handleCamera = () => {
+    if (!checkLimit()) return
     if (isMobile) {
       cameraInputRef.current?.click()
     } else {
@@ -602,11 +656,12 @@ export default function App() {
 
   const handleWebcamCapture = (base64) => {
     setShowWebcam(false)
+    if (!checkLimit()) return
     setImageData([base64])
     setStep(STEPS.ANALYZING)
     trackEvent('photo_uploaded', { method: 'camera' })
     analyzeImage([base64])
-      .then(result => { setAnalysis(result); setStep(STEPS.OFFER); notifyPhoto(result, [base64]); })
+      .then(result => { setAnalysis(result); setStep(STEPS.OFFER); incrementAnalysisCount(); notifyPhoto(result, [base64]); })
       .catch(err => {
         console.error('Analysis error:', err)
         setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
@@ -618,6 +673,7 @@ export default function App() {
   const handleFiles = useCallback(async (files) => {
     const fileList = Array.from(files).filter(f => f && f.type.startsWith('image/'))
     if (fileList.length === 0) return
+    if (!checkLimit()) return
     setError(null)
 
     // Compress all images
@@ -630,6 +686,7 @@ export default function App() {
       const result = await analyzeImage(compressed)
       setAnalysis(result)
       setStep(STEPS.OFFER)
+      incrementAnalysisCount()
       notifyPhoto(result, compressed)
     } catch (err) {
       console.error('Analysis error:', err)
@@ -664,6 +721,8 @@ export default function App() {
   const handleLeadSubmit = (e) => {
     e.preventDefault()
     submitLead()
+    clearAnalysisLimit()
+    setLimitReached(false)
     setStep(STEPS.SHIPPING)
   }
 
@@ -784,12 +843,52 @@ export default function App() {
         </div>
       )}
 
+      {/* ── Limit Reached Modal ── */}
+      {limitReached && (
+        <div style={styles.modalOverlay} onClick={() => setLimitReached(false)}>
+          <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setLimitReached(false)} style={styles.modalClose}>✕</button>
+            <div style={{ textAlign: 'center', padding: '8px 0' }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%', margin: '0 auto 16px',
+                background: 'rgba(200,149,60,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 28,
+              }}>📸</div>
+              <h3 style={{ fontFamily: '"Playfair Display", serif', fontSize: 22, marginBottom: 8, color: '#1A1A1A' }}>
+                You're on a roll!
+              </h3>
+              <p style={{ color: '#8A8580', fontSize: 14, lineHeight: 1.5, marginBottom: 20 }}>
+                You've used your {MAX_FREE_ANALYSES} free estimates for today. Tell us a bit about yourself to continue getting instant appraisals — no commitment required.
+              </p>
+              <button
+                onClick={() => {
+                  setLimitReached(false)
+                  setStep(STEPS.LEAD_FORM)
+                  trackEvent('limit_cta_clicked')
+                }}
+                style={{
+                  width: '100%', padding: '14px 24px', borderRadius: 12, border: 'none',
+                  background: 'linear-gradient(135deg, #C8953C, #A67B2E)', color: '#fff',
+                  fontWeight: 700, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit',
+                  boxShadow: '0 4px 16px rgba(200,149,60,0.3)',
+                }}
+              >
+                Continue — it's free
+              </button>
+              <p style={{ color: '#B5A992', fontSize: 12, marginTop: 10 }}>
+                We'll never spam you. Just need your info to provide the best service.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main style={styles.main}>
         {step === STEPS.HERO && (
           <Hero
             onStart={() => setStep(STEPS.CAPTURE)}
             onCamera={handleCamera}
-            onUpload={() => fileInputRef.current?.click()}
+            onUpload={() => { if (checkLimit()) fileInputRef.current?.click() }}
           />
         )}
         {step === STEPS.CAPTURE && (
