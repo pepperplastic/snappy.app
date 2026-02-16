@@ -15,6 +15,70 @@ const STEPS = {
   SUBMITTED: 'submitted',
 }
 
+// ── GA4 Analytics ──
+const GA_MEASUREMENT_ID = 'G-Z6KH5RDZFZ' // TODO: Replace with your GA4 Measurement ID
+
+function initGA4() {
+  if (typeof window === 'undefined' || document.getElementById('ga4-script')) return
+  const script = document.createElement('script')
+  script.id = 'ga4-script'
+  script.async = true
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`
+  document.head.appendChild(script)
+  window.dataLayer = window.dataLayer || []
+  window.gtag = function () { window.dataLayer.push(arguments) }
+  window.gtag('js', new Date())
+  window.gtag('config', GA_MEASUREMENT_ID)
+}
+
+function trackEvent(eventName, params = {}) {
+  const variant = getVariant()
+  const allParams = { ...params, flow_variant: variant }
+  if (window.gtag) {
+    window.gtag('event', eventName, allParams)
+  }
+  // Also log to console in dev for debugging
+  if (window.location.hostname === 'localhost') {
+    console.log(`[GA4] ${eventName}`, allParams)
+  }
+}
+
+// ── A/B/C Flow Variant Assignment ──
+// A = current (show estimate freely)
+// B = gated (require email to see estimate)
+// C = nudge (show estimate but aggressively prompt for email)
+const VARIANTS = ['A', 'B', 'C']
+
+function getVariant() {
+  // Allow URL override: ?variant=A, ?variant=B, ?variant=C
+  const urlParams = new URLSearchParams(window.location.search)
+  const override = urlParams.get('variant')?.toUpperCase()
+  if (override && VARIANTS.includes(override)) {
+    setCookie('snappy_variant', override, 90)
+    return override
+  }
+
+  // Check cookie for existing assignment
+  const existing = getCookie('snappy_variant')
+  if (existing && VARIANTS.includes(existing)) return existing
+
+  // Randomly assign
+  const variant = VARIANTS[Math.floor(Math.random() * VARIANTS.length)]
+  setCookie('snappy_variant', variant, 90)
+  return variant
+}
+
+function setCookie(name, value, days) {
+  const d = new Date()
+  d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000)
+  document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/;SameSite=Lax`
+}
+
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
+  return match ? match[2] : null
+}
+
 // ── Utility: compress image before sending ──
 function compressImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
@@ -470,6 +534,36 @@ export default function App() {
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
 
+  // A/B/C variant + GA4
+  const [variant] = useState(() => getVariant())
+  useEffect(() => {
+    initGA4()
+    trackEvent('page_view', { page: 'home' })
+  }, [])
+
+  // Track step changes
+  useEffect(() => {
+    const eventMap = {
+      [STEPS.HERO]: 'view_hero',
+      [STEPS.CAPTURE]: 'view_capture',
+      [STEPS.ANALYZING]: 'analyzing_started',
+      [STEPS.OFFER]: 'estimate_received',
+      [STEPS.LEAD_FORM]: 'lead_form_started',
+      [STEPS.SHIPPING]: 'shipping_started',
+      [STEPS.SUBMITTED]: 'lead_submitted',
+    }
+    if (eventMap[step]) {
+      const params = {}
+      if (step === STEPS.OFFER && analysis) {
+        params.item_type = analysis.item_type || ''
+        params.item_title = analysis.title || ''
+        params.offer_low = analysis.offer_low || 0
+        params.offer_high = analysis.offer_high || 0
+      }
+      trackEvent(eventMap[step], params)
+    }
+  }, [step])
+
   const handleCamera = () => {
     if (isMobile) {
       cameraInputRef.current?.click()
@@ -510,6 +604,7 @@ export default function App() {
     setShowWebcam(false)
     setImageData([base64])
     setStep(STEPS.ANALYZING)
+    trackEvent('photo_uploaded', { method: 'camera' })
     analyzeImage([base64])
       .then(result => { setAnalysis(result); setStep(STEPS.OFFER); notifyPhoto(result, [base64]); })
       .catch(err => {
@@ -529,6 +624,7 @@ export default function App() {
     const compressed = await Promise.all(fileList.map(f => compressImage(f)))
     setImageData(compressed)
     setStep(STEPS.ANALYZING)
+    trackEvent('photo_uploaded', { method: 'gallery', photo_count: compressed.length })
 
     try {
       const result = await analyzeImage(compressed)
@@ -713,6 +809,9 @@ export default function App() {
             onRetry={() => setStep(STEPS.CAPTURE)}
             onReEstimate={handleReEstimate}
             isReEstimating={isReEstimating}
+            variant={variant}
+            leadData={leadData}
+            setLeadData={setLeadData}
           />
         )}
         {step === STEPS.LEAD_FORM && (
@@ -1129,7 +1228,7 @@ function EditableDetail({ label, value, onChange, itemType }) {
 // ═══════════════════════════════════════════════
 //  OFFER SCREEN
 // ═══════════════════════════════════════════════
-function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating }) {
+function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData }) {
   const [visible, setVisible] = useState(false)
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
@@ -1141,6 +1240,15 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
     (analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
   )
   const [extraNotes, setExtraNotes] = useState('')
+
+  // Variant B: email gate state
+  const [gateEmail, setGateEmail] = useState('')
+  const [gateUnlocked, setGateUnlocked] = useState(false)
+
+  // Variant C: nudge state
+  const [nudgeDismissed, setNudgeDismissed] = useState(false)
+  const [nudgeEmail, setNudgeEmail] = useState('')
+  const [nudgeSubmitted, setNudgeSubmitted] = useState(false)
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
   const hasLoadedOnce = useRef(false)
   useEffect(() => {
@@ -1243,14 +1351,101 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             </div>
 
             <div ref={offerRangeRef} style={styles.offerRange}>
-              <p style={styles.offerRangeLabel}>Estimated Offer Range</p>
-              <div style={styles.offerPrices}>
-                <span style={styles.offerPrice}>${analysis.offer_low?.toLocaleString()}</span>
-                <span style={styles.offerDash}>—</span>
-                <span style={styles.offerPrice}>${analysis.offer_high?.toLocaleString()}</span>
-              </div>
-              {analysis.offer_notes && (
-                <p style={styles.offerNotes}>{analysis.offer_notes}</p>
+              {/* VARIANT B: Gated — blur estimate until email entered */}
+              {variant === 'B' && !gateUnlocked ? (
+                <div style={{ position: 'relative' }}>
+                  <div style={{ filter: 'blur(12px)', userSelect: 'none', pointerEvents: 'none' }}>
+                    <p style={styles.offerRangeLabel}>Estimated Offer Range</p>
+                    <div style={styles.offerPrices}>
+                      <span style={styles.offerPrice}>${analysis.offer_low?.toLocaleString()}</span>
+                      <span style={styles.offerDash}>—</span>
+                      <span style={styles.offerPrice}>${analysis.offer_high?.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(255,251,245,0.85)', borderRadius: 12,
+                  }}>
+                    <p style={{ fontFamily: '"Playfair Display", serif', fontSize: 18, fontWeight: 600, color: '#1A1A1A', marginBottom: 4 }}>
+                      Your estimate is ready
+                    </p>
+                    <p style={{ fontSize: 13, color: '#8A8580', marginBottom: 14 }}>
+                      Enter your email to reveal your offer
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, width: '100%', maxWidth: 320 }}>
+                      <input
+                        type="email"
+                        value={gateEmail}
+                        onChange={(e) => setGateEmail(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && gateEmail.includes('@')) {
+                            setGateUnlocked(true)
+                            setLeadData(prev => ({ ...prev, email: gateEmail }))
+                            trackEvent('gate_email_submitted', { method: 'variant_b' })
+                            fetch('/api/submit-lead', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                firstName: '', lastName: '', email: gateEmail, phone: '', notes: '',
+                                item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
+                                description: analysis?.description || '', details: analysis?.details || [],
+                                offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
+                                itemType: analysis?.item_type || '', source: 'variant_b_gate',
+                              }),
+                            }).catch(() => {})
+                          }
+                        }}
+                        placeholder="your@email.com"
+                        style={{
+                          flex: 1, padding: '10px 14px', borderRadius: 8,
+                          border: '1px solid #D4C5A9', fontSize: 14, fontFamily: 'inherit',
+                          background: '#fff', outline: 'none',
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          if (gateEmail.includes('@')) {
+                            setGateUnlocked(true)
+                            setLeadData(prev => ({ ...prev, email: gateEmail }))
+                            trackEvent('gate_email_submitted', { method: 'variant_b' })
+                            // Send notification with email
+                            fetch('/api/submit-lead', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                firstName: '', lastName: '', email: gateEmail, phone: '', notes: '',
+                                item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
+                                description: analysis?.description || '', details: analysis?.details || [],
+                                offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
+                                itemType: analysis?.item_type || '', source: 'variant_b_gate',
+                              }),
+                            }).catch(() => {})
+                          }
+                        }}
+                        style={{
+                          padding: '10px 18px', borderRadius: 8, border: 'none',
+                          background: 'linear-gradient(135deg, #C8953C, #A67B2E)', color: '#fff',
+                          fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        Reveal
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p style={styles.offerRangeLabel}>Estimated Offer Range</p>
+                  <div style={styles.offerPrices}>
+                    <span style={styles.offerPrice}>${analysis.offer_low?.toLocaleString()}</span>
+                    <span style={styles.offerDash}>—</span>
+                    <span style={styles.offerPrice}>${analysis.offer_high?.toLocaleString()}</span>
+                  </div>
+                  {analysis.offer_notes && (
+                    <p style={styles.offerNotes}>{analysis.offer_notes}</p>
+                  )}
+                </>
               )}
             </div>
 
@@ -1301,13 +1496,107 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             </div>
           </div>
 
-          <button onClick={onGetOffer} style={styles.firmOfferBtn}>
+          <button onClick={() => { trackEvent('cta_get_firm_offer'); onGetOffer() }} style={styles.firmOfferBtn}>
             <span>Get My Firm Offer</span>
             <ArrowIcon size={18} />
           </button>
           <p style={styles.offerCaveat}>
             Free prepaid shipping · Expert in-person evaluation · Payment within 24 hours
           </p>
+
+          {/* VARIANT C: Nudge banner — persistent email prompt */}
+          {variant === 'C' && !nudgeDismissed && !nudgeSubmitted && (
+            <div style={{
+              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
+              background: 'linear-gradient(135deg, #1A1816, #2A2520)',
+              padding: '16px 20px', boxShadow: '0 -4px 24px rgba(0,0,0,0.15)',
+              animation: 'slideUp 0.4s ease',
+            }}>
+              <button
+                onClick={() => { setNudgeDismissed(true); trackEvent('nudge_dismissed') }}
+                style={{
+                  position: 'absolute', top: 8, right: 12, background: 'none',
+                  border: 'none', color: '#8A8580', fontSize: 18, cursor: 'pointer', padding: 4,
+                }}
+              >✕</button>
+              <p style={{ color: '#F0E6D0', fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
+                Want to lock in this offer?
+              </p>
+              <p style={{ color: '#9B8E7B', fontSize: 12, marginBottom: 10 }}>
+                Enter your email and we'll save your estimate and send you a firm offer.
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="email"
+                  value={nudgeEmail}
+                  onChange={(e) => setNudgeEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && nudgeEmail.includes('@')) {
+                      setNudgeSubmitted(true)
+                      setLeadData(prev => ({ ...prev, email: nudgeEmail }))
+                      trackEvent('nudge_email_submitted', { method: 'variant_c' })
+                      fetch('/api/submit-lead', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          firstName: '', lastName: '', email: nudgeEmail, phone: '', notes: '',
+                          item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
+                          description: analysis?.description || '', details: analysis?.details || [],
+                          offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
+                          itemType: analysis?.item_type || '', source: 'variant_c_nudge',
+                        }),
+                      }).catch(() => {})
+                    }
+                  }}
+                  placeholder="your@email.com"
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: 8,
+                    border: '1px solid #444', fontSize: 14, fontFamily: 'inherit',
+                    background: '#2A2520', color: '#F0E6D0', outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (nudgeEmail.includes('@')) {
+                      setNudgeSubmitted(true)
+                      setLeadData(prev => ({ ...prev, email: nudgeEmail }))
+                      trackEvent('nudge_email_submitted', { method: 'variant_c' })
+                      // Send notification with email
+                      fetch('/api/submit-lead', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          firstName: '', lastName: '', email: nudgeEmail, phone: '', notes: '',
+                          item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
+                          description: analysis?.description || '', details: analysis?.details || [],
+                          offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
+                          itemType: analysis?.item_type || '', source: 'variant_c_nudge',
+                        }),
+                      }).catch(() => {})
+                    }
+                  }}
+                  style={{
+                    padding: '10px 20px', borderRadius: 8, border: 'none',
+                    background: 'linear-gradient(135deg, #C8953C, #A67B2E)', color: '#fff',
+                    fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  Save Offer
+                </button>
+              </div>
+            </div>
+          )}
+          {variant === 'C' && nudgeSubmitted && (
+            <div style={{
+              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
+              background: '#1A3A1A', padding: '14px 20px', textAlign: 'center',
+              animation: 'slideUp 0.3s ease',
+            }}>
+              <p style={{ color: '#A0D8A0', fontSize: 14, fontWeight: 600 }}>
+                ✓ Saved! We'll be in touch with a firm offer.
+              </p>
+            </div>
+          )}
         </>
       ) : (
         <div style={styles.offerCard}>
@@ -2677,6 +2966,10 @@ styleSheet.textContent = `
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
     50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
   @keyframes badgeFlash {
     0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
