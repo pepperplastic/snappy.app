@@ -120,6 +120,28 @@ function isUnlocked() {
   } catch { return false }
 }
 
+// ── UTM / Ad tracking ──
+function captureUtmParams() {
+  const params = new URLSearchParams(window.location.search)
+  const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid']
+  const utm = {}
+  let hasAny = false
+  utmKeys.forEach(key => {
+    const val = params.get(key)
+    if (val) { utm[key] = val; hasAny = true }
+  })
+  if (hasAny) {
+    setCookie('snappy_utm', encodeURIComponent(JSON.stringify(utm)), 30)
+  }
+  return utm
+}
+
+function getStoredUtm() {
+  const raw = getCookie('snappy_utm')
+  if (!raw) return {}
+  try { return JSON.parse(decodeURIComponent(raw)) } catch { return {} }
+}
+
 // ── Utility: compress image before sending ──
 function compressImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
@@ -578,8 +600,10 @@ export default function App() {
   // A/B/C variant + GA4
   const [variant] = useState(() => getVariant())
   const [limitReached, setLimitReached] = useState(() => hasReachedLimit() && !isUnlocked())
+  const [utmData] = useState(() => captureUtmParams())
   useEffect(() => {
     initGA4()
+    captureUtmParams()
     trackEvent('page_view', { page: 'home' })
   }, [])
 
@@ -628,6 +652,7 @@ export default function App() {
 
   const notifyPhoto = async (result, photos) => {
     const smallPhoto = await compressForEmail(photos?.[0])
+    const utm = getStoredUtm()
     fetch('/api/submit-lead', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -649,6 +674,8 @@ export default function App() {
         shippingMethod: '',
         address: '',
         source: 'photo_browse',
+        variant: variant,
+        ...utm,
         image: smallPhoto,
       }),
     }).catch(err => console.error('Photo notify error:', err))
@@ -746,6 +773,7 @@ export default function App() {
   const submitLead = async (extraData = {}) => {
     const fullAddress = [shippingData.address, shippingData.city, shippingData.state, shippingData.zip].filter(Boolean).join(', ')
     const compressedImage = await compressForEmail(Array.isArray(imageData) ? imageData[0] : imageData)
+    const utm = getStoredUtm()
     const payload = {
       firstName: leadData.firstName,
       lastName: leadData.lastName,
@@ -764,6 +792,8 @@ export default function App() {
       shippingMethod: shippingData.method,
       address: fullAddress,
       source: directQuote ? 'direct_quote' : 'photo_flow',
+      variant: variant,
+      ...utm,
       image: compressedImage,
     }
     fetch('/api/submit-lead', {
@@ -1490,7 +1520,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                                 item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                                 description: analysis?.description || '', details: analysis?.details || [],
                                 offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                                itemType: analysis?.item_type || '', source: 'variant_b_gate',
+                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(),
                               }),
                             }).catch(() => {})
                           }
@@ -1517,7 +1547,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                                 item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                                 description: analysis?.description || '', details: analysis?.details || [],
                                 offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                                itemType: analysis?.item_type || '', source: 'variant_b_gate',
+                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(),
                               }),
                             }).catch(() => {})
                           }
@@ -1642,7 +1672,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                           item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                           description: analysis?.description || '', details: analysis?.details || [],
                           offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', source: 'variant_c_nudge',
+                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(),
                         }),
                       }).catch(() => {})
                     }
@@ -1669,7 +1699,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                           item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                           description: analysis?.description || '', details: analysis?.details || [],
                           offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', source: 'variant_c_nudge',
+                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(),
                         }),
                       }).catch(() => {})
                     }
