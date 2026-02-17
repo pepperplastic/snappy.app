@@ -163,6 +163,15 @@ function captureUtmParams() {
     const val = params.get(key)
     if (val) { utm[key] = val; hasAny = true }
   })
+  // Auto-detect source from click IDs if utm_source not set
+  if (!utm.utm_source && utm.gclid) {
+    utm.utm_source = 'google'
+    utm.utm_medium = utm.utm_medium || 'cpc'
+  }
+  if (!utm.utm_source && utm.fbclid) {
+    utm.utm_source = 'facebook'
+    utm.utm_medium = utm.utm_medium || 'paid'
+  }
   if (hasAny) {
     setCookie('snappy_utm', encodeURIComponent(JSON.stringify(utm)), 30)
   }
