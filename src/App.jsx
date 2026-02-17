@@ -641,6 +641,7 @@ export default function App() {
   const [analysis, setAnalysis] = useState(null)
   const [error, setError] = useState(null)
   const [leadData, setLeadData] = useState({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
+  const [userEdits, setUserEdits] = useState([])
   const [isReEstimating, setIsReEstimating] = useState(false)
   const [showWebcam, setShowWebcam] = useState(false)
   const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: 'kit' })
@@ -858,6 +859,7 @@ export default function App() {
       ...utm,
       ip: getIP(),
       image: compressedImage,
+      userEdits: userEdits.length > 0 ? userEdits : undefined,
     }
     fetch('/api/submit-lead', {
       method: 'POST',
@@ -1006,6 +1008,8 @@ export default function App() {
             variant={variant}
             leadData={leadData}
             setLeadData={setLeadData}
+            userEdits={userEdits}
+            setUserEdits={setUserEdits}
           />
         )}
         {step === STEPS.LEAD_FORM && (
@@ -1422,7 +1426,7 @@ function EditableDetail({ label, value, onChange, itemType }) {
 // ═══════════════════════════════════════════════
 //  OFFER SCREEN
 // ═══════════════════════════════════════════════
-function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData }) {
+function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData, userEdits, setUserEdits }) {
   const [visible, setVisible] = useState(false)
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
@@ -1430,6 +1434,11 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
   const detailsRef = useRef(null)
   const offerRangeRef = useRef(null)
   const offerTopRef = useRef(null)
+  // Store original AI values from first analysis (persists across re-estimates)
+  const originalAiValues = useRef(null)
+  if (!originalAiValues.current && analysis.details) {
+    originalAiValues.current = analysis.details.reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
+  }
   const [corrections, setCorrections] = useState(() =>
     (analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
   )
@@ -1530,6 +1539,16 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                   onChange={(newVal) => {
                     const updated = { ...corrections, [d.label]: newVal }
                     setCorrections(updated)
+                    // Track this as a user edit
+                    const origVal = originalAiValues.current?.[d.label] || d.value
+                    if (newVal !== origVal) {
+                      setUserEdits(prev => {
+                        const filtered = prev.filter(e => e.label !== d.label)
+                        return [...filtered, { label: d.label, original: origVal, edited: newVal }]
+                      })
+                    } else {
+                      setUserEdits(prev => prev.filter(e => e.label !== d.label))
+                    }
                     // Auto re-estimate if the value actually changed
                     const orig = analysis.details?.find(det => det.label === d.label)
                     if (orig && newVal !== orig.value) {
