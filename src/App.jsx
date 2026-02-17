@@ -604,6 +604,7 @@ export default function App() {
   const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: 'kit' })
   const [showContact, setShowContact] = useState(false)
   const [directQuote, setDirectQuote] = useState(false)
+  const [limitGated, setLimitGated] = useState(false)
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
@@ -756,6 +757,7 @@ export default function App() {
     setLeadData({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
     setShippingData({ address: '', city: '', state: '', zip: '', method: 'kit' })
     setDirectQuote(false)
+    setLimitGated(false)
   }
 
   const handleLeadSubmit = (e) => {
@@ -804,7 +806,7 @@ export default function App() {
       itemType: analysis?.item_type || '',
       shippingMethod: shippingData.method,
       address: fullAddress,
-      source: directQuote ? 'direct_quote' : 'photo_flow',
+      source: directQuote ? 'direct_quote' : limitGated ? 'limit_gate' : 'photo_flow',
       variant: variant,
       ...utm,
       ip: getIP(),
@@ -907,6 +909,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setLimitReached(false)
+                  setLimitGated(true)
                   setStep(STEPS.LEAD_FORM)
                   trackEvent('limit_cta_clicked')
                 }}
