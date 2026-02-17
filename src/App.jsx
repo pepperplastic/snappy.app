@@ -16,7 +16,9 @@ const STEPS = {
 }
 
 // ── GA4 Analytics ──
-const GA_MEASUREMENT_ID = 'G-Z6KH5RDZFZ' // TODO: Replace with your GA4 Measurement ID
+const GA_MEASUREMENT_ID = 'G-Z6KH5RDZFZ'
+const GADS_CONVERSION_ID = 'AW-16675435094'
+const GADS_LEAD_LABEL = 'DediCI6QqfobENbku48-'
 
 function initGA4() {
   if (typeof window === 'undefined' || document.getElementById('ga4-script')) return
@@ -29,6 +31,17 @@ function initGA4() {
   window.gtag = function () { window.dataLayer.push(arguments) }
   window.gtag('js', new Date())
   window.gtag('config', GA_MEASUREMENT_ID)
+  window.gtag('config', GADS_CONVERSION_ID)
+}
+
+function trackGadsConversion(label, value) {
+  if (window.gtag) {
+    window.gtag('event', 'conversion', {
+      send_to: `${GADS_CONVERSION_ID}/${label}`,
+      value: value || 1.0,
+      currency: 'USD',
+    })
+  }
 }
 
 function trackEvent(eventName, params = {}) {
@@ -763,6 +776,7 @@ export default function App() {
   const handleLeadSubmit = (e) => {
     e.preventDefault()
     submitLead()
+    trackGadsConversion(GADS_LEAD_LABEL)
     clearAnalysisLimit()
     setLimitReached(false)
     setStep(STEPS.SHIPPING)
