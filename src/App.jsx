@@ -1689,6 +1689,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                           itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(),
                         }),
                       }).catch(() => {})
+                      setStep(STEPS.LEAD_FORM)
                     }
                   }}
                   placeholder="your@email.com"
@@ -1716,6 +1717,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                           itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(),
                         }),
                       }).catch(() => {})
+                      setStep(STEPS.LEAD_FORM)
                     }
                   }}
                   style={{
