@@ -19,6 +19,7 @@ const STEPS = {
 const GA_MEASUREMENT_ID = 'G-Z6KH5RDZFZ'
 const GADS_CONVERSION_ID = 'AW-16675435094'
 const GADS_LEAD_LABEL = 'DediCI6QqfobENbku48-'
+const META_PIXEL_ID = '1040162166644550'
 
 function initGA4() {
   if (typeof window === 'undefined' || document.getElementById('ga4-script')) return
@@ -32,6 +33,25 @@ function initGA4() {
   window.gtag('js', new Date())
   window.gtag('config', GA_MEASUREMENT_ID)
   window.gtag('config', GADS_CONVERSION_ID)
+}
+
+function initMetaPixel() {
+  if (typeof window === 'undefined' || window.fbq) return
+  window.fbq = function () { window.fbq.callMethod ? window.fbq.callMethod.apply(window.fbq, arguments) : window.fbq.queue.push(arguments) }
+  window.fbq.push = window.fbq
+  window.fbq.loaded = true
+  window.fbq.version = '2.0'
+  window.fbq.queue = []
+  const script = document.createElement('script')
+  script.async = true
+  script.src = 'https://connect.facebook.net/en_US/fbevents.js'
+  document.head.appendChild(script)
+  window.fbq('init', META_PIXEL_ID)
+  window.fbq('track', 'PageView')
+}
+
+function trackMetaEvent(eventName, params = {}) {
+  if (window.fbq) window.fbq('track', eventName, params)
 }
 
 function trackGadsConversion(label, value) {
@@ -628,6 +648,7 @@ export default function App() {
   const [utmData] = useState(() => captureUtmParams())
   useEffect(() => {
     initGA4()
+    initMetaPixel()
     captureUtmParams()
     fetchIP()
     trackEvent('page_view', { page: 'home' })
@@ -714,6 +735,7 @@ export default function App() {
     setImageData([base64])
     setStep(STEPS.ANALYZING)
     trackEvent('photo_uploaded', { method: 'camera' })
+    trackMetaEvent('ViewContent', { content_name: 'Photo Upload', content_category: 'camera' })
     analyzeImage([base64])
       .then(result => { setAnalysis(result); setStep(STEPS.OFFER); incrementAnalysisCount(); notifyPhoto(result, [base64]); })
       .catch(err => {
@@ -735,6 +757,7 @@ export default function App() {
     setImageData(compressed)
     setStep(STEPS.ANALYZING)
     trackEvent('photo_uploaded', { method: 'gallery', photo_count: compressed.length })
+    trackMetaEvent('ViewContent', { content_name: 'Photo Upload', content_category: 'gallery' })
 
     try {
       const result = await analyzeImage(compressed)
@@ -777,6 +800,7 @@ export default function App() {
     e.preventDefault()
     submitLead()
     trackGadsConversion(GADS_LEAD_LABEL)
+    trackMetaEvent('Lead', { content_name: 'Lead Form Submitted' })
     clearAnalysisLimit()
     setLimitReached(false)
     setStep(STEPS.SHIPPING)
@@ -836,6 +860,7 @@ export default function App() {
   const handleShippingSubmit = (e) => {
     e.preventDefault()
     submitLead()
+    trackMetaEvent('InitiateCheckout', { content_name: 'Shipping Form Submitted' })
     if (directQuote) {
       setStep(STEPS.CAPTURE)
     } else {
@@ -1543,6 +1568,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                             setGateUnlocked(true)
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
+                            trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
                             fetch('/api/submit-lead', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -1569,6 +1595,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                             setGateUnlocked(true)
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
+                            trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
                             // Send notification with email
                             fetch('/api/submit-lead', {
                               method: 'POST',
@@ -1695,6 +1722,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                       setNudgeSubmitted(true)
                       setLeadData(prev => ({ ...prev, email: nudgeEmail }))
                       trackEvent('nudge_email_submitted', { method: 'variant_c' })
+                      trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
                       fetch('/api/submit-lead', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1722,6 +1750,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                       setNudgeSubmitted(true)
                       setLeadData(prev => ({ ...prev, email: nudgeEmail }))
                       trackEvent('nudge_email_submitted', { method: 'variant_c' })
+                      trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
                       // Send notification with email
                       fetch('/api/submit-lead', {
                         method: 'POST',
