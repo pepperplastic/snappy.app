@@ -142,6 +142,17 @@ function getStoredUtm() {
   try { return JSON.parse(decodeURIComponent(raw)) } catch { return {} }
 }
 
+// ── IP Address Capture ──
+let cachedIP = ''
+async function fetchIP() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json')
+    const data = await res.json()
+    cachedIP = data.ip || ''
+  } catch { cachedIP = '' }
+}
+function getIP() { return cachedIP }
+
 // ── Utility: compress image before sending ──
 function compressImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
@@ -604,6 +615,7 @@ export default function App() {
   useEffect(() => {
     initGA4()
     captureUtmParams()
+    fetchIP()
     trackEvent('page_view', { page: 'home' })
   }, [])
 
@@ -676,6 +688,7 @@ export default function App() {
         source: 'photo_browse',
         variant: variant,
         ...utm,
+        ip: getIP(),
         image: smallPhoto,
       }),
     }).catch(err => console.error('Photo notify error:', err))
@@ -794,6 +807,7 @@ export default function App() {
       source: directQuote ? 'direct_quote' : 'photo_flow',
       variant: variant,
       ...utm,
+      ip: getIP(),
       image: compressedImage,
     }
     fetch('/api/submit-lead', {
@@ -1520,7 +1534,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                                 item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                                 description: analysis?.description || '', details: analysis?.details || [],
                                 offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(),
+                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(), ip: getIP(),
                               }),
                             }).catch(() => {})
                           }
@@ -1547,7 +1561,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                                 item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                                 description: analysis?.description || '', details: analysis?.details || [],
                                 offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(),
+                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(), ip: getIP(),
                               }),
                             }).catch(() => {})
                           }
@@ -1672,7 +1686,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                           item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                           description: analysis?.description || '', details: analysis?.details || [],
                           offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(),
+                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(),
                         }),
                       }).catch(() => {})
                     }
@@ -1699,7 +1713,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
                           item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                           description: analysis?.description || '', details: analysis?.details || [],
                           offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(),
+                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(),
                         }),
                       }).catch(() => {})
                     }
