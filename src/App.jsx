@@ -1206,6 +1206,9 @@ function RecentQuotesTicker() {
   }
 
   const [quotes, setQuotes] = useState(() => generateFallback(10))
+  const trackRef = useRef(null)
+  const offsetRef = useRef(0)
+  const rafRef = useRef(null)
 
   useEffect(() => {
     fetch('/api/recent-quotes')
@@ -1232,15 +1235,31 @@ function RecentQuotesTicker() {
             return { item: q.item, range: q.range, time, real: true }
           })
 
-        // Always include at least 5 fakes
         const fillCount = Math.max(5, 10 - realQuotes.length)
         const fakes = generateFallback(fillCount)
-
         const combined = [...realQuotes, ...fakes].sort(() => Math.random() - 0.5)
         setQuotes(combined)
       })
-      .catch(() => { /* keep fallback */ })
+      .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const track = trackRef.current
+    if (!track) return
+    const speed = 0.5
+
+    const animate = () => {
+      offsetRef.current += speed
+      const halfWidth = track.scrollWidth / 2
+      if (offsetRef.current >= halfWidth) {
+        offsetRef.current -= halfWidth
+      }
+      track.style.transform = `translateX(-${offsetRef.current}px)`
+      rafRef.current = requestAnimationFrame(animate)
+    }
+    rafRef.current = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [quotes])
 
   const doubled = [...quotes, ...quotes]
 
@@ -1269,11 +1288,11 @@ function RecentQuotesTicker() {
         <span style={{ fontSize: 11, color: '#8A8580', marginLeft: 4 }}>Recent appraisals</span>
       </div>
       <div style={{ overflow: 'hidden', padding: '12px 0' }}>
-        <div style={{
+        <div ref={trackRef} style={{
           display: 'flex', gap: 12,
-          animation: 'recentTicker 30s linear infinite',
           width: 'max-content',
           paddingLeft: 12,
+          willChange: 'transform',
         }}>
           {doubled.map((q, i) => (
             <div key={i} style={{
