@@ -1211,9 +1211,16 @@ function RecentQuotesTicker() {
     fetch('/api/recent-quotes')
       .then(r => r.json())
       .then(data => {
+        const seen = new Set()
         const realQuotes = (data.quotes || [])
           .filter(q => q.item && q.range)
-          .slice(0, 10)
+          .filter(q => {
+            const key = q.item.toString().trim().toLowerCase()
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          .slice(0, 5)
           .map(q => {
             const now = new Date()
             const ts = new Date(q.time)
@@ -1225,11 +1232,10 @@ function RecentQuotesTicker() {
             return { item: q.item, range: q.range, time, real: true }
           })
 
-        // Fill remaining slots with random ones to always have 10 total
-        const fillCount = Math.max(0, 10 - realQuotes.length)
+        // Always include at least 5 fakes
+        const fillCount = Math.max(5, 10 - realQuotes.length)
         const fakes = generateFallback(fillCount)
 
-        // Interleave: spread real ones throughout
         const combined = [...realQuotes, ...fakes].sort(() => Math.random() - 0.5)
         setQuotes(combined)
       })
