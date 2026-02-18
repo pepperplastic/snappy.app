@@ -2472,8 +2472,8 @@ const styles = {
   // ── Hero ──
   heroSection: {
     textAlign: 'center',
-    paddingTop: 72,
-    paddingBottom: 80,
+    paddingTop: 28,
+    paddingBottom: 60,
   },
   heroBadge: {
     display: 'inline-flex',
@@ -2528,7 +2528,7 @@ const styles = {
     display: 'flex',
     gap: 12,
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
     flexWrap: 'wrap',
   },
   heroTitle: {
