@@ -1153,6 +1153,151 @@ function WebcamModal({ onCapture, onClose }) {
 }
 
 // ═══════════════════════════════════════════════
+//  RECENT QUOTES TICKER
+// ═══════════════════════════════════════════════
+const QUOTE_POOL = [
+  { item: '14K Gold Cuban Link', low: 1600, high: 2400 },
+  { item: 'Rolex Datejust 41mm', low: 7800, high: 9800 },
+  { item: 'Diamond Engagement Ring', low: 2800, high: 4500 },
+  { item: '18K White Gold Bracelet', low: 850, high: 1400 },
+  { item: 'Cartier Love Ring', low: 1300, high: 1900 },
+  { item: '10K Gold Rope Chain', low: 500, high: 900 },
+  { item: 'Omega Speedmaster', low: 4200, high: 6000 },
+  { item: 'Platinum Wedding Band', low: 600, high: 1200 },
+  { item: 'David Yurman Bracelet', low: 280, high: 450 },
+  { item: 'Tiffany & Co. Necklace', low: 1100, high: 1800 },
+  { item: '24K Gold Bar (1oz)', low: 2600, high: 2900 },
+  { item: 'Rolex Submariner', low: 9500, high: 12500 },
+  { item: 'Sapphire & Diamond Ring', low: 1800, high: 3200 },
+  { item: '14K Gold Figaro Chain', low: 700, high: 1100 },
+  { item: 'Vintage Omega Seamaster', low: 2800, high: 4000 },
+  { item: 'Louis Vuitton Keepall', low: 600, high: 1000 },
+  { item: 'Emerald Pendant Necklace', low: 1400, high: 2200 },
+  { item: '18K Gold Hoop Earrings', low: 350, high: 600 },
+  { item: 'Cartier Tank Watch', low: 3200, high: 4800 },
+  { item: 'Pearl Strand Necklace', low: 400, high: 800 },
+  { item: 'TAG Heuer Monaco', low: 3500, high: 5000 },
+  { item: '10K Gold Signet Ring', low: 200, high: 400 },
+  { item: 'Breitling Navitimer', low: 3800, high: 5500 },
+  { item: '14K Diamond Tennis Bracelet', low: 2200, high: 3600 },
+  { item: 'Gucci Marmont Bag', low: 450, high: 800 },
+  { item: 'Chanel Classic Flap', low: 4500, high: 6500 },
+  { item: 'Platinum Diamond Studs', low: 1600, high: 2800 },
+  { item: 'Hermes Birkin 30', low: 8000, high: 12000 },
+  { item: 'Vintage Gold Pocket Watch', low: 800, high: 1500 },
+  { item: 'Silver Eagle Collection (20)', low: 600, high: 900 },
+]
+
+function RecentQuotesTicker() {
+  const generateFallback = (count) => {
+    const shuffled = [...QUOTE_POOL].sort(() => Math.random() - 0.5).slice(0, count)
+    return shuffled.map((q, i) => {
+      const variance = 0.85 + Math.random() * 0.3
+      const low = Math.round((q.low * variance) / 50) * 50
+      const high = Math.round((q.high * variance) / 50) * 50
+      const range = `$${low.toLocaleString()} – $${high.toLocaleString()}`
+      const minutes = Math.floor(Math.random() * 5) + (i * 7) + 1
+      let time
+      if (minutes < 60) time = `${minutes}m ago`
+      else if (minutes < 120) time = '1h ago'
+      else time = `${Math.floor(minutes / 60)}h ago`
+      return { item: q.item, range, time, real: false }
+    })
+  }
+
+  const [quotes, setQuotes] = useState(() => generateFallback(10))
+
+  useEffect(() => {
+    fetch('/api/recent-quotes')
+      .then(r => r.json())
+      .then(data => {
+        const realQuotes = (data.quotes || [])
+          .filter(q => q.item && q.range)
+          .slice(0, 10)
+          .map(q => {
+            const now = new Date()
+            const ts = new Date(q.time)
+            const diffMin = Math.max(1, Math.round((now - ts) / 60000))
+            let time
+            if (diffMin < 60) time = `${diffMin}m ago`
+            else if (diffMin < 1440) time = `${Math.floor(diffMin / 60)}h ago`
+            else time = `${Math.floor(diffMin / 1440)}d ago`
+            return { item: q.item, range: q.range, time, real: true }
+          })
+
+        // Fill remaining slots with random ones to always have 10 total
+        const fillCount = Math.max(0, 10 - realQuotes.length)
+        const fakes = generateFallback(fillCount)
+
+        // Interleave: spread real ones throughout
+        const combined = [...realQuotes, ...fakes].sort(() => Math.random() - 0.5)
+        setQuotes(combined)
+      })
+      .catch(() => { /* keep fallback */ })
+  }, [])
+
+  const doubled = [...quotes, ...quotes]
+
+  return (
+    <div style={{
+      margin: '28px auto 0', maxWidth: 500, width: '100%',
+      background: '#1A1816',
+      borderRadius: 14, padding: '0', overflow: 'hidden',
+      border: '1px solid rgba(200,149,60,0.2)',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        padding: '10px 16px',
+        borderBottom: '1px solid rgba(200,149,60,0.15)',
+        background: 'rgba(200,149,60,0.06)',
+      }}>
+        <span style={{
+          display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+          background: '#22c55e', boxShadow: '0 0 6px #22c55e',
+          animation: 'livePulse 2s ease-in-out infinite',
+        }} />
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase',
+          letterSpacing: 1.5,
+        }}>Live</span>
+        <span style={{ fontSize: 11, color: '#8A8580', marginLeft: 4 }}>Recent appraisals</span>
+      </div>
+      <div style={{ overflow: 'hidden', padding: '12px 0' }}>
+        <div style={{
+          display: 'flex', gap: 12,
+          animation: 'recentTicker 30s linear infinite',
+          width: 'max-content',
+          paddingLeft: 12,
+        }}>
+          {doubled.map((q, i) => (
+            <div key={i} style={{
+              flexShrink: 0,
+              background: 'rgba(255,255,255,0.05)',
+              borderRadius: 10,
+              padding: '10px 14px', minWidth: 175,
+              border: '1px solid rgba(200,149,60,0.12)',
+              backdropFilter: 'blur(4px)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#F0E6D0', whiteSpace: 'nowrap' }}>{q.item}</p>
+              </div>
+              <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#C8953C', fontFamily: '"Playfair Display", serif' }}>{q.range}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                <span style={{
+                  display: 'inline-block', width: 5, height: 5, borderRadius: '50%',
+                  background: '#22c55e', opacity: 0.7,
+                }} />
+                <p style={{ margin: 0, fontSize: 10, color: '#6B6560' }}>{q.time}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════
 //  HERO SECTION
 // ═══════════════════════════════════════════════
 function Hero({ onStart, onCamera, onUpload }) {
@@ -1227,6 +1372,9 @@ function Hero({ onStart, onCamera, onUpload }) {
           </div>
         ))}
       </div>
+
+      {/* Recent Quotes Ticker */}
+      <RecentQuotesTicker />
 
       {/* How it works */}
       <div className="steps-grid">
@@ -3200,6 +3348,8 @@ styleSheet.textContent = `
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
   @keyframes weightPulse { 0%, 100% { background: transparent; } 50% { background: rgba(200, 149, 60, 0.08); } }
   @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+  @keyframes recentTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+  @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 6px #22c55e; } 50% { opacity: 0.4; box-shadow: 0 0 2px #22c55e; } }
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
     50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
