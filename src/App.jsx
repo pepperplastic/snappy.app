@@ -1068,8 +1068,8 @@ export default function App() {
 
       {/* Floating phone button */}
       <a href="tel:+15617026269" style={{
-        position: 'fixed', bottom: 24, right: 24, zIndex: 150,
-        width: 56, height: 56, borderRadius: '50%',
+        position: 'fixed', bottom: 90, right: 16, zIndex: 150,
+        width: 52, height: 52, borderRadius: '50%',
         background: 'linear-gradient(135deg, #C8953C, #A67B2E)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 4px 20px rgba(200,149,60,0.4)',
@@ -1232,7 +1232,8 @@ function RecentQuotesTicker() {
             if (diffMin < 60) time = `${diffMin}m ago`
             else if (diffMin < 1440) time = `${Math.floor(diffMin / 60)}h ago`
             else time = `${Math.floor(diffMin / 1440)}d ago`
-            return { item: q.item, range: q.range, time, real: true }
+            const name = q.item.length > 25 ? q.item.substring(0, 23) + '…' : q.item
+            return { item: name, range: q.range, time, real: true }
           })
 
         const fillCount = Math.max(5, 10 - realQuotes.length)
@@ -1299,14 +1300,14 @@ function RecentQuotesTicker() {
               flexShrink: 0,
               background: 'rgba(255,255,255,0.05)',
               borderRadius: 10,
-              padding: '10px 14px', minWidth: 175,
+              padding: '10px 14px', minWidth: 150, maxWidth: 170,
               border: '1px solid rgba(200,149,60,0.12)',
               backdropFilter: 'blur(4px)',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#F0E6D0', whiteSpace: 'nowrap' }}>{q.item}</p>
+              <div style={{ marginBottom: 4 }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#F0E6D0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{q.item}</p>
               </div>
-              <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#C8953C', fontFamily: '"Playfair Display", serif' }}>{q.range}</p>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#C8953C', fontFamily: '"Playfair Display", serif' }}>{q.range}</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                 <span style={{
                   display: 'inline-block', width: 5, height: 5, borderRadius: '50%',
