@@ -1361,6 +1361,7 @@ function Hero({ onStart, onCamera, onUpload }) {
 
   return (
     <section style={{ ...styles.heroSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+      <div style={styles.heroBg} aria-hidden="true" />
       <div style={styles.tickerWrap}>
         <div style={styles.tickerTrack}>
           {tickerItems.map((cat, i) => (
@@ -1404,7 +1405,7 @@ function Hero({ onStart, onCamera, onUpload }) {
       <div className="steps-grid">
         {[
           { num: '1', title: 'Snap', desc: 'Take or upload a clear photo of your item' },
-          { num: '2', title: 'Review', desc: 'We identify materials, brand & condition' },
+          { num: '2', title: 'Receive', desc: 'Get a detailed appraisal of materials, brand & condition' },
           { num: '3', title: 'Get Paid', desc: 'Accept your offer and ship with a prepaid label' },
           { num: '4', title: 'Do It Again!', desc: 'After being paid, come back when you have more to sell' },
         ].map((s, i) => (
@@ -2471,8 +2472,24 @@ const styles = {
   // ── Hero ──
   heroSection: {
     textAlign: 'center',
-    paddingTop: 28,
+    paddingTop: 44,
     paddingBottom: 60,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  heroBg: {
+    position: 'absolute',
+    top: 60,
+    left: '-10%',
+    right: '-10%',
+    height: 320,
+    backgroundImage: 'url(https://images.unsplash.com/photo-1515562141589-67f0d569b6fc?w=800&q=80)',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    opacity: 0.13,
+    filter: 'saturate(0.6) sepia(0.3)',
+    borderRadius: 24,
+    pointerEvents: 'none',
   },
   heroBadge: {
     display: 'inline-flex',
