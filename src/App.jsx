@@ -988,6 +988,7 @@ export default function App() {
             onUpload={() => { if (checkLimit()) fileInputRef.current?.click() }}
           />
         )}
+        {step === STEPS.HERO && <RecentQuotesTicker />}
         {step === STEPS.CAPTURE && (
           <CaptureScreen
             fileInputRef={fileInputRef}
@@ -1399,9 +1400,6 @@ function Hero({ onStart, onCamera, onUpload }) {
         ))}
       </div>
 
-      {/* Recent Quotes Ticker */}
-      <RecentQuotesTicker />
-
       {/* How it works */}
       <div className="steps-grid">
         {[
@@ -1420,6 +1418,7 @@ function Hero({ onStart, onCamera, onUpload }) {
           </React.Fragment>
         ))}
       </div>
+
     </section>
   )
 }
