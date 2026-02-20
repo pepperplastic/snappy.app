@@ -903,7 +903,6 @@ export default function App() {
               <rect x="13" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
               <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
             </svg>
-            </svg>
             <span style={styles.logoWordmark}>
               <span style={styles.logoText}>snappy</span>
               <span style={styles.logoDot}>.</span>
