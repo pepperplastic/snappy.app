@@ -891,7 +891,7 @@ export default function App() {
               <circle cx="60" cy="14" r="4" fill="#C8953C"/>
               {/* Head */}
               <rect x="24" y="24" width="72" height="58" rx="16" fill="#1A1816" stroke="#C8953C" strokeWidth="2.5"/>
-              {/* Left eye — camera lens */}
+              {/* Left eye */}
               <circle cx="48" cy="51" r="16" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
               <circle cx="48" cy="51" r="11" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
               <circle cx="48" cy="51" r="7" fill="#C8953C"/>
@@ -942,9 +942,9 @@ export default function App() {
                 <span style={styles.contactIcon}>✉</span>
                 <span>hello@snappy.gold</span>
               </a>
-              <a href="tel:+15617026269" style={styles.contactItem}>
+              <a href="tel:+18886130704" style={styles.contactItem}>
                 <span style={styles.contactIcon}>☎</span>
-                <span>(561) 702-6269</span>
+                <span>(888) 613-0704</span>
               </a>
             </div>
           </div>
@@ -1080,7 +1080,7 @@ export default function App() {
       />
 
       {/* Floating phone button */}
-      <a href="tel:+15617026269" style={{
+      <a href="tel:+18886130704" style={{
         position: 'fixed', bottom: 90, right: 16, zIndex: 150,
         width: 52, height: 52, borderRadius: '50%',
         background: 'linear-gradient(135deg, #C8953C, #A67B2E)',
