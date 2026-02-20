@@ -891,26 +891,14 @@ export default function App() {
               <circle cx="60" cy="14" r="4" fill="#C8953C"/>
               {/* Head */}
               <rect x="24" y="24" width="72" height="58" rx="16" fill="#1A1816" stroke="#C8953C" strokeWidth="2.5"/>
-              {/* Left eye — camera lens */}
-              <circle cx="48" cy="51" r="16" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
-              <circle cx="48" cy="51" r="11" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
-              <circle cx="48" cy="51" r="7" fill="#C8953C"/>
-              <circle cx="48" cy="51" r="3.5" fill="#1A1816"/>
-              <circle cx="43" cy="46" r="2.5" fill="rgba(255,255,255,0.45)"/>
-              {/* Right eye — personality eye */}
-              <circle cx="74" cy="51" r="11" fill="#2A2724" stroke="#C8953C" strokeWidth="1.5"/>
-              <circle cx="74" cy="51" r="6" fill="#1A1816"/>
-              <circle cx="74" cy="51" r="3" fill="#3A3530"/>
-              <circle cx="70" cy="47" r="1.8" fill="rgba(255,255,255,0.35)"/>
+              {/* Camera lens */}
+              <circle cx="60" cy="53" r="20" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
+              <circle cx="60" cy="53" r="14" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
+              <circle cx="60" cy="53" r="9" fill="#C8953C"/>
+              <circle cx="60" cy="53" r="4.5" fill="#1A1816"/>
+              <circle cx="56" cy="49" r="2.5" fill="rgba(255,255,255,0.4)"/>
               {/* Green indicator */}
               <circle cx="84" cy="34" r="3" fill="#4ADE80"/>
-              {/* Mouth grille */}
-              <rect x="38" y="68" width="44" height="9" rx="4" fill="#0D0C0B"/>
-              <line x1="45" y1="69.5" x2="45" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="52" y1="69.5" x2="52" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="59" y1="69.5" x2="59" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="66" y1="69.5" x2="66" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="73" y1="69.5" x2="73" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
               {/* Ears */}
               <rect x="13" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
               <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
@@ -2714,6 +2702,7 @@ const styles = {
     border: 'none',
     cursor: 'pointer',
     fontFamily: 'inherit',
+    animation: 'ctaRing 2.2s ease-out infinite',
   },
   captureBtnSecondary: {
     display: 'inline-flex',
@@ -3412,6 +3401,7 @@ const styles = {
 // ── Global keyframes (injected once) ──
 const styleSheet = document.createElement('style')
 styleSheet.textContent = `
+  @keyframes ctaRing { 0% { box-shadow: 0 0 0 0 rgba(200,149,60,0.5); } 70% { box-shadow: 0 0 0 14px rgba(200,149,60,0); } 100% { box-shadow: 0 0 0 0 rgba(200,149,60,0); } }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
   @keyframes weightPulse { 0%, 100% { background: transparent; } 50% { background: rgba(200, 149, 60, 0.08); } }
