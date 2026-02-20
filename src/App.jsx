@@ -885,23 +885,42 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <svg width="32" height="32" viewBox="0 0 80 80" fill="none">
-              <defs>
-                <linearGradient id="logoGrad" x1="0" y1="0" x2="80" y2="80">
-                  <stop stopColor="#D4A344" />
-                  <stop offset="1" stopColor="#8B6914" />
-                </linearGradient>
-              </defs>
-              {/* Camera body */}
-              <rect x="8" y="22" width="64" height="46" rx="10" stroke="url(#logoGrad)" strokeWidth="3" fill="none" />
-              {/* Camera bump */}
-              <path d="M28 22 L32 12 H48 L52 22" stroke="url(#logoGrad)" strokeWidth="3" fill="none" strokeLinejoin="round" />
-              {/* Lens circle */}
-              <circle cx="40" cy="45" r="15" stroke="url(#logoGrad)" strokeWidth="2.5" fill="none" />
-              {/* $ inside lens */}
-              <text x="40" y="52" textAnchor="middle" fill="url(#logoGrad)" fontFamily="Playfair Display, serif" fontWeight="700" fontSize="22">$</text>
-              {/* Flash dot */}
-              <circle cx="60" cy="30" r="2.5" fill="url(#logoGrad)" />
+            <svg width="28" height="36" viewBox="10 0 100 155" fill="none">
+              {/* Antenna */}
+              <line x1="60" y1="8" x2="60" y2="20" stroke="#C8953C" strokeWidth="3" strokeLinecap="round"/>
+              <circle cx="60" cy="6" r="5" fill="#C8953C"/>
+              {/* Head */}
+              <rect x="24" y="20" width="72" height="58" rx="16" fill="#1A1816" stroke="#C8953C" strokeWidth="2"/>
+              {/* Camera lens */}
+              <circle cx="60" cy="46" r="20" fill="#2A2724" stroke="#C8953C" strokeWidth="2"/>
+              <circle cx="60" cy="46" r="15" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
+              <circle cx="60" cy="46" r="9" fill="#C8953C"/>
+              <circle cx="60" cy="46" r="4.5" fill="#1A1816"/>
+              <circle cx="56" cy="42" r="2.5" fill="rgba(255,255,255,0.4)"/>
+              {/* Green indicator */}
+              <circle cx="84" cy="30" r="2.5" fill="#4ADE80"/>
+              {/* Ears */}
+              <rect x="13" y="38" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <rect x="96" y="38" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              {/* Neck */}
+              <rect x="48" y="78" width="24" height="9" rx="4" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              {/* Body */}
+              <rect x="32" y="87" width="56" height="38" rx="12" fill="#1A1816" stroke="#C8953C" strokeWidth="2"/>
+              {/* Chain */}
+              <path d="M 38 87 Q 48 100 60 103 Q 72 100 82 87" fill="none" stroke="#D4A94E" strokeWidth="3.5" strokeLinecap="round"/>
+              {/* $ Medallion */}
+              <circle cx="60" cy="110" r="7" fill="#D4A94E"/>
+              <circle cx="60" cy="110" r="5.5" fill="#C8953C"/>
+              <text x="60" y="114" textAnchor="middle" fontFamily="Georgia,serif" fontSize="10" fontWeight="700" fill="#1A1816">$</text>
+              {/* Arms */}
+              <ellipse cx="24" cy="100" rx="8" ry="6" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <ellipse cx="96" cy="100" rx="8" ry="6" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              {/* Legs */}
+              <rect x="41" y="124" width="12" height="14" rx="6" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <rect x="67" y="124" width="12" height="14" rx="6" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              {/* Feet */}
+              <ellipse cx="46" cy="139" rx="8" ry="5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <ellipse cx="74" cy="139" rx="8" ry="5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
             </svg>
             <span style={styles.logoWordmark}>
               <span style={styles.logoText}>snappy</span>
@@ -2346,7 +2365,7 @@ const styles = {
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
-    gap: 3,
+    gap: 6,
   },
   logoWordmark: {
     display: 'flex',
