@@ -885,38 +885,24 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <svg width="30" height="30" viewBox="0 0 100 100" fill="none">
-              {/* Antenna stem */}
-              <rect x="47" y="6" width="6" height="14" rx="3" fill="#1A1816"/>
-              {/* Antenna bulb */}
-              <circle cx="50" cy="5" r="5" fill="#1A1816"/>
-              <circle cx="50" cy="5" r="3" fill="#4ADE80" style={{animation: 'dotGlow 2s ease-in-out infinite'}}/>
-              <circle cx="48.5" cy="3.5" r="1" fill="#AAF0C4" opacity="0.8"/>
-              {/* Ear left */}
-              <rect x="12" y="38" width="9" height="22" rx="4.5" fill="#1A1816"/>
-              <rect x="14.5" y="43" width="5" height="12" rx="2.5" fill="#C8953C"/>
-              {/* Ear right */}
-              <rect x="79" y="38" width="9" height="22" rx="4.5" fill="#1A1816"/>
-              <rect x="80.5" y="43" width="5" height="12" rx="2.5" fill="#C8953C"/>
-              {/* Head body */}
-              <rect x="21" y="20" width="58" height="62" rx="14" fill="#1A1816"/>
-              {/* Camera lens eye — concentric rings */}
-              <circle cx="50" cy="50" r="20" fill="#C8953C"/>
-              <circle cx="50" cy="50" r="15" fill="#0D0C0B"/>
-              <circle cx="50" cy="50" r="10" fill="#1E1C1A"/>
-              <circle cx="50" cy="50" r="6" fill="#C8953C" opacity="0.75"/>
-              <circle cx="50" cy="50" r="3" fill="#FAF6F0"/>
-              {/* Lens glint */}
-              <circle cx="44" cy="44" r="2.5" fill="#FAF6F0" opacity="0.85"/>
-              {/* Green status dot top-right of head */}
-              <circle cx="73" cy="27" r="3.5" fill="#4ADE80" style={{animation: 'dotGlow 2s ease-in-out infinite', animationDelay: '0.5s'}}/>
-              <circle cx="73" cy="27" r="1.5" fill="#AAF0C4" opacity="0.7"/>
-              {/* Mouth grille */}
-              <rect x="33" y="71" width="34" height="8" rx="4" fill="#0D0C0B"/>
-              <line x1="40" y1="72.5" x2="40" y2="77.5" stroke="#C8953C" strokeWidth="1.8" strokeLinecap="round"/>
-              <line x1="47" y1="72.5" x2="47" y2="77.5" stroke="#C8953C" strokeWidth="1.8" strokeLinecap="round"/>
-              <line x1="54" y1="72.5" x2="54" y2="77.5" stroke="#C8953C" strokeWidth="1.8" strokeLinecap="round"/>
-              <line x1="61" y1="72.5" x2="61" y2="77.5" stroke="#C8953C" strokeWidth="1.8" strokeLinecap="round"/>
+            <svg width="30" height="30" viewBox="16 14 88 72" fill="none">
+              {/* Antenna */}
+              <line x1="60" y1="16" x2="60" y2="24" stroke="#C8953C" strokeWidth="3" strokeLinecap="round"/>
+              <circle cx="60" cy="14" r="4" fill="#C8953C"/>
+              {/* Head */}
+              <rect x="24" y="24" width="72" height="58" rx="16" fill="#1A1816" stroke="#C8953C" strokeWidth="2.5"/>
+              {/* Camera lens */}
+              <circle cx="60" cy="53" r="20" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
+              <circle cx="60" cy="53" r="14" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
+              <circle cx="60" cy="53" r="9" fill="#C8953C"/>
+              <circle cx="60" cy="53" r="4.5" fill="#1A1816"/>
+              <circle cx="56" cy="49" r="2.5" fill="rgba(255,255,255,0.4)"/>
+              {/* Green indicator */}
+              <circle cx="84" cy="34" r="3" fill="#4ADE80" style={{animation: 'dotGlow 2s ease-in-out infinite'}}/>
+              {/* Ears */}
+              <rect x="13" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+            </svg>
             </svg>
             <span style={styles.logoWordmark}>
               <span style={styles.logoText}>snappy</span>
@@ -2385,22 +2371,25 @@ const styles = {
     fontFamily: '"EB Garamond", serif',
     fontWeight: 500,
     fontSize: 22,
-    color: '#1A1816',
-    letterSpacing: '0.02em',
+    color: '#2A2015',
+    letterSpacing: '0.01em',
+    textShadow: '0 0 10px rgba(212,163,68,0.4), 0 0 20px rgba(212,163,68,0.2), 0 0 3px rgba(212,163,68,0.15)',
   },
   logoDot: {
     fontFamily: '"EB Garamond", serif',
     fontWeight: 500,
     fontSize: 22,
     color: gold,
-    margin: '0 0 0 -1px',
+    margin: '0 0 0 -2px',
+    textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25)',
   },
   logoGold: {
     fontFamily: '"EB Garamond", serif',
     fontWeight: 500,
     fontSize: 22,
     color: gold,
-    letterSpacing: '0.02em',
+    letterSpacing: '0.01em',
+    textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25), 0 0 3px rgba(212,163,68,0.2)',
   },
   navLinks: {
     display: 'flex',
@@ -3418,7 +3407,7 @@ styleSheet.textContent = `
   @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   @keyframes recentTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 6px #22c55e; } 50% { opacity: 0.4; box-shadow: 0 0 2px #22c55e; } }
-  @keyframes dotGlow { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 3px #4ADE80); } 50% { opacity: 0.35; filter: drop-shadow(0 0 1px #4ADE80); } }
+  @keyframes dotGlow { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 3px #4ADE80); } 50% { opacity: 0.3; filter: drop-shadow(0 0 1px #4ADE80); } }
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
     50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
