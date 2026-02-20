@@ -1405,9 +1405,9 @@ function Hero({ onStart, onCamera, onUpload }) {
       <div className="steps-grid">
         {[
           { num: '1', title: 'Snap', desc: 'Take or upload a clear photo of your item' },
-          { num: '2', title: 'Receive', desc: 'Get a detailed appraisal of materials, brand & condition' },
+          { num: '2', title: 'Receive', desc: 'Get an appraisal with full details' },
           { num: '3', title: 'Get Paid', desc: 'Accept your offer and ship with a prepaid label' },
-          { num: '4', title: 'Do It Again!', desc: 'After being paid, come back when you have more to sell' },
+          { num: '4', title: 'Do It Again!', desc: 'Come back anytime with more to sell' },
         ].map((s, i) => (
           <React.Fragment key={s.num}>
             <div style={styles.stepCard}>
@@ -2479,17 +2479,18 @@ const styles = {
   },
   heroBg: {
     position: 'absolute',
-    top: 60,
-    left: '-10%',
-    right: '-10%',
-    height: 320,
+    top: 40,
+    left: 0,
+    right: 0,
+    height: 350,
     backgroundImage: 'url(https://images.unsplash.com/photo-1515562141589-67f0d569b6fc?w=800&q=80)',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    opacity: 0.13,
-    filter: 'saturate(0.6) sepia(0.3)',
-    borderRadius: 24,
+    opacity: 0.22,
+    filter: 'saturate(0.5) sepia(0.4)',
+    borderRadius: 20,
     pointerEvents: 'none',
+    zIndex: 0,
   },
   heroBadge: {
     display: 'inline-flex',
@@ -2510,6 +2511,8 @@ const styles = {
     marginBottom: 28,
     maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)',
     WebkitMaskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)',
+    position: 'relative',
+    zIndex: 1,
   },
   tickerTrack: {
     display: 'flex',
@@ -2546,6 +2549,8 @@ const styles = {
     justifyContent: 'center',
     marginBottom: 16,
     flexWrap: 'wrap',
+    position: 'relative',
+    zIndex: 1,
   },
   heroTitle: {
     fontFamily: '"Playfair Display", serif',
@@ -2555,6 +2560,8 @@ const styles = {
     letterSpacing: '-0.02em',
     color: dark,
     marginBottom: 20,
+    position: 'relative',
+    zIndex: 1,
   },
   heroTitleGold: {
     color: gold,
@@ -2565,6 +2572,8 @@ const styles = {
     maxWidth: 520,
     margin: '0 auto 36px',
     lineHeight: 1.6,
+    position: 'relative',
+    zIndex: 1,
   },
   heroCta: {
     display: 'inline-flex',
@@ -2588,6 +2597,8 @@ const styles = {
     gap: 16,
     marginTop: 28,
     flexWrap: 'nowrap',
+    position: 'relative',
+    zIndex: 1,
   },
   trustItem: {
     display: 'flex',
@@ -2603,6 +2614,9 @@ const styles = {
     border: `1px solid ${border}`,
     background: '#FFFDF8',
     textAlign: 'left',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
   },
   stepNum: {
     width: 36,
@@ -3426,6 +3440,7 @@ styleSheet.textContent = `
     .steps-grid {
       grid-template-columns: 1fr 1fr;
       gap: 16px;
+      align-items: stretch;
     }
     .step-arrow { display: none; }
   }`
