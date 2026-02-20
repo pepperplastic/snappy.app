@@ -898,7 +898,7 @@ export default function App() {
               <circle cx="60" cy="53" r="4.5" fill="#1A1816"/>
               <circle cx="56" cy="49" r="2.5" fill="rgba(255,255,255,0.4)"/>
               {/* Green indicator */}
-              <circle cx="84" cy="34" r="3" fill="#4ADE80" style={{animation: 'dotGlow 2s ease-in-out infinite'}}/>
+              <circle cx="84" cy="34" r="3" fill="#4ADE80"/>
               {/* Ears */}
               <rect x="13" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
               <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
@@ -3407,7 +3407,6 @@ styleSheet.textContent = `
   @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   @keyframes recentTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   @keyframes livePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 6px #22c55e; } 50% { opacity: 0.4; box-shadow: 0 0 2px #22c55e; } }
-  @keyframes dotGlow { 0%, 100% { opacity: 1; filter: drop-shadow(0 0 3px #4ADE80); } 50% { opacity: 0.3; filter: drop-shadow(0 0 1px #4ADE80); } }
   @keyframes pulseGreen {
     0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.3); }
     50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
