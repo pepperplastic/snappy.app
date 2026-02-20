@@ -885,23 +885,24 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <svg width="34" height="36" viewBox="12 10 96 78" fill="none" style={{marginTop: 3}}>
+            <svg width="30" height="30" viewBox="16 14 88 72" fill="none">
               {/* Antenna */}
-              <line x1="60" y1="12" x2="60" y2="22" stroke="#C8953C" strokeWidth="3" strokeLinecap="round"/>
-              <circle cx="60" cy="10" r="4" fill="#C8953C"/>
+              <line x1="60" y1="16" x2="60" y2="24" stroke="#C8953C" strokeWidth="3" strokeLinecap="round"/>
+              <circle cx="60" cy="14" r="4" fill="#C8953C"/>
               {/* Head */}
-              <rect x="22" y="22" width="76" height="62" rx="17" fill="#1A1816" stroke="#C8953C" strokeWidth="2.5"/>
+              <rect x="24" y="24" width="72" height="58" rx="16" fill="#1A1816" stroke="#C8953C" strokeWidth="2.5"/>
               {/* Camera lens */}
-              <circle cx="60" cy="53" r="22" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
-              <circle cx="60" cy="53" r="16" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
-              <circle cx="60" cy="53" r="10" fill="#C8953C"/>
-              <circle cx="60" cy="53" r="5" fill="#1A1816"/>
-              <circle cx="55" cy="48" r="2.8" fill="rgba(255,255,255,0.4)"/>
+              <circle cx="60" cy="53" r="20" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
+              <circle cx="60" cy="53" r="14" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
+              <circle cx="60" cy="53" r="9" fill="#C8953C"/>
+              <circle cx="60" cy="53" r="4.5" fill="#1A1816"/>
+              <circle cx="56" cy="49" r="2.5" fill="rgba(255,255,255,0.4)"/>
               {/* Green indicator */}
-              <circle cx="86" cy="32" r="3" fill="#4ADE80"/>
+              <circle cx="84" cy="34" r="3" fill="#4ADE80"/>
               {/* Ears */}
-              <rect x="10" y="42" width="12" height="20" rx="6" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
-              <rect x="98" y="42" width="12" height="20" rx="6" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <rect x="13" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+              <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
+            </svg>
             </svg>
             <span style={styles.logoWordmark}>
               <span style={styles.logoText}>snappy</span>
