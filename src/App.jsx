@@ -885,7 +885,7 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <svg width="30" height="30" viewBox="16 14 88 72" fill="none">
+            <svg width="34" height="32" viewBox="11 9 98 76" fill="none">
               {/* Antenna */}
               <line x1="60" y1="16" x2="60" y2="24" stroke="#C8953C" strokeWidth="3" strokeLinecap="round"/>
               <circle cx="60" cy="14" r="4" fill="#C8953C"/>
