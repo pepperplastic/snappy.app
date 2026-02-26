@@ -1047,7 +1047,14 @@ export default function App() {
 
       {/* ── FOOTER ── */}
       <footer style={styles.footer}>
-        <p style={styles.footerText}>© 2026 Snappy · snappy.gold</p>
+        <p style={styles.footerText}>© 2026 DW5 LLC d/b/a Snappy Gold · snappy.gold</p>
+        <div style={styles.footerLinks}>
+          <a href="/terms" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Terms & Conditions</a>
+          <span style={styles.footerLinkDivider}>·</span>
+          <a href="/privacy" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Privacy Policy</a>
+          <span style={styles.footerLinkDivider}>·</span>
+          <a href="/tos" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Terms of Service</a>
+        </div>
         <p style={styles.footerDisclaimer}>
           Estimates are preliminary and not binding. Final offers require in-person evaluation.
         </p>
@@ -3321,6 +3328,23 @@ const styles = {
   footerDisclaimer: {
     fontSize: 12,
     color: '#B5A992',
+  },
+  footerLinks: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  footerLink: {
+    fontSize: 12,
+    color: '#C8953C',
+    textDecoration: 'none',
+  },
+  footerLinkDivider: {
+    fontSize: 12,
+    color: '#555',
   },
   webcamOverlay: {
     position: 'fixed',
