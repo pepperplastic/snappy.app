@@ -648,6 +648,7 @@ export default function App() {
   const [showContact, setShowContact] = useState(false)
   const [directQuote, setDirectQuote] = useState(false)
   const [limitGated, setLimitGated] = useState(false)
+  const [legalModal, setLegalModal] = useState(null)
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
@@ -1049,16 +1050,19 @@ export default function App() {
       <footer style={styles.footer}>
         <p style={styles.footerText}>© 2026 DW5 LLC d/b/a Snappy Gold · snappy.gold</p>
         <div style={styles.footerLinks}>
-          <a href="/terms" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Terms & Conditions</a>
+          <span onClick={() => setLegalModal('terms')} style={styles.footerLink}>Terms & Conditions</span>
           <span style={styles.footerLinkDivider}>·</span>
-          <a href="/privacy" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Privacy Policy</a>
+          <span onClick={() => setLegalModal('privacy')} style={styles.footerLink}>Privacy Policy</span>
           <span style={styles.footerLinkDivider}>·</span>
-          <a href="/tos" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Terms of Service</a>
+          <span onClick={() => setLegalModal('tos')} style={styles.footerLink}>Terms of Service</span>
         </div>
         <p style={styles.footerDisclaimer}>
           Estimates are preliminary and not binding. Final offers require in-person evaluation.
         </p>
       </footer>
+
+      {/* ── LEGAL MODAL ── */}
+      {legalModal && <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />}
 
       {/* Webcam modal (desktop) */}
       {showWebcam && (
@@ -2332,6 +2336,252 @@ const dark = '#1A1714'
 const muted = '#7A7062'
 const border = '#E8DFD0'
 
+// ═══════════════════════════════════════════════
+//  LEGAL MODAL
+// ═══════════════════════════════════════════════
+const LEGAL_CONTENT = {
+  terms: {
+    title: 'General Terms & Conditions',
+    date: 'Last Updated: February 24, 2026',
+    paragraphs: [
+    `At DW5 LLC d/b/a Snappy Gold (“Company”) our mission is to make cashing in on gold, silver and jewelry and watches (the “Goods”) as seamless as possible from the comfort of your home. We provide the following General Terms and Conditions to ensure your understanding of the purchase of your Goods.`,
+    `By submitting your Goods to Company customers agree to our General Terms and Conditions, as well as our Privacy Policy and Terms of Service and Website Access and Usage.`,
+    `Customers must be a minimum of 18 years of age to sell items through https://snappy.gold and legal owner (or legally authorized on behalf of such owner) of all the items submitted to us.`,
+    `General steps to selling goods:`,
+    `Contact Us. If you are interested in obtaining an offer to purchase your Goods (as a “Seller”), contact us by email at hello@snappy.gold or visit us online at https://snappy.gold and register. At that time we will provide you with the free materials needed to mail us your goods.`,
+    `Packaging. You are responsible for packaging your items. Should we receive damaged or open packages, we reserve the right to return the package to you without any liability therefore. No insurance claims will be processed for packages that arrive damaged. We do, however, insure the Goods properly packaged by you and received by us.`,
+    `Sworn Statement. Before conducting a transaction, Company needs:`,
+    `Seller’s name, address, telephone number, and e-mail address (if available).`,
+    `Seller’s driver’s license number and issuing state or other government-issued identification number.`,
+    `A sworn statement made by the Seller that the Seller is of lawful age and that the license number, and other identifying information is true and correct.`,
+    `The sworn statement must contain the following language: “I declare under penalty of perjury that the foregoing is true and correct.”`,
+    `The sworn statement may be provided electronically through our website or in writing with the Goods being shipped.`,
+    `IMPORTANT: If you mail us Goods without providing the required information, we will request any outstanding information from you within ten (10) days. If we do not receive the information requested within 30 days thereafter or you don’t request their return, the Seller’s Goods are deemed abandoned and are relinquished to the Division of Unclaimed Property of the Florida Department of Financial Services if the market value of the property is greater than $50. Within 24-hours of the expiration of the 30-day hold period for the Goods, we will notify the appropriate law enforcement agency of the abandonment of the property.`,
+    `Appraisal & Evaluation of Goods. Once received, your Goods shall be checked and/or tested by our trained valuation experts to ascertain their value which is primarily based on the current day values. This process may involve scratching or scraping items in order to remove the top layer of material so that the testing apparatus can accurately determine the true grade or karat of the item in question and/or placing certain acids on the precious metal or other items which can leave permanent staining and/or deep scratches. By submitting your items you are in acceptance of these terms. We will not be liable for any damage caused in this way or any resulting decrease in the value of the items. This is the only way to accurately assess the Goods’ true value.`,
+    `Offers. After our determination of the amount of our Offer for your Goods, we will, in our sole discretion, notify you at any or all of the contact information you provided (i.e. e-mail, telephone, and text), each of which will give you the opportunity to accept or reject our offer.`,
+    `The value that we place on Goods fluctuates with the applicable market and other factors. If our website contains general gold valuation charts, they should not be relied on for the value that we will pay and may not be continuously updated. In certain instances, we may value your item based on their resale value and in other instances we may base it on the value of melting it down or selling in pieces, taking into account the transaction costs associated with each. Generally speaking, the value of your Goods is determined by many different factors and we can only tell you how much your item[s] are worth by examining them once we receive them. We reserve the right to decline to buy any item from anyone at any time.`,
+    `We will hold the Goods at our facility up to thirty (30) days from the date the Goods are received (the “holding period”). During the holding period you may accept or deny the offer. If you accept the offer, payment will be promptly made to you via check, or a different payment method of your choosing. If you deny the offer, we will, at no cost to you, return your Items to you. If we do not hear from you by the time the holding period expires, the offer will be deemed as accepted, payment will be made to you in the amount of the offer and the purchase shall be deemed final, binding and irrevocable.`,
+    `Should you desire, you may call us to determine receipt of your Goods and to receive a telephonic quote for the purchase of your Goods. If you approve the quote, your items will be processed and a check mailed to you. If you do not approve our quote we shall promptly return the Goods to you.`,
+    `Warranties and Representations.`,
+    `You represent and warrant that you are over the age of eighteen years of age. We reserve the right to request documentation to verify your age. We request that you verify your age by entering your age and information on our website. The information includes the following: your name, address, telephone number, and e-mail address (if available). Furthermore, you must provide your license number or a copy of issuing state or other government-issued identification number with photo. You declare under penalty of perjury that the foregoing information provided is true and correct.`,
+    `You hereby represent and warrant that all Goods you send to us are owned by you and that no other person or entity’s permission is required to process the Goods purchased by us. You agree to indemnify and hold Snappy Gold, its officers, employees and subsidiaries, harmless from and against any claims brought by a third party claiming ownership of any items purchased from you by us.`
+    ],
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    date: 'Last Updated: February 24, 2026',
+    paragraphs: [
+    `Welcome to the DW5 LLC d/b/a Snappy Gold website (https://snappy.gold or the "Website"). This written policy (the "Privacy Policy") is designed to tell you about our practices regarding collection, use, and disclosure of information that you may provide via this Website and certain related services. Please be sure to read this entire Privacy Policy before using, or submitting information, to this Website.`,
+    `Your Consent`,
+    `This Privacy Policy sets forth the Website's current policies and practices with respect to nonpublic personal information of the users of the Website. By using this Website, you agree with the terms of this Privacy Policy. Whenever you submit information via this Website, you consent to the collection, use, and disclosure of that information in accordance with this Privacy Policy.`,
+    `At Snappy Gold, we put the needs of our customers first. Ensuring that you get an honest, upfront, hassle-free service is our highest priority. Snappy Gold offers a complimentary quote for our gold purchasing services. The information gathered for this quote is used to give you the most accurate quote possible. Personal information such as your name, address, phone number(s), email address, and driver’s license (or other government ID) is stored in our in-house database and is used for any customer care issues that may arise. Per Florida law, we also make available the description of and photos of the jewelry/gold provided, as well as the contact information of any seller on a portal accessible by law enforcement.`,
+    `PLEASE READ THE FOLLOWING PRIVACY POLICY (OTHERWISE NOTED AS THIS “AGREEMENT”) CAREFULLY BEFORE USING THE WEBSITES BY USING THIS WEBSITE, YOU SIGNIFY YOUR ASSENT TO THIS AGREEMENT. IF YOU DO NOT ASSENT TO THIS AGREEMENT, PLEASE DO NOT USE THIS WEBSITE.`,
+    `At Snappy Gold, we share your concerns about privacy. We have created this privacy statement in order to demonstrate our firm commitment. The following discloses our information gathering and dissemination practices for all Snappy Gold web pages.`,
+    `COLLECTION OF PERSONAL INFORMATION`,
+    `We may collect information that identifies you, such as names, postal addresses, email addresses, telephone and driver’s license or other identification (“personal information”), when voluntarily submitted by our visitors. We receive and store any information that you choose to enter through the Website, including any submissions that you make or content you provide on or through the Website or through outside social media promotions that we may sponsor.`,
+    `Use of Information`,
+    `We may use the information we collect in the following ways:`,
+    `Send you requested service information`,
+    `Provide you with a requested service`,
+    `Respond to customer service requests`,
+    `Respond to your questions and concerns`,
+    `Send you marketing communications or advertisements`,
+    `Improve our website or services`,
+    `Personalize your web or service experience`,
+    `To protect against fraud, and insure confidentiality and security`,
+    `Sharing of Information`,
+    `We will share your personal information with third parties only in the ways that are described in this privacy statement. We do not sell, rent, trade, or otherwise share your personal information with third parties without first providing you notice and choice.`,
+    `We may provide your personal information to agents or service providers acting on our behalf for limited purposes. For example, we may share personal information with our agents or service providers to send you email on our behalf or to ship gold/jewelry, mailing/appraisal kits, or transmit payment. These third parties are authorized to use your personal information only to perform the service they are providing for us.`,
+    `We may also share your information for the purposes of protecting against fraud, and insure confidentiality and security. Specifically, under Florida law, law enforcement is allowed access to our records as part of their investigation into the sale of stolen gold/jewelry.`,
+    `Additionally, we reserve the right to disclose your personal information as required by law (e.g., to comply with a subpoena, warrant, court order, or similar legal process served on our website) and when we believe that disclosure is necessary to protect our rights, protect your safety or the safety of others, investigate fraud, and/or respond to a government request. In certain situations, we may be required to disclose personal data in response to lawful requests by public authorities, including meeting national security or law enforcement requirements.`,
+    `In the event Snappy Gold goes through a business transition, such as a merger, acquisition by another company, or sale of all or a portion of its assets, your personally identifiable information will likely be among the assets transferred. You will be notified via email and/or a prominent notice on our website of any such change in ownership or control of your personal information, as well as any choices you may have regarding your personal information.`,
+    `IP ADDRESS`,
+    `We log all connections to our web servers. Those log files include your IP address. An IP address is NOT personally identifiable information, but general information about your location, connection to the Internet, and your Internet Service Provider. We use your IP address to help diagnose problems with our server and to administer the Sites. Additionally, we will use your IP address to track your navigation of the Sites and we may use your navigation history in current and future marketing efforts to you and to others.`,
+    `SECURITY`,
+    `We care about protecting the security of your personal information, and we have implemented security procedures to protect the personal information that you provide to us. However, no method of transmitting or storing electronic data is ever completely secure, and we cannot guarantee that such information will never be accessed, used, or released in a manner that is inconsistent with this policy. Some of the measures we take are:`,
+    `•	Limiting access to personal information to those employees who are critical to communicating with you and/or processing contributions.`,
+    `•	Implementing appropriate physical, electronic and procedural safeguards to guard against unauthorized access or use.`,
+    `•	Requiring appropriate consents and protections from our business partners before we share any personally identifiable information.`,
+    `While we strive to protect your personal information, you acknowledge that: (a) there are security and privacy limitations of the internet which are beyond our control; (b) the security, integrity, and privacy of any and all information and data exchanged between you and us through this Website cannot be guaranteed; and (c) any such information and data may be viewed or tampered with in transit by a third party. Moreover, where you may be required to use passwords, or other special access features on this Website, it is your responsibility to safeguard them.`,
+    `Passive Information Collection`,
+    `As you navigate through a website, certain information can be passively collected (that is, gathered without you actively providing the information) using various technologies and means, such as Internet Protocol addresses, cookies, Internet tags, and navigational data collection.`,
+    `This Website may use Internet Protocol (IP) addresses. An IP Address is a number assigned to your computer by your Internet service provider so you can access the Internet and is generally considered to be non-personally identifiable information, because in most cases an IP address is dynamic (changing each time you connect to the Internet), rather than static (unique to a particular user's computer). We use your IP address to diagnose problems with our server, report aggregate information, determine the fastest route for your computer to use in connecting to our Website, and administer and improve services to our consumers.`,
+    `A "cookie" is a bit of information that a website sends to your web browser that helps the site remember information about you and your preferences.`,
+    `"Session cookies" are temporary bits of information that are erased once you exit your web browser window or otherwise turn your computer off. Session cookies are used to improve navigation on websites and to collect aggregate statistical information. This Website uses session cookies.`,
+    `"Persistent cookies" are more permanent bits of information that are placed on the hard drive of your computer and stay there unless you delete the cookie. Persistent cookies store information on your computer for a number of purposes, such as retrieving certain information you have previously provided (e.g., username), helping to determine what areas of the website visitors find most valuable, and customizing the website based on your preferences. This Website uses persistent cookies.`,
+    `"Internet tags" (also known as single-pixel GIFs, clear GIFs, invisible GIFs, and 1-by-1 GIFs) are smaller than cookies and tell the website server information such as the IP address and browser type related to the visitor's computer. This Website uses Internet tags. "Navigational data" ("log files," "server logs," and "clickstream" data) and "Internet Tags" are used for system management, to improve the content of the site, market research purposes, and to communicate information to visitors. This Website uses navigational data.`,
+    `Links`,
+    `This Website may contain links to websites of third parties not affiliated with Snappy Gold. This Privacy Policy will not apply to these third-party websites and the Website is not responsible for the privacy practices or the content on any of these other websites, even where these third-party sites indicate a special relationship or "partnership" with the Website. We do not disclose personally identifiable information to those responsible for the linked sites. The linked sites, however, may collect personal information from you when you link to their site. This collecting of information is not subject to the control of the Website. To ensure protection of your privacy, always review the privacy policies of the sites you visit by linking from this Website.`,
+    `Testimonials`,
+    `We may display personal testimonials on our website in addition to other endorsements. With your consent, we may post your testimonial along with your name and city/state of residence. If you wish to update or delete your testimonial, you can contact us at hello@snappy.gold.`,
+    `California Do Not Track Disclosures`,
+    `How do we respond to Web browser “do not track” signals or other mechanisms that provide consumers the ability to exercise choice regarding the collection of personally identifiable information about an individual consumer’s online activities over time and across third-party websites or online services?`,
+    `We currently do not respond to DNT signals in browsers because we do not track individual users across the web.`,
+    `May other parties collect personally identifiable information about an individual consumer’s online activities over time and across different websites when they visit https://snappy.gold?`,
+    `Yes.`,
+    `Notice to California Residents`,
+    `With certain exceptions, residents of the State of California may request (a) disclosure of personal information collected, (b) disclosure of personal information sold or disclosed for a business purpose, (c) deletion of personal information, (d) to opt out of the sale of personal information, and (e) access and data portability. Moreover, we will not discriminate based on your exercise of such rights. If you are a California resident and want to make any such requests, please contact us through our website (https://snappy.gold), or at Snappy Gold, Privacy Policy, 1686 S Federal Hwy #318, Delray Beach, FL 33483 or hello@snappy.gold.`,
+    `Notice to Vermont Residents`,
+    `In response to Vermont regulations, we automatically treat accounts with Vermont billing addresses as if you requested that we do not share your information with nonaffiliated third parties and that we limit the information we share with our affiliates. If we disclose information about you to nonaffiliated third parties with whom we have joint marketing agreements, we will only disclose your name, address, other contact information, and information about our transaction and experiences with you.`,
+    `Notice to Nevada Residents`,
+    `We are providing you this notice pursuant to state law. You may be placed on our internal Do Not Call List by requesting that we cease calling you by contacting us directly and making such request in writing hello@snappy.gold.. Nevada law requires that we also provide you with the following contact information: Bureau of Consumer Protection, Office of the Nevada Attorney General, 555 E. Washington St., Suite 3900, Las Vegas, NV 89101; Phone number: 702-486-3132; e-mail: BCPHELLO@ag.state.nv.us.`,
+    `Protecting Children’s Privacy Online`,
+    `The Website is not directed to individuals under the age of eighteen (18), and we request that these individuals do not provide Personal Information through the Website. We do not knowingly collect information from children under 18 without parental consent. Visit the Federal Trade Commission website for more information about the Children's Online Privacy Protection Act (COPPA). If you believe that we have received information from a child or other person who is not of a majority age in their relevant jurisdiction, please contact us at our email or physical mailing address listed in the “Contact Us” section below and we will take all reasonable efforts to remove the information.`,
+    `CHANGES TO THIS PRIVACY POLICY`,
+    `This privacy policy describes the types of information we currently collect, and the ways we use and protect that information. From time to time, we may collect different types of information and use that information in different ways – for example, when we add features or services to Snappy Gold. In these cases, we may edit this policy to explain the new practices. Because protecting your privacy is very important to us, we do not expect major changes in policy. However, if we do make significant changes in our practices, we will include announcements on the https://snappy.gold home page so that you will know to review the revised policy.`,
+    `CONTACT US`,
+    `​Email us. ​E-mail us at hello@snappy.gold..`,
+    `Call us. ​Our customer service team is available  at toll-free number at 888-613-0704 between the hours of 8 am – 5 pm EST Monday through Friday.`,
+    `Write us. ​Update your communication preferences by mailing us a letter at: Snappy Gold, 1686 S Federal Hwy #318, Delray Beach, FL 33483.`,
+    `If you have any questions regarding this Privacy Policy, or https://snappy.gold, don’t hesitate to contact us!`,
+    `Please print and retain a copy of this privacy policy for your records.`
+    ],
+  },
+  tos: {
+    title: 'Terms of Service & Website Access',
+    date: 'Last Updated: February 24, 2026',
+    paragraphs: [
+    `Please note that all calls with the company may be recorded or monitored for quality assurance and training purposes.
+​
+AGREEMENT BETWEEN USER AND DW5 LLC d/b/a Snappy Gold - PLEASE READ THE TERMS OF SERVICE SET FORTH BELOW (THE “TERMS”) GOVERN YOUR USE OF THIS WEBSITE ON THE WORLD WIDE WEB (THE “SITE”) AND ARE LEGALLY BINDING ON YOU. IF YOU DO NOT AGREE WITH ANY OF THESE TERMS, DO NOT ACCESS OR OTHERWISE USE THIS SITE OR ANY INFORMATION CONTAINED ON THE SITE. YOUR USE OF THE SITE SHALL BE DEEMED TO BE YOUR AGREEMENT TO ABIDE BY EACH OF THE TERMS SET FORTH BELOW.`,
+    `These Terms affect your legal rights, including an agreement to resolve disputes that may arise between us by arbitration on an individual basis instead of by class actions or jury trials Snappy Gold (Company) may provide you, (the “User” or “you”), with access to its content, resources, tools for communication, public forums, commerce platforms, and other services through its network of websites (the “Service”). Company provides the Service to the User, subject to the following Terms, which you accept by accessing Company websites. Company is not responsible for providing you access facilities or equipment (in any form) to its Service. You, the User, also comprehend and agree that the Service may include advertisements and sponsorships and that these are necessary for Company to provide the Service. You also comprehend and agree that Company makes no warranty or representation about the suitability, reliability, availability, timeliness, accuracy of the information, products, services and related graphics contained within the Service for any purpose. The Service is provided “as is” without warranty of any kind. Company hereby disclaim all warranties and conditions with regard to the Service.`,
+    `ELIGIBILITY
+Use of the Service is limited to parties that lawfully can enter into and form contracts under applicable law. For example, minors are not allowed to use the Service. If you are 17 years of age or younger, you must immediately navigate away from this Site.
+​
+ACKNOWLEDGMENT AND ACCEPTANCE OF TERMS OF SERVICE
+By using the Services or otherwise accessing the Company websites, you agree to be bound by all terms and conditions hereof and all policies and guidelines incorporated by reference The Service is provided to you, the User, under the terms and conditions and any amendments thereto and any operating rules or policies that may be published from time to time by Company as part of the Terms of Service/Legal Disclaimer and related disclosures which are cumulatively included herein by reference.`,
+    `MODIFICATION OF THESE TERMS OF USE
+Company reserves the right to change any of the terms, conditions, and notices under which the Services are offered. You are responsible for regularly reviewing these Terms, including changes/modifications if any incorporated by us from time to time. Your continued use of the Service constitutes your agreement to all such terms, conditions, and notices.`,
+    `MODIFICATION TO THE SERVICE
+Company reserves the right to modify or discontinue, temporarily or permanently, the Service (or any part of the Service) with or without notice to the User at any time and from time to time. The User agrees that Company shall not be liable to the User or any third party for any modification or discontinuance of the Service. It will not discontinue services while in receipt of your gold/jewelry and will complete any pending transactions with you.`,
+    `USER CONDUCT
+The Service may include online account access, content viewing, and means designed to enable you to communicate with Company (collectively, “Tools for Communication”). You agree to use the Tools for Communication only to post, send and receive messages and material that are proper and, when applicable, related to the particular tool for communication. You also hereby agree that you shall not make use of the Service for any commercial purpose, including reselling and/or co-branding/private labeling. As a condition of your use of the Service you, the User, agree to provide: (a) true, accurate, current and complete information about yourself as required to register; (b) maintain and promptly update the registration information to keep it accurate, current and complete. If you provide any information that is untrue, inaccurate, not current or incomplete, Company has the right to terminate the User account and refuse any and all current or future use of the Service; and (c) Company has the right to use / disclose the aggregate registration information to third party service providers in connection with marketing of services, subject to the Privacy Policy. You have also consented to Company having the right to use your registration information to provide targeting of advertising and other service offers. This could also be used to customize the content you see, to fulfill your requests for certain services and to contact/inform you through e-mail or otherwise about special offers or updates on our cash-4-gold business.`,
+    `USAGE OBLIGATIONS
+As a condition of your use of the Service you will not use the Service for any illegal purposes, including selling stolen gold/jewelry through our Service. You will be solely responsible for the contents of transmissions made by you through the Service. You agree not to use the Service to: (a) Obstruct or hinder the use and enjoyment of the Service by other Users; (b) Violate any applicable local, state, national, and international laws and regulations; (c) Impersonate any person or entity, or falsely state or otherwise misrepresent your affiliation with a person or entity; (d) Interfere with or disrupt the Service or servers or networks connected to the Service, or defy any requirements, regulations or guidelines of networks connected to the Service; (e) Upload, post, e-mail, transmit or otherwise make available any content that is unlawful, damaging, intimidating, hostile, offensive, harassing, defamatory, improper, obscene, vulgar, invasive of another’s privacy, caste related, ethnically or otherwise objectionable; (f) Upload, post, e-mail, transmit or otherwise make available any content protected by any patent, trademark, copyright or other intellectual proprietary laws unless you own or control the rights thereto or have received all necessary consents to do the same; (g) Upload files that contain viruses, worms, corrupted files or any other similar software or programs designed to disrupt, damage or limit the operation of any computer or telecommunications equipment or property of another; (h) Reproduce, duplicate, copy, sell, resell or exploit for any commercial purposes, any portion, use or access of the Service; and (i) Conduct any activity that would aid or assist terrorism or related activity. Company reserves the right to terminate your access to any or all of the Services, at any time, without notice, for any reason whatsoever.`,
+    `USER ACCOUNT, PASSWORD & SECURITY
+As part of the Service’s registration process you will provide us with current, complete and accurate information as requested by the registration form. You will then choose a user name and password. You take total responsibility for maintaining the confidentiality of your password and account. You are also entirely responsible for any and all activities that occur under your account. You agree to notify Company immediately of any unlawful/unauthorized use of your account or any other security violation. You agree to ensure that you exit from your account at the end of each session. You understand that Company will not be liable for any loss or damage in any form incurred as a result of unauthorized usage of your account, with or without your knowledge. However, you could be held liable for losses or damages incurred by Company or a third party as a result of your failure to comply with this clause. You also agree not to use anyone else’s account, at any time, without the prior permission of the account holder.`,
+    `LINKS ON/IN THE SERVICES
+The Service or third parties may provide links to other worldwide web sites or resources. Because Company has no control over such sites and resources, you acknowledge and agree that Company is not responsible for the availability of such external sites or resources, and does not endorse and is not responsible or liable for any content, information, advertising, products, or other materials on or available from such sites or resources. You further acknowledge and agree that Company shall not be responsible or liable, directly or indirectly, for any damage or loss caused or alleged to be caused by or in connection with use of or reliance on any such content, goods or services available on or through any such site or resource.`,
+    `SNAPPY GOLD’S PROPRIETARY RIGHTS
+You acknowledge and agree that the Service and any necessary software used in connection with the service (“Software”) contain proprietary and confidential information that is protected by applicable intellectual property and other laws. You further acknowledge and agree that content contained in information presented to you through the Service is protected by copyrights, trademarks, service marks, patents or other proprietary rights and laws. Except as expressly authorized by Company, you agree not to modify, rent, lease, loan, sell, distribute or create derivative works based on the Service or the Software, in whole or in part.`,
+    `PRIVACY POLICY
+Registration information and certain other information about you is subject to our Privacy Policy. For more information, see our Privacy Policy.`,
+    `LIMITATION OF LIABILITY
+You expressly understand and agree that to the extent permitted under law, Company shall not be liable for any direct, indirect, incidental, special, consequential or exemplary damages, including but not limited to, damages for loss of profits, goodwill, use, data or other intangible losses (even if Company has been advised of the possibility of such damages), resulting from: (i) the use or the inability to use the Service; (ii) the cost of procurement of substitute services resulting from any services obtained or messages received or transactions entered into through or from the Service; (iii) unauthorized access to or alteration of your transmissions or data; (iv) statements or conduct of any third party on the Service; or (v) any other matter relating to the Service. If you are shipping gold/jewelry to Company as part of the Service, it is your responsibility to insure the shipment.`,
+    `INDEMNITY
+You agree to indemnify and hold Company, and its subsidiaries, affiliates, officers, agents, co-branders or other partners, and employees, harmless from any claim or demand including reasonable attorneys’ fees, which any third party may make due to or arising out of content you submit, post to or transmit through the Service, your use of the Service (including shipping stolen gold/jewelry), your connection to the service, your violations of these Terms (whether alleged or otherwise), or your violation of any rights of another, whether direct or indirect (including without limitation claims for misrepresentation).`,
+    `CONTENT PROVIDED TO THE SERVICE
+Company does not claim ownership of the “content” (in the form of data, text, software, music, sound, photographs, graphics, video, messages or other materials) you provide to Company (including feedback and suggestions). However, by providing such content or any other material, you grant Company and its affiliate sites unrestricted and irrevocable permission to use your submission in connection with the operation of their Internet businesses, including, without limitation, the rights to copy, distribute, transmit, publicly display, publicly perform, reproduce, edit, translate and reformat your submission, and to publish your name in connection with your submission.`,
+    `COPYRIGHT INFRINGEMENT POLICY
+In accordance with the requirements set forth in the Digital Millennium Copyright Act, Title 17 United States Code Section 512(c)(2) (“DMCA”), Company will investigate notices of copyright infringement and take appropriate remedial action. If you believe that any Content on https://snappy.gold has been used or copied in a manner that infringes your work, please provide a written notification of claimed copyright infringement to the Designated Agent for the Site containing the following elements as set forth in the DMCA:`,
+    `a physical or electronic signature of the owner of the copyright interest that is alleged to have been infringed or the person authorized to act on behalf of the owner;`,
+    `identification of the copyrighted work(s) claimed to have been infringed, including copyright date;`,
+    `identification of the Content you claim to be infringing and which you request be removed from the Site or access to which is to be disabled along with a description of where the infringing Content is located;`,
+    `information reasonably sufficient to allow us to contact you, such as a physical address, telephone number and an email address;`,
+    `a statement by you that you have a good faith belief that the use of the Content identified in your written notification in the manner complained of is not authorized by you or the copyright owner, its agent or the law; and`,
+    `a statement by you that the information in your written notification is accurate and that, under penalty of perjury, you are the copyright owner or authorized to act on behalf of the copyright owner.`,
+    `Company’s designated agent for the written notification of claims of copyright infringement can be contacted at the following address:`,
+    `Designated Agent – Copyright Infringement Claims
+David Weiss`,
+    `1686 S Federal Hwy #318,`,
+    `Delray Beach, FL 33483`,
+    `APPLICABLE LAW
+By visiting Company, you agree that the laws of the state of Florida, without regard to principles of conflict of laws, will govern this Agreement and any dispute of any sort that might arise between you and Company.`,
+    `DISPUTES AND ARBITRATION/CLASS ACTION WAIVER
+Any dispute relating in any way to your visiting this website or your use of any of the Services shall be submitted to confidential, binding arbitration in Delray Beach, FL, except that, to the extent you have in any manner violated or threatened to violate Company’s intellectual property rights, Company may seek injunctive or other appropriate relief in any state or federal court in Florida, and you consent to exclusive jurisdiction and venue in such courts. Arbitration hereunder shall be conducted under the rules then prevailing of the American Arbitration Association. The arbitrator’s award shall be binding, but subject to review in accordance with applicable statutes, rules and regulations governing arbitration awards and may be entered as a judgment in any court of competent jurisdiction. To the fullest extent permitted by applicable law, no arbitration hereunder shall be joined to an arbitration involving any other party subject to these terms and conditions, whether through class arbitration proceedings or otherwise.`,
+    `​
+PLEASE PRINT AND RETAIN A COPY OF THESE TERMS OF SERVICE FOR YOUR RECORDS.`
+    ],
+  },
+}
+
+function LegalModal({ type, onClose }) {
+  const content = LEGAL_CONTENT[type]
+  if (!content) return null
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  const isHeader = (text) => {
+    const t = text.trim()
+    if (t.length > 100) return false
+    if (t === t.toUpperCase() && t.length > 3 && !t.startsWith('\u2022') && !t.startsWith('PLEASE')) return true
+    const headers = ['Your Consent', 'Use of Information', 'Sharing of Information', 'Links',
+      'Testimonials', 'Passive Information Collection', 'Warranties and Representations.',
+      'General steps to selling goods:', 'Sworn Statement.', 'Notice to California',
+      'Notice to Vermont', 'Notice to Nevada', 'Protecting Children', 'California Do Not Track']
+    if (headers.some(h => t.startsWith(h))) return true
+    return false
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '20px',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#1A1816', border: '1px solid rgba(200,149,60,0.2)',
+        borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '85vh',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '24px 28px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          flexShrink: 0,
+        }}>
+          <div>
+            <h2 style={{ fontSize: 22, fontWeight: 600, color: '#FAF6F0', margin: 0,
+              fontFamily: "'EB Garamond', serif" }}>{content.title}</h2>
+            <p style={{ fontSize: 12, color: '#C8953C', marginTop: 4,
+              fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.04em' }}>{content.date}</p>
+          </div>
+          <button onClick={onClose} style={{
+            background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8,
+            width: 36, height: 36, cursor: 'pointer', color: '#888', fontSize: 20,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, transition: 'background 0.2s',
+          }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+          >&times;</button>
+        </div>
+        {/* Body */}
+        <div style={{
+          padding: '24px 28px 32px', overflowY: 'auto', flex: 1,
+          WebkitOverflowScrolling: 'touch',
+        }}>
+          {content.paragraphs.map((p, i) => {
+            if (isHeader(p)) {
+              return <h3 key={i} style={{
+                fontSize: 13, fontWeight: 600, color: '#C8953C', textTransform: 'uppercase',
+                letterSpacing: '0.06em', margin: '28px 0 10px',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>{p}</h3>
+            }
+            if (p.startsWith('\u2022') || p.startsWith('\t')) {
+              return <p key={i} style={{
+                fontSize: 15, color: 'rgba(250,246,240,0.8)', lineHeight: 1.7,
+                marginBottom: 10, paddingLeft: 16,
+                fontFamily: "'EB Garamond', serif",
+              }}>{p}</p>
+            }
+            return <p key={i} style={{
+              fontSize: 15, color: 'rgba(250,246,240,0.8)', lineHeight: 1.7,
+              marginBottom: 14, fontFamily: "'EB Garamond', serif",
+            }}>{p}</p>
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const styles = {
   app: {
     minHeight: '100vh',
@@ -3341,6 +3591,7 @@ const styles = {
     fontSize: 12,
     color: '#C8953C',
     textDecoration: 'none',
+    cursor: 'pointer',
   },
   footerLinkDivider: {
     fontSize: 12,
