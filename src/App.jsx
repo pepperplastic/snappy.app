@@ -2124,6 +2124,7 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
             placeholder="(555) 555-1234"
             style={styles.formInput}
           />
+          <p style={{ fontSize: '11px', color: '#888', marginTop: '6px', lineHeight: '1.4' }}>By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg & data rates may apply. Reply STOP to unsubscribe.</p>
         </div>
         {!directQuote && (
           <div style={styles.formGroup}>
