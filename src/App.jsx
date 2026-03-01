@@ -748,7 +748,7 @@ export default function App() {
     trackEvent('photo_uploaded', { method: 'camera' })
     trackMetaEvent('ViewContent', { content_name: 'Photo Upload', content_category: 'camera' })
     analyzeImage([base64])
-      .then(result => { setAnalysis(result); setStep(STEPS.OFFER); incrementAnalysisCount(); notifyPhoto(result, [base64]); })
+      .then(result => { setAnalysis(result); setStep(STEPS.OFFER); incrementAnalysisCount(); notifyPhoto(result, [base64]); trackMetaEvent('EstimateGenerated', { content_name: result?.title || 'Unknown Item', content_category: result?.item_type || 'unknown', value: result?.offer_high || 0, currency: 'USD' }); })
       .catch(err => {
         console.error('Analysis error:', err)
         setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
@@ -776,6 +776,7 @@ export default function App() {
       setStep(STEPS.OFFER)
       incrementAnalysisCount()
       notifyPhoto(result, compressed)
+      trackMetaEvent('EstimateGenerated', { content_name: result?.title || 'Unknown Item', content_category: result?.item_type || 'unknown', value: result?.offer_high || 0, currency: 'USD' })
     } catch (err) {
       console.error('Analysis error:', err)
       setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
