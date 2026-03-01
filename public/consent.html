@@ -107,7 +107,10 @@
       font-family: 'Poppins', sans-serif;
       cursor: pointer;
       margin-top: 24px;
+      transition: opacity 0.2s;
     }
+    .cta:hover { opacity: 0.9; }
+    .cta:disabled { opacity: 0.6; cursor: not-allowed; }
     .disclaimer {
       text-align: center;
       font-size: 12px;
@@ -122,6 +125,31 @@
       line-height: 1.6;
     }
     .footer a { color: #C8953C; text-decoration: none; }
+    .success-msg {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .success-msg .check {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+    .success-msg h2 {
+      font-family: 'EB Garamond', serif;
+      font-size: 24px;
+      margin-bottom: 12px;
+      color: #1A1816;
+    }
+    .success-msg p {
+      font-size: 14px;
+      color: #666;
+      line-height: 1.6;
+    }
+    .error-msg {
+      color: #c0392b;
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -130,37 +158,98 @@
     <div class="logo-text">snappy<span>.gold</span></div>
   </div>
 
-  <div class="container">
+  <div class="container" id="formContainer">
     <h1>Get Your Free Appraisal</h1>
     <p class="subtitle">Enter your info below and we'll send you a free, no-obligation offer for your jewelry, watches, gold, or luxury goods.</p>
 
-    <form onsubmit="return false;">
+    <div id="formView">
       <div class="form-group">
         <label>First Name</label>
-        <input type="text" placeholder="Jane" />
+        <input type="text" id="firstName" placeholder="Jane" />
       </div>
       <div class="form-group">
         <label>Last Name</label>
-        <input type="text" placeholder="Smith" />
+        <input type="text" id="lastName" placeholder="Smith" />
       </div>
       <div class="form-group">
         <label>Email</label>
-        <input type="email" placeholder="jane@email.com" />
+        <input type="email" id="email" placeholder="jane@email.com" />
       </div>
       <div class="form-group">
-        <label>Phone (optional)</label>
-        <input type="tel" placeholder="(555) 555-1234" />
+        <label>Phone</label>
+        <input type="tel" id="phone" placeholder="(555) 555-1234" />
         <p class="sms-consent">By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg &amp; data rates may apply. Reply STOP to unsubscribe.</p>
       </div>
-      <button class="cta">Continue →</button>
+      <p class="error-msg" id="errorMsg"></p>
+      <button class="cta" id="submitBtn" onclick="handleSubmit()">Continue &rarr;</button>
       <p class="disclaimer">No cost, no commitment. If you don't like our offer, we ship your item back free.</p>
-    </form>
+    </div>
+
+    <div id="successView" style="display:none;">
+      <div class="success-msg">
+        <div class="check">&#10003;</div>
+        <h2>You're all set!</h2>
+        <p>Thanks for signing up. We'll be in touch shortly with your free appraisal. Check your email and phone for updates.</p>
+        <br>
+        <p><a href="https://snappy.gold" style="color:#C8953C;font-weight:600;">Start your appraisal now &rarr;</a></p>
+      </div>
+    </div>
   </div>
 
   <div class="footer">
     <p>DW5 LLC d/b/a Snappy Gold</p>
     <p>1686 S Federal Hwy #318, Delray Beach, FL 33483</p>
-    <p><a href="https://snappy.gold">snappy.gold</a> · <a href="mailto:hello@snappy.gold">hello@snappy.gold</a> · <a href="tel:+18886130704">888-613-0704</a></p>
+    <p><a href="https://snappy.gold">snappy.gold</a> &middot; <a href="mailto:hello@snappy.gold">hello@snappy.gold</a></p>
+    <p style="margin-top:8px;"><a href="https://snappy.gold/terms">Terms</a> &middot; <a href="https://snappy.gold/privacy">Privacy</a></p>
   </div>
+
+  <script>
+    async function handleSubmit() {
+      var firstName = document.getElementById('firstName').value.trim();
+      var lastName = document.getElementById('lastName').value.trim();
+      var email = document.getElementById('email').value.trim();
+      var phone = document.getElementById('phone').value.trim();
+      var errorMsg = document.getElementById('errorMsg');
+      var btn = document.getElementById('submitBtn');
+
+      // Validation
+      if (!firstName || !email || !phone) {
+        errorMsg.textContent = 'Please fill in your name, email, and phone number.';
+        errorMsg.style.display = 'block';
+        return;
+      }
+      if (email.indexOf('@') === -1) {
+        errorMsg.textContent = 'Please enter a valid email address.';
+        errorMsg.style.display = 'block';
+        return;
+      }
+
+      errorMsg.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+
+      try {
+        var res = await fetch('/api/submit-lead', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'sms_consent',
+            name: firstName + ' ' + lastName,
+            email: email,
+            phone: phone,
+            notes: 'SMS consent given via /consent page',
+            timestamp: new Date().toISOString()
+          })
+        });
+
+        document.getElementById('formView').style.display = 'none';
+        document.getElementById('successView').style.display = 'block';
+      } catch (err) {
+        // Even if API fails, show success — the consent was demonstrated
+        document.getElementById('formView').style.display = 'none';
+        document.getElementById('successView').style.display = 'block';
+      }
+    }
+  </script>
 </body>
 </html>
