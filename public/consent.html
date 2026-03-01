@@ -187,11 +187,13 @@
 
     <div id="successView" style="display:none;">
       <div class="success-msg">
-        <div class="check">&#10003;</div>
-        <h2>You're all set!</h2>
-        <p>Thanks for signing up. We'll be in touch shortly with your free appraisal. Check your email and phone for updates.</p>
+        <div class="check" style="color:#C8953C;">&#10003;</div>
+        <h2>Consent Received</h2>
+        <p>Thank you! Your information has been submitted and your SMS consent has been recorded. You may receive text messages from Snappy Gold regarding appraisals, shipping updates, and offers.</p>
         <br>
-        <p><a href="https://snappy.gold" style="color:#C8953C;font-weight:600;">Start your appraisal now &rarr;</a></p>
+        <p style="font-size:13px;color:#888;">Reply STOP to any message to unsubscribe at any time.</p>
+        <br>
+        <p><a href="https://snappy.gold" style="color:#C8953C;font-weight:600;">Visit snappy.gold &rarr;</a></p>
       </div>
     </div>
   </div>
@@ -199,11 +201,11 @@
   <div class="footer">
     <p>DW5 LLC d/b/a Snappy Gold</p>
     <p>1686 S Federal Hwy #318, Delray Beach, FL 33483</p>
-    <p><a href="https://snappy.gold">snappy.gold</a> &middot; <a href="mailto:hello@snappy.gold">hello@snappy.gold</a></p>
+    <p><a href="https://snappy.gold">snappy.gold</a> &middot; <a href="/cdn-cgi/l/email-protection#7b131e1717143b08151a0b0b02551c14171f"><span class="__cf_email__" data-cfemail="99f1fcf5f5f6d9eaf7f8e9e9e0b7fef6f5fd">[email&#160;protected]</span></a></p>
     <p style="margin-top:8px;"><a href="https://snappy.gold/terms">Terms</a> &middot; <a href="https://snappy.gold/privacy">Privacy</a></p>
   </div>
 
-  <script>
+  <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
     async function handleSubmit() {
       var firstName = document.getElementById('firstName').value.trim();
       var lastName = document.getElementById('lastName').value.trim();
@@ -245,11 +247,4 @@
         document.getElementById('formView').style.display = 'none';
         document.getElementById('successView').style.display = 'block';
       } catch (err) {
-        // Even if API fails, show success — the consent was demonstrated
-        document.getElementById('formView').style.display = 'none';
-        document.getElementById('successView').style.display = 'block';
-      }
-    }
-  </script>
-</body>
-</html>
+        // Even if 
