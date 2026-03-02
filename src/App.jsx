@@ -663,6 +663,12 @@ export default function App() {
     captureUtmParams()
     fetchIP()
     trackEvent('page_view', { page: 'home' })
+
+    // Route /consent directly to the quote form
+    if (window.location.pathname === '/consent') {
+      setDirectQuote(true)
+      setStep(STEPS.LEAD_FORM)
+    }
   }, [])
 
   // Track step changes
@@ -875,6 +881,7 @@ export default function App() {
     submitLead()
     trackMetaEvent('InitiateCheckout', { content_name: 'Shipping Form Submitted' })
     if (directQuote) {
+      setDirectQuote(false) // Reset so photo flow doesn't loop back to "Get a Quote"
       setStep(STEPS.CAPTURE)
     } else {
       setStep(STEPS.SUBMITTED)
@@ -1017,6 +1024,13 @@ export default function App() {
             analysis={analysis}
             imageData={imageData}
             onGetOffer={() => setStep(STEPS.LEAD_FORM)}
+            onDirectSubmit={() => {
+              submitLead()
+              trackEvent('cta_submit_from_offer')
+              trackMetaEvent('Purchase', { content_name: analysis?.title || 'Unknown Item', value: analysis?.offer_high || 0, currency: 'USD' })
+              trackGadsConversion(GADS_LEAD_LABEL)
+              setStep(STEPS.SUBMITTED)
+            }}
             onRetry={() => setStep(STEPS.CAPTURE)}
             onReEstimate={handleReEstimate}
             isReEstimating={isReEstimating}
@@ -1642,7 +1656,7 @@ function EditableDetail({ label, value, onChange, itemType }) {
 // ═══════════════════════════════════════════════
 //  OFFER SCREEN
 // ═══════════════════════════════════════════════
-function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData, userEdits, setUserEdits }) {
+function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData, userEdits, setUserEdits }) {
   const [visible, setVisible] = useState(false)
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
@@ -1927,10 +1941,17 @@ function OfferScreen({ analysis, imageData, onGetOffer, onRetry, onReEstimate, i
             </div>
           </div>
 
-          <button onClick={() => { trackEvent('cta_get_firm_offer'); onGetOffer() }} style={styles.firmOfferBtn}>
-            <span>Get My Firm Offer</span>
-            <ArrowIcon size={18} />
-          </button>
+          {leadData.email ? (
+            <button onClick={() => { trackEvent('cta_submit_from_offer'); onDirectSubmit() }} style={styles.firmOfferBtn}>
+              <span>Submit</span>
+              <ArrowIcon size={18} />
+            </button>
+          ) : (
+            <button onClick={() => { trackEvent('cta_get_firm_offer'); onGetOffer() }} style={styles.firmOfferBtn}>
+              <span>Get My Firm Offer</span>
+              <ArrowIcon size={18} />
+            </button>
+          )}
           <p style={styles.offerCaveat}>
             Free prepaid shipping · Expert in-person evaluation · Payment within 24 hours
           </p>
