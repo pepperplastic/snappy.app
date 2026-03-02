@@ -2867,7 +2867,7 @@ const styles = {
     justifyContent: 'center',
     gap: 16,
     marginTop: 28,
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     position: 'relative',
     zIndex: 1,
   },
@@ -2877,6 +2877,7 @@ const styles = {
     gap: 4,
     fontSize: 12,
     color: muted,
+    whiteSpace: 'nowrap',
   },
   stepCard: {
     padding: 20,
@@ -3689,7 +3690,6 @@ const styles = {
 // ── Global keyframes (injected once) ──
 const styleSheet = document.createElement('style')
 styleSheet.textContent = `
-  html, body { overflow-x: hidden; }
   @keyframes ctaRing { 0% { box-shadow: 0 0 0 0 rgba(200,149,60,0.5); } 70% { box-shadow: 0 0 0 14px rgba(200,149,60,0); } 100% { box-shadow: 0 0 0 0 rgba(200,149,60,0); } }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
