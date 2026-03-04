@@ -644,7 +644,7 @@ export default function App() {
   const [userEdits, setUserEdits] = useState([])
   const [isReEstimating, setIsReEstimating] = useState(false)
   const [showWebcam, setShowWebcam] = useState(false)
-  const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: 'kit' })
+  const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: '' })
   const [showContact, setShowContact] = useState(false)
   const [directQuote, setDirectQuote] = useState(false)
   const [limitGated, setLimitGated] = useState(false)
@@ -809,7 +809,7 @@ export default function App() {
     setAnalysis(null)
     setError(null)
     setLeadData({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
-    setShippingData({ address: '', city: '', state: '', zip: '', method: 'kit' })
+    setShippingData({ address: '', city: '', state: '', zip: '', method: ' ' })
     setDirectQuote(false)
     setLimitGated(false)
   }
@@ -821,6 +821,7 @@ export default function App() {
     trackMetaEvent('Lead', { content_name: 'Lead Form Submitted' })
     clearAnalysisLimit()
     setLimitReached(false)
+    setShippingData(prev => ({ ...prev, method: 'kit' }))
     setStep(STEPS.SHIPPING)
   }
 
