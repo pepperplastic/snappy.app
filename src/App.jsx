@@ -809,7 +809,7 @@ export default function App() {
     setAnalysis(null)
     setError(null)
     setLeadData({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
-    setShippingData({ address: '', city: '', state: '', zip: '', method: ' ' })
+    setShippingData({ address: '', city: '', state: '', zip: '', method: '' })
     setDirectQuote(false)
     setLimitGated(false)
   }
