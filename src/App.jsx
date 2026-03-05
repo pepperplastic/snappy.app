@@ -681,6 +681,49 @@ export default function App() {
       setDirectQuote(true)
       setStep(STEPS.LEAD_FORM)
     }
+
+    // Handle return links from follow-up emails
+    const params = new URLSearchParams(window.location.search)
+    const returnStep = params.get('return')
+    if (returnStep) {
+      const returnFirstName = params.get('firstName') || ''
+      const returnItem = params.get('item') || ''
+      const returnEstimate = params.get('estimate') || ''
+
+      // Pre-fill lead data with what we know
+      if (returnFirstName) {
+        setLeadData(prev => ({ ...prev, firstName: returnFirstName }))
+      }
+
+      // Pre-fill analysis with item/estimate from the email
+      if (returnItem || returnEstimate) {
+        setAnalysis({
+          title: returnItem,
+          offer_low: 0,
+          offer_high: 0,
+          description: '',
+          details: [],
+          offer_notes: returnEstimate ? 'Previous estimate: ' + returnEstimate : '',
+          confidence: '',
+          item_type: '',
+        })
+      }
+
+      if (returnStep === 'shipping') {
+        // They had an estimate but didn't finish shipping — drop them at shipping
+        setShippingData(prev => ({ ...prev, method: 'kit' }))
+        setStep(STEPS.SHIPPING)
+        trackEvent('email_return', { step: 'shipping', item: returnItem })
+      } else if (returnStep === 'capture') {
+        // They need to take a photo — drop them at capture
+        setStep(STEPS.CAPTURE)
+        trackEvent('email_return', { step: 'capture' })
+      } else if (returnStep === 'lead_form') {
+        // They need to fill in their info
+        setStep(STEPS.LEAD_FORM)
+        trackEvent('email_return', { step: 'lead_form' })
+      }
+    }
   }, [])
 
   // Track step changes
@@ -1073,6 +1116,7 @@ export default function App() {
             setShippingData={setShippingData}
             onSubmit={handleShippingSubmit}
             leadData={leadData}
+            analysis={analysis}
           />
         )}
         {step === STEPS.SUBMITTED && <SubmittedScreen onReset={reset} shippingMethod={shippingData.method} directQuote={directQuote} />}
@@ -2196,17 +2240,42 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
 // ═══════════════════════════════════════════════
 //  SHIPPING OPTIONS
 // ═══════════════════════════════════════════════
-function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData }) {
+function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, analysis }) {
   const update = (field) => (e) =>
     setShippingData((prev) => ({ ...prev, [field]: e.target.value }))
 
   const isKit = shippingData.method === 'kit'
+  const isReturn = new URLSearchParams(window.location.search).get('return') === 'shipping'
 
   return (
     <section style={styles.centeredSection}>
-      <h2 style={styles.sectionTitle}>How would you like to ship?</h2>
+      <h2 style={styles.sectionTitle}>
+        {isReturn ? `Welcome back${leadData.firstName ? ', ' + leadData.firstName : ''}!` : 'How would you like to ship?'}
+      </h2>
+
+      {isReturn && analysis?.title && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(200,149,60,0.08), rgba(200,149,60,0.04))',
+          border: '1px solid rgba(200,149,60,0.2)', borderRadius: 14,
+          padding: '16px 20px', marginBottom: 24, textAlign: 'left',
+        }}>
+          <p style={{ fontSize: 14, color: '#7A7062', margin: '0 0 6px' }}>Your item:</p>
+          <p style={{ fontSize: 17, fontWeight: 600, color: '#1A1714', margin: '0 0 4px', fontFamily: '"Playfair Display", serif' }}>
+            {analysis.title}
+          </p>
+          {analysis.offer_notes && (
+            <p style={{ fontSize: 15, color: '#C8953C', fontWeight: 600, margin: 0 }}>
+              {analysis.offer_notes}
+            </p>
+          )}
+        </div>
+      )}
+
       <p style={styles.sectionSub}>
-        Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong> and fully insured.
+        {isReturn
+          ? 'You\'re just one step away! Choose how you\'d like to send us your item. Shipping is completely free and fully insured.'
+          : <>Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong> and fully insured.</>
+        }
       </p>
 
       <form onSubmit={onSubmit} style={styles.form}>
