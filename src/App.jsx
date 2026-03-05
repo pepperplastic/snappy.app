@@ -20,6 +20,7 @@ const GA_MEASUREMENT_ID = 'G-Z6KH5RDZFZ'
 const GADS_CONVERSION_ID = 'AW-16675435094'
 const GADS_LEAD_LABEL = 'DediCI6QqfobENbku48-'
 const META_PIXEL_ID = '1040162166644550'
+const REDDIT_PIXEL_ID = 'a2_ib6a51fchsfd'
 
 function initGA4() {
   if (typeof window === 'undefined' || document.getElementById('ga4-script')) return
@@ -52,6 +53,22 @@ function initMetaPixel() {
 
 function trackMetaEvent(eventName, params = {}) {
   if (window.fbq) window.fbq('track', eventName, params)
+}
+
+function initRedditPixel() {
+  if (typeof window === 'undefined' || window.rdt) return
+  window.rdt = function () { window.rdt.sendEvent ? window.rdt.sendEvent.apply(window.rdt, arguments) : window.rdt.callQueue.push(arguments) }
+  window.rdt.callQueue = []
+  const script = document.createElement('script')
+  script.async = true
+  script.src = 'https://www.redditstatic.com/ads/pixel.js'
+  document.head.appendChild(script)
+  window.rdt('init', REDDIT_PIXEL_ID)
+  window.rdt('track', 'PageVisit')
+}
+
+function trackRedditEvent(eventName, params = {}) {
+  if (window.rdt) window.rdt('track', eventName, params)
 }
 
 function trackGadsConversion(label, value) {
@@ -672,6 +689,7 @@ export default function App() {
   useEffect(() => {
     initGA4()
     initMetaPixel()
+    initRedditPixel()
     captureUtmParams()
     fetchIP()
     trackEvent('page_view', { page: 'home' })
@@ -876,6 +894,7 @@ export default function App() {
     submitLead()
     trackGadsConversion(GADS_LEAD_LABEL)
     trackMetaEvent('Lead', { content_name: 'Lead Form Submitted' })
+    trackRedditEvent('Lead')
     clearAnalysisLimit()
     setLimitReached(false)
     // FIX 2: Set kit as visual default AFTER submitLead fires (so lead row gets method: '')
@@ -1088,6 +1107,7 @@ export default function App() {
               submitLead()
               trackEvent('cta_submit_from_offer')
               trackMetaEvent('Purchase', { content_name: analysis?.title || 'Unknown Item', value: analysis?.offer_high || 0, currency: 'USD' })
+              trackRedditEvent('Purchase')
               trackGadsConversion(GADS_LEAD_LABEL)
               setStep(STEPS.SUBMITTED)
             }}
@@ -1892,6 +1912,7 @@ Additional info: ${extraNotes}` : correctionLines
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
                             trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                            trackRedditEvent('SignUp')
                             fetch('/api/submit-lead', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -1919,6 +1940,7 @@ Additional info: ${extraNotes}` : correctionLines
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
                             trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                            trackRedditEvent('SignUp')
                             // Send notification with email
                             fetch('/api/submit-lead', {
                               method: 'POST',
@@ -2053,6 +2075,7 @@ Additional info: ${extraNotes}` : correctionLines
                       setLeadData(prev => ({ ...prev, email: nudgeEmail }))
                       trackEvent('nudge_email_submitted', { method: 'variant_c' })
                       trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                            trackRedditEvent('SignUp')
                       fetch('/api/submit-lead', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2081,6 +2104,7 @@ Additional info: ${extraNotes}` : correctionLines
                       setLeadData(prev => ({ ...prev, email: nudgeEmail }))
                       trackEvent('nudge_email_submitted', { method: 'variant_c' })
                       trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                            trackRedditEvent('SignUp')
                       // Send notification with email
                       fetch('/api/submit-lead', {
                         method: 'POST',
