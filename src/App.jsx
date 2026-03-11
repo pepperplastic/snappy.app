@@ -704,6 +704,7 @@ ${corrections}`
   const body = {
     model: 'claude-opus-4-20250514',
     max_tokens: 1024,
+    temperature: 0.3,
     messages: [
       {
         role: 'user',
@@ -2289,7 +2290,7 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
         {directQuote
           ? 'Tell us about what you\'d like to sell and we\'ll get back to you with an offer.'
           : <>Enter your details and we'll send a prepaid shipping label. Once we receive and verify your{' '}
-            <strong>{analysis?.title?.toLowerCase() || 'item'}</strong>, we'll make a firm offer — typically within 24 hours.</>
+            <strong>{analysis?.title || 'item'}</strong>, we'll make a firm offer — typically within 24 hours.</>
         }
       </p>
 
@@ -2413,8 +2414,8 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
 
       <p style={styles.sectionSub}>
         {isReturn
-          ? 'You\'re just one step away! Choose how you\'d like to send us your item. Shipping is completely free and fully insured.'
-          : <>Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong> and fully insured.</>
+          ? 'You\'re just one step away! Choose how you\'d like to send us your item. Shipping is completely free.'
+          : <>Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong>.</>
         }
       </p>
 
@@ -2424,9 +2425,14 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           <button
             type="button"
             onClick={() => setShippingData(prev => ({ ...prev, method: 'label' }))}
-            style={!isKit ? styles.shippingOptionActive : styles.shippingOption}
+            style={{ ...(!isKit ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
           >
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#22C55E', borderRadius: 20, padding: '2px 10px', marginBottom: 2, letterSpacing: '0.5px', textTransform: 'uppercase' }}>⚡ Fastest</span>
+            <span style={{
+              position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
+              fontSize: 10, fontWeight: 700, color: '#fff', background: '#22C55E',
+              borderRadius: 20, padding: '2px 10px', letterSpacing: '0.5px',
+              textTransform: 'uppercase', whiteSpace: 'nowrap',
+            }}>⚡ Fastest</span>
             <span style={styles.shippingOptionIcon}>🏷️</span>
             <span style={styles.shippingOptionTitle}>Email Me a Label</span>
             <span style={styles.shippingOptionDesc}>Pre-paid label in your inbox in minutes — ship today</span>
@@ -2508,7 +2514,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           <ArrowIcon size={18} />
         </button>
         <p style={styles.formDisclaimer}>
-          Free & insured shipping both ways. Don't like our offer? We return your item at no cost.
+          Free shipping both ways. Don't like our offer? We return your item at no cost.
         </p>
       </div>
     </section>
