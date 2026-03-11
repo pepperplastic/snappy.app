@@ -263,6 +263,87 @@ function compressImage(file, maxDim = 1600) {
   })
 }
 
+// ── Metal Prices: Fetch live spot prices ──
+const TROY_OZ_TO_GRAMS = 31.1035
+let _cachedPrices = null
+let _cacheTime = 0
+const PRICE_CACHE_MS = 15 * 60 * 1000 // 15 minutes
+
+async function fetchMetalPrices() {
+  // Return cache if fresh
+  if (_cachedPrices && Date.now() - _cacheTime < PRICE_CACHE_MS) {
+    return _cachedPrices
+  }
+
+  // Fallback prices (update these periodically as a safety net)
+  const FALLBACK = { gold_oz: 5170, silver_oz: 32 }
+
+  try {
+    const res = await fetch('/api/metals', { signal: AbortSignal.timeout(6000) })
+    if (res.ok) {
+      const data = await res.json()
+      if (data.gold_oz && data.silver_oz) {
+        _cachedPrices = data
+        _cacheTime = Date.now()
+        console.log(`[Metals] Live prices: Gold $${data.gold_oz}/oz, Silver $${data.silver_oz}/oz (${data.source})`)
+        return data
+      }
+    }
+  } catch (e) {
+    console.warn('[Metals] Proxy failed, trying direct:', e.message)
+  }
+
+  try {
+    const [goldRes, silverRes] = await Promise.all([
+      fetch('https://api.gold-api.com/price/XAU', { signal: AbortSignal.timeout(5000) }),
+      fetch('https://api.gold-api.com/price/XAG', { signal: AbortSignal.timeout(5000) }),
+    ])
+    const goldData = await goldRes.json()
+    const silverData = await silverRes.json()
+
+    if (goldData.price && silverData.price) {
+      const goldPerGram = goldData.price / TROY_OZ_TO_GRAMS
+      const silverPerGram = silverData.price / TROY_OZ_TO_GRAMS
+      const prices = {
+        gold_oz: Math.round(goldData.price * 100) / 100,
+        silver_oz: Math.round(silverData.price * 100) / 100,
+        gold_per_gram_24k: Math.round(goldPerGram * 100) / 100,
+        gold_per_gram_18k: Math.round(goldPerGram * (18 / 24) * 100) / 100,
+        gold_per_gram_14k: Math.round(goldPerGram * (14 / 24) * 100) / 100,
+        gold_per_gram_10k: Math.round(goldPerGram * (10 / 24) * 100) / 100,
+        silver_per_gram_sterling: Math.round(silverPerGram * 0.925 * 100) / 100,
+        silver_per_gram_fine: Math.round(silverPerGram * 100) / 100,
+        source: 'gold-api.com-direct',
+      }
+      _cachedPrices = prices
+      _cacheTime = Date.now()
+      console.log(`[Metals] Direct prices: Gold $${prices.gold_oz}/oz, Silver $${prices.silver_oz}/oz`)
+      return prices
+    }
+  } catch (e) {
+    console.warn('[Metals] Direct API also failed:', e.message)
+  }
+
+  // Ultimate fallback
+  const goldPerGram = FALLBACK.gold_oz / TROY_OZ_TO_GRAMS
+  const silverPerGram = FALLBACK.silver_oz / TROY_OZ_TO_GRAMS
+  const prices = {
+    gold_oz: FALLBACK.gold_oz,
+    silver_oz: FALLBACK.silver_oz,
+    gold_per_gram_24k: Math.round(goldPerGram * 100) / 100,
+    gold_per_gram_18k: Math.round(goldPerGram * (18 / 24) * 100) / 100,
+    gold_per_gram_14k: Math.round(goldPerGram * (14 / 24) * 100) / 100,
+    gold_per_gram_10k: Math.round(goldPerGram * (10 / 24) * 100) / 100,
+    silver_per_gram_sterling: Math.round(silverPerGram * 0.925 * 100) / 100,
+    silver_per_gram_fine: Math.round(silverPerGram * 100) / 100,
+    source: 'fallback',
+  }
+  console.warn('[Metals] Using fallback prices — APIs unavailable')
+  _cachedPrices = prices
+  _cacheTime = Date.now()
+  return prices
+}
+
 // ── API: Send image to Claude for analysis ──
 async function analyzeImage(imagesArray, corrections) {
   const mediaType = 'image/jpeg'
@@ -574,6 +655,40 @@ LUXURY GOODS PRICING:
 
 If the image is not of jewelry, a watch, precious metals, or luxury goods, set item_type to "other", offer_low and offer_high to 0, and explain in description what you see instead.`
 
+  // Replace metal price placeholders with live spot prices
+  const prices = await fetchMetalPrices()
+  promptText = promptText
+    .replace(/GOLD_SPOT_PRICE/g, `$${prices.gold_oz.toLocaleString()}`)
+    .replace(/SILVER_SPOT_PRICE/g, `$${prices.silver_oz.toLocaleString()}`)
+    .replace(/GOLD_24K_PER_GRAM/g, `$${prices.gold_per_gram_24k}`)
+    .replace(/GOLD_18K_PER_GRAM/g, `$${prices.gold_per_gram_18k}`)
+    .replace(/GOLD_14K_PER_GRAM/g, `$${prices.gold_per_gram_14k}`)
+    .replace(/GOLD_10K_PER_GRAM/g, `$${prices.gold_per_gram_10k}`)
+    .replace(/SILVER_STERLING_PER_GRAM/g, `$${prices.silver_per_gram_sterling}`)
+    .replace(/SILVER_FINE_PER_GRAM/g, `$${prices.silver_per_gram_fine}`)
+  // Update worked example math
+  const ex14k = prices.gold_per_gram_14k
+  promptText = promptText.replace(
+    /WORKED EXAMPLE \(at \$[\d,]+\/oz gold, 14K per-gram = ~?\$[\d.]+\)/,
+    `WORKED EXAMPLE (at $${prices.gold_oz.toLocaleString()}/oz gold, 14K per-gram = $${ex14k})`
+  )
+  promptText = promptText.replace(
+    /Low melt: 35 × \$[\d.]+ = \$[\d,]+/,
+    `Low melt: 35 × $${ex14k} = $${Math.round(35 * ex14k).toLocaleString()}`
+  )
+  promptText = promptText.replace(
+    /High melt: 50 × \$[\d.]+ = \$[\d,]+/,
+    `High melt: 50 × $${ex14k} = $${Math.round(50 * ex14k).toLocaleString()}`
+  )
+  promptText = promptText.replace(
+    /Offer: \$[\d,]+ - \$[\d,]+/,
+    `Offer: $${Math.round(35 * ex14k).toLocaleString()} - $${Math.round(50 * ex14k).toLocaleString()}`
+  )
+  promptText = promptText.replace(
+    /A 35g 14K gold item at current spot is ALWAYS worth over \$[\d,]+/,
+    `A 35g 14K gold item at current spot is ALWAYS worth over $${Math.round(35 * ex14k).toLocaleString()}`
+  )
+
   if (corrections) {
     promptText += `\
 \
@@ -729,7 +844,7 @@ export default function App() {
 
       if (returnStep === 'shipping') {
         // They had an estimate but didn't finish shipping — drop them at shipping
-        setShippingData(prev => ({ ...prev, method: 'kit' }))
+        setShippingData(prev => ({ ...prev, method: 'label' }))
         setStep(STEPS.SHIPPING)
         trackEvent('email_return', { step: 'shipping', item: returnItem })
       } else if (returnStep === 'capture') {
@@ -897,8 +1012,8 @@ export default function App() {
     trackRedditEvent('Lead')
     clearAnalysisLimit()
     setLimitReached(false)
-    // FIX 2: Set kit as visual default AFTER submitLead fires (so lead row gets method: '')
-    setShippingData(prev => ({ ...prev, method: 'kit' }))
+    // FIX 2: Set label as visual default AFTER submitLead fires (so lead row gets method: '')
+    setShippingData(prev => ({ ...prev, method: 'label' }))
     setStep(STEPS.SHIPPING)
   }
 
@@ -1386,10 +1501,11 @@ function RecentQuotesTicker() {
 
   return (
     <div style={{
-      margin: '28px auto 0', maxWidth: 500, width: '100%',
+      margin: '28px -24px 0', width: 'calc(100% + 48px)',
       background: '#1A1816',
-      borderRadius: 14, padding: '0', overflow: 'hidden',
-      border: '1px solid rgba(200,149,60,0.2)',
+      borderRadius: 0, padding: '0', overflow: 'hidden',
+      borderTop: '1px solid rgba(200,149,60,0.2)',
+      borderBottom: '1px solid rgba(200,149,60,0.2)',
     }}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -2302,9 +2418,19 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
         }
       </p>
 
-      <form onSubmit={onSubmit} style={styles.form}>
-        {/* Shipping method toggle */}
+      <div onSubmit={onSubmit} style={styles.form}>
+        {/* Shipping method toggle — label is default (fastest path) */}
         <div style={styles.shippingOptions}>
+          <button
+            type="button"
+            onClick={() => setShippingData(prev => ({ ...prev, method: 'label' }))}
+            style={!isKit ? styles.shippingOptionActive : styles.shippingOption}
+          >
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#22C55E', borderRadius: 20, padding: '2px 10px', marginBottom: 2, letterSpacing: '0.5px', textTransform: 'uppercase' }}>⚡ Fastest</span>
+            <span style={styles.shippingOptionIcon}>🏷️</span>
+            <span style={styles.shippingOptionTitle}>Email Me a Label</span>
+            <span style={styles.shippingOptionDesc}>Pre-paid label in your inbox in minutes — ship today</span>
+          </button>
           <button
             type="button"
             onClick={() => setShippingData(prev => ({ ...prev, method: 'kit' }))}
@@ -2314,26 +2440,17 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
             <span style={styles.shippingOptionTitle}>Send Me a Kit</span>
             <span style={styles.shippingOptionDesc}>Free box, padding & pre-paid label mailed to you</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setShippingData(prev => ({ ...prev, method: 'label' }))}
-            style={!isKit ? styles.shippingOptionActive : styles.shippingOption}
-          >
-            <span style={styles.shippingOptionIcon}>🏷️</span>
-            <span style={styles.shippingOptionTitle}>Just the Label</span>
-            <span style={styles.shippingOptionDesc}>Pre-paid label emailed in minutes — use your own box</span>
-          </button>
         </div>
-
-        {isKit && (
-          <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll mail you a free box and pre-paid shipping label — everything you need. Arrives in 2-3 business days.
-          </p>
-        )}
 
         {!isKit && (
           <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll email you a pre-paid shipping label to print — you use your own packaging. Label reaches your inbox in minutes.
+            We'll email you a pre-paid FedEx shipping label — just print it, pack your item in any box or padded envelope, and drop it off. <strong>Label arrives in minutes.</strong>
+          </p>
+        )}
+
+        {isKit && (
+          <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
+            We'll mail you a free kit with a box, padding, and pre-paid shipping label — everything you need. Arrives in 2-3 business days.
           </p>
         )}
 
@@ -2386,14 +2503,14 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           </div>
         </div>
 
-        <button type="submit" style={styles.heroCta}>
-          <span>{isKit ? 'Send My Free Kit' : 'Email My Label'}</span>
+        <button type="button" onClick={onSubmit} style={styles.heroCta}>
+          <span>{isKit ? 'Send My Free Kit' : 'Email My Label Now'}</span>
           <ArrowIcon size={18} />
         </button>
         <p style={styles.formDisclaimer}>
           Free & insured shipping both ways. Don't like our offer? We return your item at no cost.
         </p>
-      </form>
+      </div>
     </section>
   )
 }
@@ -2434,7 +2551,7 @@ function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
       <p style={styles.sectionSub}>
         {isKit
           ? 'Your free shipping kit is on its way! You\'ll receive a box with padding and a prepaid return label within 2-3 business days.'
-          : 'Check your email for a prepaid shipping label. Print it, attach it to your package, and drop it off at any shipping location.'
+          : 'Your prepaid FedEx shipping label is on its way to your inbox right now! Print it, pack your item in any box or padded envelope, and drop it off at any FedEx location.'
         }
       </p>
       <div style={styles.successSteps}>
@@ -2444,8 +2561,8 @@ function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
           'Expert evaluation within 24 hours',
           'Accept offer → get paid instantly',
         ] : [
-          'Prepaid label emailed to you',
-          'Print, pack & drop off your item',
+          'Check your email for the label',
+          'Print, pack & drop off today',
           'Expert evaluation within 24 hours',
           'Accept offer → get paid instantly',
         ]).map((s, i) => (
