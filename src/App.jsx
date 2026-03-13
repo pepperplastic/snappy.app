@@ -1503,54 +1503,56 @@ function RecentQuotesTicker() {
   return (
     <div style={{
       margin: '28px -24px 0', width: 'calc(100% + 48px)',
-      background: '#1A1816',
-      borderRadius: 0, padding: '0', overflow: 'hidden',
-      borderTop: '1px solid rgba(200,149,60,0.2)',
-      borderBottom: '1px solid rgba(200,149,60,0.2)',
+      background: '#FAF6F0',
+      borderTop: '1px solid #E8DFD0',
+      borderBottom: '1px solid #E8DFD0',
+      overflow: 'hidden',
     }}>
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        padding: '10px 16px',
-        borderBottom: '1px solid rgba(200,149,60,0.15)',
-        background: 'rgba(200,149,60,0.06)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        padding: '8px 0 0',
       }}>
         <span style={{
-          display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-          background: '#22c55e', boxShadow: '0 0 6px #22c55e',
+          display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+          background: '#22c55e', boxShadow: '0 0 4px rgba(34,197,94,0.4)',
           animation: 'livePulse 2s ease-in-out infinite',
         }} />
         <span style={{
-          fontSize: 10, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase',
+          fontSize: 9, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase',
           letterSpacing: 1.5,
         }}>Live</span>
-        <span style={{ fontSize: 11, color: '#8A8580', marginLeft: 4 }}>Recent appraisals</span>
+        <span style={{ fontSize: 10, color: '#B0A898', marginLeft: 3 }}>Recent appraisals</span>
       </div>
-      <div style={{ overflow: 'hidden', padding: '12px 0' }}>
+      <div style={{
+        overflow: 'hidden', padding: '8px 0 10px',
+        maskImage: 'linear-gradient(90deg, transparent, black 5%, black 95%, transparent)',
+        WebkitMaskImage: 'linear-gradient(90deg, transparent, black 5%, black 95%, transparent)',
+      }}>
         <div ref={trackRef} style={{
-          display: 'flex', gap: 12,
+          display: 'flex', gap: 10,
           width: 'max-content',
-          paddingLeft: 12,
+          paddingLeft: 10,
           willChange: 'transform',
         }}>
           {doubled.map((q, i) => (
             <div key={i} style={{
               flexShrink: 0,
-              background: 'rgba(255,255,255,0.05)',
-              borderRadius: 10,
-              padding: '10px 14px', minWidth: 150, maxWidth: 170,
-              border: '1px solid rgba(200,149,60,0.12)',
-              backdropFilter: 'blur(4px)',
+              background: '#FFFDF8',
+              borderRadius: 8,
+              padding: '8px 12px', minWidth: 140, maxWidth: 160,
+              border: '1px solid #EBE3D5',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
             }}>
-              <div style={{ marginBottom: 4 }}>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#F0E6D0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{q.item}</p>
+              <div style={{ marginBottom: 3 }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#4A4238', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{q.item}</p>
               </div>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#C8953C', fontFamily: '"Playfair Display", serif' }}>{q.range}</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#C8953C', fontFamily: '"Playfair Display", serif' }}>{q.range}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
                 <span style={{
-                  display: 'inline-block', width: 5, height: 5, borderRadius: '50%',
+                  display: 'inline-block', width: 4, height: 4, borderRadius: '50%',
                   background: '#22c55e', opacity: 0.7,
                 }} />
-                <p style={{ margin: 0, fontSize: 10, color: '#6B6560' }}>{q.time}</p>
+                <p style={{ margin: 0, fontSize: 10, color: '#A09688' }}>{q.time}</p>
               </div>
             </div>
           ))}
