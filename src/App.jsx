@@ -1484,21 +1484,34 @@ function RecentQuotesTicker() {
     const track = trackRef.current
     if (!track) return
     const speed = 0.5
+    let offset = 0
+    let halfWidth = 0
+
+    // Measure after paint to get accurate width
+    const measure = () => {
+      halfWidth = track.scrollWidth / 3
+    }
+    // Measure once fonts/layout settle
+    requestAnimationFrame(() => {
+      requestAnimationFrame(measure)
+    })
 
     const animate = () => {
-      offsetRef.current += speed
-      const halfWidth = track.scrollWidth / 2
-      if (offsetRef.current >= halfWidth) {
-        offsetRef.current -= halfWidth
+      if (halfWidth === 0) {
+        halfWidth = track.scrollWidth / 3
       }
-      track.style.transform = `translateX(-${offsetRef.current}px)`
+      offset += speed
+      if (halfWidth > 0 && offset >= halfWidth) {
+        offset -= halfWidth
+      }
+      track.style.transform = `translate3d(-${offset}px, 0, 0)`
       rafRef.current = requestAnimationFrame(animate)
     }
     rafRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(rafRef.current)
   }, [quotes])
 
-  const doubled = [...quotes, ...quotes]
+  const doubled = [...quotes, ...quotes, ...quotes]
 
   return (
     <div style={{
@@ -1567,7 +1580,33 @@ function RecentQuotesTicker() {
 // ═══════════════════════════════════════════════
 function Hero({ onStart, onCamera, onUpload }) {
   const [visible, setVisible] = useState(false)
+  const catTrackRef = useRef(null)
+  const catRafRef = useRef(null)
+
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
+
+  // Seamless rAF-based category ticker
+  useEffect(() => {
+    const track = catTrackRef.current
+    if (!track) return
+    let offset = 0
+    let halfWidth = 0
+    const speed = 0.6
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { halfWidth = track.scrollWidth / 3 })
+    })
+
+    const animate = () => {
+      if (halfWidth === 0) halfWidth = track.scrollWidth / 3
+      offset += speed
+      if (halfWidth > 0 && offset >= halfWidth) offset -= halfWidth
+      track.style.transform = `translate3d(-${offset}px, 0, 0)`
+      catRafRef.current = requestAnimationFrame(animate)
+    }
+    catRafRef.current = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(catRafRef.current)
+  }, [])
 
   const GoldBarIcon = () => <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M2 11L0 5h16l-2 6H2z" fill="#D4A017"/><path d="M0 5l3-5h10l3 5H0z" fill="#F0C75E"/><path d="M3 0h10l3 5H0L3 0z" fill="#F0C75E" opacity="0.9"/><path d="M2 11L0 5h16l-2 6H2z" fill="#C8953C" opacity="0.8"/></svg>
   const SilverBarIcon = () => <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M2 11L0 5h16l-2 6H2z" fill="#A8A8A8"/><path d="M0 5l3-5h10l3 5H0z" fill="#D0D0D0"/><path d="M2 11L0 5h16l-2 6H2z" fill="#999" opacity="0.8"/></svg>
@@ -1595,13 +1634,13 @@ function Hero({ onStart, onCamera, onUpload }) {
   ]
 
   // Double the list for seamless loop
-  const tickerItems = [...categories, ...categories]
+  const tickerItems = [...categories, ...categories, ...categories]
 
   return (
     <section style={{ ...styles.heroSection, opacity: visible ? 1 : 0, transform: visible ? 'none' : 'translateY(20px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
       <div style={styles.heroBg} aria-hidden="true" />
       <div style={styles.tickerWrap}>
-        <div style={styles.tickerTrack}>
+        <div ref={catTrackRef} style={{ display: 'flex', gap: 24, width: 'max-content', willChange: 'transform' }}>
           {tickerItems.map((cat, i) => (
             <React.Fragment key={i}>
               <span style={styles.tickerItem}>
@@ -2696,7 +2735,7 @@ const styles = {
   heroBg: { position: 'absolute', top: 40, left: 0, right: 0, height: 350, backgroundImage: 'url(https://images.unsplash.com/photo-1515562141589-67f0d569b6fc?w=800&q=80)', backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.22, filter: 'saturate(0.5) sepia(0.4)', borderRadius: 20, pointerEvents: 'none', zIndex: 0 },
   heroBadge: { display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, background: goldBg, color: gold, fontSize: 13, fontWeight: 600, marginBottom: 28, letterSpacing: '0.02em' },
   tickerWrap: { overflow: 'hidden', width: '100%', marginBottom: 28, maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)', position: 'relative', zIndex: 1 },
-  tickerTrack: { display: 'flex', gap: 24, width: 'max-content', animation: 'tickerScroll 25s linear infinite' },
+  tickerTrack: { display: 'flex', gap: 24, width: 'max-content' },
   tickerItem: { display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 15, fontWeight: 500, color: '#7B7060', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 },
   categoryIcon: { fontSize: 14, display: 'inline-flex', alignItems: 'center' },
   tickerDot: { color: '#C8953C', fontSize: 20, lineHeight: 1, userSelect: 'none', flexShrink: 0 },
