@@ -290,11 +290,15 @@ function ShipmentCard({ ship, idx, onChange, onDelete, isOnly }) {
                 onChange={e=>updPurchase("appraised",e.target.value)} placeholder="0"/>
               <Sel label="Payment" value={ship.purchase?.payment||"Zelle"}
                 onChange={e=>updPurchase("payment",e.target.value)}
-                options={[{v:"Zelle",l:"Zelle"},{v:"Cash",l:"Cash"},{v:"Check",l:"Check"},{v:"Venmo",l:"Venmo"},{v:"PayPal",l:"PayPal"}]}/>
+                options={[{v:"Zelle",l:"Zelle"},{v:"Cash",l:"Cash"},{v:"Check",l:"Check"},{v:"Venmo",l:"Venmo"},{v:"PayPal",l:"PayPal"},{v:"Wire/Transfer",l:"Wire/Transfer"}]}/>
             </div>
             <div style={{marginTop:8}}>
               <Inp label="Item Photos (Drive links)" value={ship.purchase?.photos||""}
                 onChange={e=>updPurchase("photos",e.target.value)} placeholder="https://drive.google.com/…"/>
+            </div>
+            <div style={{marginTop:8}}>
+              <Inp label="Payment Info (handle, account, routing, etc.)" value={ship.purchase?.paymentInfo||""}
+                onChange={e=>updPurchase("paymentInfo",e.target.value)} placeholder="e.g. $snappygold / routing 021000021 acct 12345…"/>
             </div>
           </div>
 
