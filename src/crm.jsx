@@ -643,11 +643,13 @@ function CustomerRow({ customer, onClick, selected, onSelect, activeTab }) {
     }
     if (activeTab === "cs") {
       const shipType = primaryShip?.shippingType || "kit";
-      return shipDays !== null ? {
-        primary: `${shipDays}d`,
-        label: `since ${shipType} sent`,
-        urgent: shipDays > 10
-      } : null;
+      const sentAt = primaryShip?.sentAt; // only set for new records going forward
+      if (sentAt) {
+        const d = daysSince(sentAt);
+        return { primary:`${d}d`, label:`since ${shipType} sent`, urgent: d > 10 };
+      }
+      // Historical records before 3/20/26 — no reliable sentAt
+      return { primary:"pre 3.20.26", label:`${shipType} sent`, urgent: false };
     }
     if (activeTab === "process") {
       return shipDays !== null ? {
@@ -722,18 +724,241 @@ function CustomerRow({ customer, onClick, selected, onSelect, activeTab }) {
   );
 }
 
+// ── Sheet sync helpers ─────────────────────────────────────
+const SHEET_CSV = "https://docs.google.com/spreadsheets/d/1_QStkp9Gl6t3bqWLeZs2Ynrr-ATW_r07oFCKOp3EbDM/export?format=csv&gid=0";
+
+function parseEstHighStr(est) {
+  if (!est) return 0;
+  const nums = String(est).replace(/[$,]/g,"").split(/[–\-]/)
+    .map(p=>parseFloat(p.trim())).filter(n=>!isNaN(n));
+  return nums.length ? Math.max(...nums) : 0;
+}
+
+function recommendQueue(row) {
+  const hasAddress = !!(row.address && row.address.trim());
+  const shipping = (row.shipping||"").toLowerCase();
+  const hasEstimate = !!(row.estimate && row.estimate.trim());
+  const hasFedex = !!(row.returnTracking && row.returnTracking.trim());
+  const hasUsps = !!(row.outboundTracking && row.outboundTracking.trim());
+
+  if (hasFedex && hasUsps) return { queue:"cs", reason:"Both labels issued — awaiting package" };
+  if (hasFedex && !hasUsps) return { queue:"cs", reason:"Return label sent — awaiting package" };
+  if (hasUsps && !hasFedex) return { queue:"fulfill", reason:"Kit printed, no return label yet" };
+  if (hasAddress && shipping === "kit") return { queue:"fulfill", reason:"Has address + kit preference" };
+  if (hasAddress && shipping === "label") return { queue:"fulfill", reason:"Has address + label preference" };
+  if (hasEstimate && !hasAddress) return { queue:"followup", reason:"Has estimate, no address yet" };
+  return { queue:"followup", reason:"Incomplete lead — needs follow up" };
+}
+
+function parseSheetRows(csvText) {
+  const lines = csvText.split("\n");
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g,"").toLowerCase());
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    // simple CSV parse (handles quoted fields)
+    const cols = [];
+    let cur = "", inQ = false;
+    for (const ch of lines[i]) {
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = (cols[idx]||"").replace(/^"|"$/g,"").trim(); });
+    rows.push(row);
+  }
+  return rows.filter(r => r.email && r.email.includes("@"));
+}
+
+function sheetRowToInboxItem(row) {
+  // Map sheet columns to inbox item
+  const email = (row.email||"").toLowerCase().trim();
+  // Tony Freeman merge
+  const custId = email === "freemantony600@gmail.com" ? "freemantony935@gmail.com" : email;
+  const rec = recommendQueue(row);
+  return {
+    custId,
+    name: row.name || "",
+    email: custId,
+    phone: row.phone || "",
+    address: row.address || "",
+    source: row["traffic source"] || row.source || "",
+    shipping: row.shipping || "",
+    estimate: row.estimate || "",
+    item: row.item || "",
+    photo: row.photo || "",
+    timestamp: row.timestamp || "",
+    recommendedQueue: rec.queue,
+    recommendReason: rec.reason,
+    inboxTs: new Date().toISOString(),
+  };
+}
+
+// ── Inbox Row component ────────────────────────────────────
+function InboxRow({ item, onApprove, onDismiss }) {
+  const [chosenQueue, setChosenQueue] = useState(item.recommendedQueue);
+  const queueLabels = {
+    followup: "Follow Up", fulfill: "Outbound Pending",
+    cs: "Inbound Pending", process: "Received", closed: "Closed"
+  };
+  const queueColor = {
+    followup: G.blue, fulfill: SC.ready_to_fulfill,
+    cs: SC.outbound_fulfilled, process: SC.received, closed: G.green
+  };
+
+  return (
+    <div style={{
+      display:"grid", gridTemplateColumns:"170px 1fr 100px 160px 180px",
+      gap:10, padding:"10px 16px", background:G.card,
+      borderBottom:`1px solid ${G.border}`, alignItems:"center"
+    }}>
+      <div>
+        <div style={{color:G.text,fontSize:13,fontWeight:700}}>{item.name||<span style={{color:G.muted}}>Unknown</span>}</div>
+        <div style={{color:G.muted,fontSize:10}}>{item.email}</div>
+        {item.phone && <div style={{color:G.muted,fontSize:10}}>{fmtPhone(item.phone)}</div>}
+      </div>
+      <div>
+        <div style={{color:G.text,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.item||"—"}</div>
+        {item.estimate && <div style={{color:G.gold,fontWeight:700,fontSize:13}}>{item.estimate}</div>}
+        <div style={{color:G.muted,fontSize:10,marginTop:2}}>{item.recommendReason}</div>
+      </div>
+      <div>
+        {item.address
+          ? <div style={{color:G.text,fontSize:10,overflow:"hidden",textOverflow:"ellipsis"}}>{item.address.split(",")[0]}</div>
+          : <div style={{color:G.muted,fontSize:10}}>No address</div>
+        }
+        {item.shipping && <div style={{color:G.muted,fontSize:10,textTransform:"uppercase"}}>{item.shipping}</div>}
+      </div>
+      <div>
+        <div style={{color:G.muted,fontSize:10,marginBottom:4}}>Send to:</div>
+        <select value={chosenQueue} onChange={e=>setChosenQueue(e.target.value)}
+          style={{background:G.bg,color:queueColor[chosenQueue]||G.text,
+            border:`1px solid ${queueColor[chosenQueue]||G.border}`,
+            borderRadius:5,padding:"4px 8px",fontSize:12,cursor:"pointer",fontWeight:700,width:"100%"}}>
+          <option value="followup">Follow Up</option>
+          <option value="fulfill">Outbound Pending</option>
+          <option value="cs">Inbound Pending</option>
+          <option value="process">Received</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        <Btn v="gold" onClick={()=>onApprove(item, chosenQueue)} st={{fontSize:11,padding:"5px 10px"}}>
+          ✓ Move
+        </Btn>
+        <Btn v="danger" onClick={()=>onDismiss(item.custId)} st={{fontSize:11,padding:"5px 10px"}}>
+          ✕ Skip
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 // ── Main ───────────────────────────────────────────────────
 export default function SnappyGoldCRM() {
   const [unlocked, setUnlocked] = useState(false);
   const [custs, setCusts] = useState({});
-  const [tab, setTab] = useState("followup");
+  const [inbox, setInbox] = useState([]);
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | done | error
+  const [tab, setTab] = useState("inbox");
   const [sel, setSel] = useState(null);
   const [search, setSearch] = useState("");
   const [stageF, setStageF] = useState("all");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [batchStage, setBatchStage] = useState("");
+  const [sortCol, setSortCol] = useState(null); // {col, dir}
 
-  useEffect(()=>{ if (unlocked) setCusts(initCustomers()); },[unlocked]);
+  useEffect(()=>{ if (unlocked) { setCusts(initCustomers()); syncSheet(); } },[unlocked]);
+
+  async function syncSheet() {
+    setSyncStatus("syncing");
+    try {
+      const res = await fetch(SHEET_CSV);
+      if (!res.ok) throw new Error("fetch failed");
+      const text = await res.text();
+      const rows = parseSheetRows(text);
+      const stored = getStore();
+
+      // Diff: find emails not yet in custs or inbox
+      setCusts(prev => {
+        const dismissed = JSON.parse(localStorage.getItem("sg_crm_dismissed")||"[]");
+        const newItems = [];
+        for (const row of rows) {
+          const email = (row.email||"").toLowerCase().trim();
+          const custId = email === "freemantony600@gmail.com" ? "freemantony935@gmail.com" : email;
+          if (!custId || !custId.includes("@")) continue;
+          // Skip if already in CRM (seeded or previously moved from inbox)
+          if (prev[custId] && !prev[custId].inInbox) continue;
+          // Skip if dismissed
+          if (dismissed.includes(custId)) continue;
+          newItems.push(sheetRowToInboxItem(row));
+        }
+        // Dedupe by custId (keep latest)
+        const deduped = {};
+        for (const item of newItems) deduped[item.custId] = item;
+        setInbox(Object.values(deduped).sort((a,b) =>
+          parseEstHighStr(b.estimate) - parseEstHighStr(a.estimate)
+        ));
+        setSyncStatus("done");
+        setTimeout(()=>setSyncStatus("idle"), 3000);
+        return prev;
+      });
+    } catch(e) {
+      console.error("Sheet sync failed:", e);
+      setSyncStatus("error");
+      setTimeout(()=>setSyncStatus("idle"), 4000);
+    }
+  }
+
+  function approveInboxItem(item, queue) {
+    // Convert inbox item to full customer record
+    const stageMap = {
+      followup: "estimate_only", fulfill: "ready_to_fulfill",
+      cs: "outbound_fulfilled", process: "received", closed: "purchase_complete"
+    };
+    const newCust = {
+      custId: item.custId,
+      name: item.name,
+      email: item.email,
+      phone: item.phone,
+      address: item.address,
+      source: item.source,
+      timestamp: item.timestamp || new Date().toISOString(),
+      contactLog: [],
+      notes: "",
+      deleted: false,
+      shipments: [{
+        shipmentId: `SHP-${item.custId.slice(0,12).replace(/[@.]/g,"")}-01`,
+        stage: stageMap[queue] || "estimate_only",
+        shippingType: item.shipping || "",
+        outboundTracking: "",
+        returnTracking: "",
+        items: item.item ? [{
+          item: item.item,
+          estimate: item.estimate || "",
+          photos: item.photo ? [item.photo] : [],
+          type: "sheet_import"
+        }] : [],
+        purchase: null,
+        createdAt: item.timestamp || new Date().toISOString(),
+        sentAt: ["outbound_fulfilled","received"].includes(stageMap[queue]) ? new Date().toISOString() : null,
+        notes: ""
+      }]
+    };
+    saveCust(newCust);
+    setInbox(prev => prev.filter(i => i.custId !== item.custId));
+  }
+
+  function dismissInboxItem(custId) {
+    const dismissed = JSON.parse(localStorage.getItem("sg_crm_dismissed")||"[]");
+    dismissed.push(custId);
+    localStorage.setItem("sg_crm_dismissed", JSON.stringify(dismissed));
+    setInbox(prev => prev.filter(i => i.custId !== custId));
+  }
 
   function saveCust(updated) {
     setCusts(prev=>{
@@ -753,11 +978,8 @@ export default function SnappyGoldCRM() {
     setSelectedIds(prev=>{ const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; });
   }
   function selectAll() {
-    if (selectedIds.size === display.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(display.map(c=>c.custId)));
-    }
+    if (selectedIds.size === display.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(display.map(c=>c.custId)));
   }
   function batchDelete() {
     if (!window.confirm(`Delete ${selectedIds.size} customer(s)? This cannot be undone.`)) return;
@@ -775,15 +997,36 @@ export default function SnappyGoldCRM() {
       for (const id of selectedIds) {
         const c = next[id];
         if (!c) continue;
-        // Update primary (first) shipment stage
         const ships = [...(c.shipments||[])];
-        if (ships.length) ships[0] = {...ships[0], stage};
+        if (ships.length) ships[0] = {...ships[0], stage,
+          sentAt: stage==="outbound_fulfilled" ? (ships[0].sentAt||new Date().toISOString()) : ships[0].sentAt
+        };
         next[id] = {...c, shipments:ships};
       }
       persist(next); return next;
     });
     setSelectedIds(new Set());
     setBatchStage("");
+  }
+
+  function toggleSort(col) {
+    setSortCol(prev => prev?.col === col
+      ? (prev.dir === "asc" ? {col, dir:"desc"} : null)
+      : {col, dir:"desc"}
+    );
+  }
+
+  function applySortToList(list) {
+    if (!sortCol) return list;
+    const {col, dir} = sortCol;
+    const mult = dir === "asc" ? 1 : -1;
+    return [...list].sort((a,b) => {
+      if (col === "name") return mult * (a.name||"").localeCompare(b.name||"");
+      if (col === "est") return mult * (custHigh(a) - custHigh(b));
+      if (col === "age") return mult * (new Date(a.timestamp||0) - new Date(b.timestamp||0));
+      if (col === "stage") return mult * custPrimaryStage(a).localeCompare(custPrimaryStage(b));
+      return 0;
+    });
   }
 
   const visible = useMemo(()=>Object.values(custs).filter(c=>!c.deleted),[custs]);
@@ -795,22 +1038,24 @@ export default function SnappyGoldCRM() {
       const bt = (b.contactLog||[])[0]?.ts || b.timestamp;
       return new Date(at)-new Date(bt);
     };
+    // For cs (inbound pending): sort by sentAt desc (most recently sent first)
+    const bySent = (a,b)=>{
+      const as = (a.shipments||[])[0]?.sentAt || (a.shipments||[])[0]?.createdAt || a.timestamp;
+      const bs = (b.shipments||[])[0]?.sentAt || (b.shipments||[])[0]?.createdAt || b.timestamp;
+      return new Date(bs)-new Date(as);
+    };
     return {
-      // cs: outbound fulfilled but not yet received — inbound pending
-      cs: visible.filter(c=>["outbound_fulfilled"].includes(custPrimaryStage(c))).sort(byVal),
-      // fulfill: ready to send OR printed but not mailed — outbound pending
-      fulfill: visible.filter(c=>["ready_to_fulfill","outbound_pending"].includes(custPrimaryStage(c))).sort(byVal),
-      // process: in-house — received through accepted
-      process: visible.filter(c=>["received","inspected","offer_made","accepted"].includes(custPrimaryStage(c))).sort(byVal),
-      // followup: estimate only — re-engagement
+      cs:       visible.filter(c=>["outbound_fulfilled"].includes(custPrimaryStage(c))).sort(bySent),
+      fulfill:  visible.filter(c=>["ready_to_fulfill","outbound_pending"].includes(custPrimaryStage(c))).sort(byVal),
+      process:  visible.filter(c=>["received","inspected","offer_made","accepted"].includes(custPrimaryStage(c))).sort(byVal),
       followup: visible.filter(c=>custPrimaryStage(c)==="estimate_only").sort(byStale),
-      // closed: purchased, returned, dead
-      closed: visible.filter(c=>["purchase_complete","return_complete","rejected","dead"].includes(custPrimaryStage(c))).sort(byVal),
-      all: [...visible].sort(byVal),
+      closed:   visible.filter(c=>["purchase_complete","return_complete","rejected","dead"].includes(custPrimaryStage(c))).sort(byVal),
+      all:      [...visible].sort(byVal),
     };
   },[visible]);
 
   const display = useMemo(()=>{
+    if (tab === "inbox") return []; // inbox handled separately
     let base = (search||stageF!=="all") ? lists.all : (lists[tab]||lists.all);
     if (search) {
       const q = search.toLowerCase();
@@ -822,30 +1067,49 @@ export default function SnappyGoldCRM() {
       );
     }
     if (stageF!=="all") base = base.filter(c=>custPrimaryStage(c)===stageF);
-    return base;
-  },[lists,tab,search,stageF]);
+    return applySortToList(base);
+  },[lists,tab,search,stageF,sortCol]);
 
   const stats = useMemo(()=>({
     total:    visible.length,
+    inbox:    inbox.length,
     outbound: lists.fulfill.length,
     inbound:  lists.cs.length,
     received: lists.process.length,
     closed:   lists.closed.length,
     pipeline: visible.reduce((s,c)=>s+custHigh(c),0),
-  }),[visible,lists]);
+  }),[visible,lists,inbox]);
 
   if (!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
 
   const TABS = [
-    {k:"followup", l:`Follow Up (${lists.followup.length})`},
-    {k:"fulfill",  l:`Outbound Pending (${lists.fulfill.length})`},
-    {k:"cs",       l:`Inbound Pending (${lists.cs.length})`},
-    {k:"process",  l:`Received (${lists.process.length})`},
-    {k:"closed",   l:`Closed (${lists.closed.length})`},
-    {k:"all",      l:`All (${visible.length})`},
+    {k:"inbox",   l:`Inbox ${inbox.length>0?`(${inbox.length})`:""}`, highlight: inbox.length>0},
+    {k:"followup",l:`Follow Up (${lists.followup.length})`},
+    {k:"fulfill", l:`Outbound Pending (${lists.fulfill.length})`},
+    {k:"cs",      l:`Inbound Pending (${lists.cs.length})`},
+    {k:"process", l:`Received (${lists.process.length})`},
+    {k:"closed",  l:`Closed (${lists.closed.length})`},
+    {k:"all",     l:`All (${visible.length})`},
   ];
 
   const selCust = sel ? (custs[sel.custId] || sel) : null;
+
+  // Sortable column header helper
+  function SortHdr({col, label}) {
+    const active = sortCol?.col === col;
+    return (
+      <div onClick={()=>toggleSort(col)} style={{
+        color: active ? G.gold : G.muted, fontSize:10, fontWeight:700,
+        textTransform:"uppercase", letterSpacing:0.5, cursor:"pointer",
+        display:"flex", alignItems:"center", gap:3, userSelect:"none"
+      }}>
+        {label}
+        <span style={{fontSize:9}}>
+          {active ? (sortCol.dir==="desc" ? "▼" : "▲") : "⇅"}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div style={{minHeight:"100vh",background:G.bg,color:G.text,fontFamily:"system-ui,sans-serif"}}>
@@ -859,8 +1123,16 @@ export default function SnappyGoldCRM() {
           <span style={{color:G.muted,fontSize:11}}>CRM v3</span>
         </div>
         <div style={{flex:1}}/>
-        <div style={{display:"flex",gap:18}}>
+        <div style={{display:"flex",gap:18,alignItems:"center"}}>
+          {syncStatus==="syncing" && <span style={{color:G.muted,fontSize:11}}>⟳ Syncing…</span>}
+          {syncStatus==="done"    && <span style={{color:G.green,fontSize:11}}>✓ Synced</span>}
+          {syncStatus==="error"   && <span style={{color:G.red,fontSize:11}}>⚠ Sync failed</span>}
+          <button onClick={syncSheet} style={{background:"transparent",border:`1px solid ${G.border}`,
+            borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",color:G.muted}}>
+            ↻ Refresh
+          </button>
           {[
+            ["Inbox", stats.inbox>0?`${stats.inbox} new`:"—", stats.inbox>0?G.red:G.muted],
             ["Total",stats.total,G.text],
             ["Outbound",stats.outbound,SC.ready_to_fulfill],
             ["Inbound",stats.inbound,SC.outbound_fulfilled],
@@ -881,11 +1153,17 @@ export default function SnappyGoldCRM() {
         padding:"0 20px",display:"flex",alignItems:"center",
         position:"sticky",top:50,zIndex:49}}>
         {TABS.map(t=>(
-          <button key={t.k} onClick={()=>{setTab(t.k);setSearch("");setStageF("all");}}
+          <button key={t.k} onClick={()=>{setTab(t.k);setSearch("");setStageF("all");setSortCol(null);}}
             style={{background:"none",border:"none",padding:"9px 13px",cursor:"pointer",
-              fontSize:13,fontWeight:600,color:tab===t.k?G.gold:G.muted,
-              borderBottom:tab===t.k?`2px solid ${G.gold}`:"2px solid transparent"}}>
+              fontSize:13,fontWeight:600,
+              color: tab===t.k ? G.gold : t.highlight ? G.red : G.muted,
+              borderBottom:tab===t.k?`2px solid ${G.gold}`:"2px solid transparent",
+              position:"relative"}}>
             {t.l}
+            {t.highlight && tab!=="inbox" && (
+              <span style={{position:"absolute",top:6,right:4,width:7,height:7,
+                borderRadius:"50%",background:G.red,display:"inline-block"}}/>
+            )}
           </button>
         ))}
         <div style={{flex:1}}/>
@@ -904,75 +1182,123 @@ export default function SnappyGoldCRM() {
         </div>
       </div>
 
-      {/* Column headers */}
-      <div style={{display:"grid",gridTemplateColumns:"36px 170px 1fr 90px 110px 130px 100px",
-        gap:10,padding:"6px 16px",background:"#EDE8DF",
-        borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48,alignItems:"center"}}>
-        <div onClick={selectAll} style={{display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-          <div style={{
-            width:16,height:16,borderRadius:3,
-            border:`2px solid ${selectedIds.size>0?G.gold:G.muted}`,
-            background:selectedIds.size>0&&selectedIds.size===display.length?G.gold:"transparent",
-            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0
-          }}>
-            {selectedIds.size===display.length&&display.length>0
-              ? <span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>
-              : selectedIds.size>0
-              ? <span style={{color:G.gold,fontSize:12,lineHeight:1,fontWeight:700}}>−</span>
-              : null}
-          </div>
-        </div>
-        {["Customer","Top Item","Age","Est High","Stage","Actions"].map(h=>(
-          <div key={h} style={{color:G.muted,fontSize:10,fontWeight:700,
-            textTransform:"uppercase",letterSpacing:0.5}}>{h}</div>
-        ))}
-      </div>
-
-      {/* Batch action bar */}
-      {selectedIds.size>0 && (
-        <div style={{
-          position:"sticky",top:123,zIndex:47,
-          background:"#FFF8E1",borderBottom:`2px solid ${G.gold}`,
-          padding:"8px 16px",display:"flex",gap:10,alignItems:"center",
-          boxShadow:"0 2px 8px rgba(200,149,60,0.15)"
-        }}>
-          <span style={{color:G.gold,fontWeight:700,fontSize:13}}>
-            {selectedIds.size} selected
-          </span>
-          <span style={{color:G.muted,fontSize:12}}>—</span>
-          <Btn v="danger" onClick={batchDelete}>🗑 Delete All</Btn>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <select value={batchStage} onChange={e=>setBatchStage(e.target.value)}
-              style={{background:G.bg,color:G.text,border:`1px solid ${G.border}`,
-                borderRadius:5,padding:"4px 8px",fontSize:12,cursor:"pointer"}}>
-              <option value="">Move to stage…</option>
-              {STAGES.map(s=><option key={s} value={s}>{SL[s]}</option>)}
-            </select>
-            <Btn v="ghost" onClick={()=>batchChangeStage(batchStage)} disabled={!batchStage}>
-              Apply
-            </Btn>
-          </div>
-          <div style={{flex:1}}/>
-          <Btn v="ghost" onClick={()=>setSelectedIds(new Set())}>Clear</Btn>
+      {/* Inbox view */}
+      {tab === "inbox" && (
+        <div>
+          {inbox.length === 0 ? (
+            <div style={{padding:56,textAlign:"center",color:G.muted,fontSize:14}}>
+              <div style={{fontSize:32,marginBottom:12}}>✓</div>
+              Inbox is empty — all caught up.
+              {syncStatus==="syncing" && <div style={{marginTop:8,fontSize:12}}>Syncing sheet…</div>}
+            </div>
+          ) : (
+            <>
+              <div style={{display:"grid",gridTemplateColumns:"170px 1fr 100px 160px 180px",
+                gap:10,padding:"6px 16px",background:"#EDE8DF",
+                borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48}}>
+                {["Customer","Item / Reason","Address","Send To","Action"].map(h=>(
+                  <div key={h} style={{color:G.muted,fontSize:10,fontWeight:700,
+                    textTransform:"uppercase",letterSpacing:0.5}}>{h}</div>
+                ))}
+              </div>
+              <div style={{padding:"8px 16px",background:"#FFF8E1",borderBottom:`1px solid ${G.border}`,
+                display:"flex",gap:10,alignItems:"center"}}>
+                <span style={{fontSize:12,color:G.text,fontWeight:600}}>{inbox.length} new lead{inbox.length!==1?"s":""} from sheet</span>
+                <span style={{color:G.muted,fontSize:12}}>—</span>
+                <Btn v="ghost" onClick={()=>{
+                  if (window.confirm(`Move all ${inbox.length} leads to their recommended queues?`)) {
+                    inbox.forEach(item => approveInboxItem(item, item.recommendedQueue));
+                  }
+                }} st={{fontSize:11}}>✓ Approve All Recommendations</Btn>
+                <Btn v="danger" onClick={()=>{
+                  if (window.confirm("Skip all inbox items? They won't appear again.")) {
+                    inbox.forEach(item => dismissInboxItem(item.custId));
+                  }
+                }} st={{fontSize:11}}>✕ Skip All</Btn>
+              </div>
+              {inbox.map(item=>(
+                <InboxRow key={item.custId} item={item}
+                  onApprove={approveInboxItem}
+                  onDismiss={dismissInboxItem}
+                />
+              ))}
+            </>
+          )}
         </div>
       )}
 
-      {/* Rows */}
-      <div>
-        {display.length===0 && (
-          <div style={{padding:56,textAlign:"center",color:G.muted,fontSize:14}}>
-            No leads in this view
+      {/* Regular queue view */}
+      {tab !== "inbox" && (
+        <>
+          {/* Column headers */}
+          <div style={{display:"grid",gridTemplateColumns:"36px 170px 1fr 90px 110px 130px 100px",
+            gap:10,padding:"6px 16px",background:"#EDE8DF",
+            borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48,alignItems:"center"}}>
+            <div onClick={selectAll} style={{display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+              <div style={{
+                width:16,height:16,borderRadius:3,
+                border:`2px solid ${selectedIds.size>0?G.gold:G.muted}`,
+                background:selectedIds.size>0&&selectedIds.size===display.length?G.gold:"transparent",
+                display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0
+              }}>
+                {selectedIds.size===display.length&&display.length>0
+                  ? <span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>
+                  : selectedIds.size>0
+                  ? <span style={{color:G.gold,fontSize:12,lineHeight:1,fontWeight:700}}>−</span>
+                  : null}
+              </div>
+            </div>
+            <SortHdr col="name" label="Customer"/>
+            <div style={{color:G.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>Top Item</div>
+            <SortHdr col="age" label="Age"/>
+            <SortHdr col="est" label="Est High"/>
+            <SortHdr col="stage" label="Stage"/>
+            <div style={{color:G.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>Actions</div>
           </div>
-        )}
-        {display.map(c=>(
-          <CustomerRow key={c.custId} customer={c}
-            onClick={()=>setSel(c)}
-            selected={selectedIds.has(c.custId)}
-            onSelect={toggleSelect}
-            activeTab={tab}
-          />
-        ))}
-      </div>
+
+          {/* Batch action bar */}
+          {selectedIds.size>0 && (
+            <div style={{
+              position:"sticky",top:123,zIndex:47,
+              background:"#FFF8E1",borderBottom:`2px solid ${G.gold}`,
+              padding:"8px 16px",display:"flex",gap:10,alignItems:"center",
+              boxShadow:"0 2px 8px rgba(200,149,60,0.15)"
+            }}>
+              <span style={{color:G.gold,fontWeight:700,fontSize:13}}>{selectedIds.size} selected</span>
+              <span style={{color:G.muted,fontSize:12}}>—</span>
+              <Btn v="danger" onClick={batchDelete}>🗑 Delete All</Btn>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <select value={batchStage} onChange={e=>setBatchStage(e.target.value)}
+                  style={{background:G.bg,color:G.text,border:`1px solid ${G.border}`,
+                    borderRadius:5,padding:"4px 8px",fontSize:12,cursor:"pointer"}}>
+                  <option value="">Move to stage…</option>
+                  {STAGES.map(s=><option key={s} value={s}>{SL[s]}</option>)}
+                </select>
+                <Btn v="ghost" onClick={()=>batchChangeStage(batchStage)} disabled={!batchStage}>Apply</Btn>
+              </div>
+              <div style={{flex:1}}/>
+              <Btn v="ghost" onClick={()=>setSelectedIds(new Set())}>Clear</Btn>
+            </div>
+          )}
+
+          {/* Rows */}
+          <div>
+            {display.length===0 && (
+              <div style={{padding:56,textAlign:"center",color:G.muted,fontSize:14}}>
+                No leads in this view
+              </div>
+            )}
+            {display.map(c=>(
+              <CustomerRow key={c.custId} customer={c}
+                onClick={()=>setSel(c)}
+                selected={selectedIds.has(c.custId)}
+                onSelect={toggleSelect}
+                activeTab={tab}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Detail */}
       {selCust && (
