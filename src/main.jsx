@@ -7,6 +7,6 @@ const isCRM = window.location.pathname === '/crm'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {isCRM ? <CRM /> : <App />}
+    {isCRM ? <SnappyGoldCRM /> : <App />}
   </React.StrictMode>
 )
