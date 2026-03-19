@@ -611,18 +611,59 @@ function CustomerDetail({ customer, allCustomers, onClose, onSave, onDelete }) {
 }
 
 // ── Customer Row ───────────────────────────────────────────
-function CustomerRow({ customer, onClick, selected, onSelect }) {
+function CustomerRow({ customer, onClick, selected, onSelect, activeTab }) {
   const high = custHigh(customer);
   const stage = custPrimaryStage(customer);
+  const primaryShip = (customer.shipments||[])[0];
   const topItem = (customer.shipments||[])
     .flatMap(s=>s.items||[]).find(i=>i.estimate)?.item ||
     (customer.shipments||[]).flatMap(s=>s.items||[])[0]?.item || "—";
   const shipCount = (customer.shipments||[]).length;
-  const lastLog = (customer.contactLog||[])[0]?.ts;
+
+  // Contextual date display
+  function dateInfo() {
+    const registeredTs = customer.timestamp;
+    const shipCreated = primaryShip?.createdAt;
+    const regDays = registeredTs ? daysSince(registeredTs) : null;
+    const shipDays = shipCreated ? daysSince(shipCreated) : null;
+
+    if (activeTab === "followup") {
+      return regDays !== null ? {
+        primary: `${regDays}d`,
+        label: "since signup",
+        urgent: regDays > 7
+      } : null;
+    }
+    if (activeTab === "fulfill") {
+      return regDays !== null ? {
+        primary: `${regDays}d`,
+        label: "since signup",
+        urgent: regDays > 5
+      } : null;
+    }
+    if (activeTab === "cs") {
+      const shipType = primaryShip?.shippingType || "kit";
+      return shipDays !== null ? {
+        primary: `${shipDays}d`,
+        label: `since ${shipType} sent`,
+        urgent: shipDays > 10
+      } : null;
+    }
+    if (activeTab === "process") {
+      return shipDays !== null ? {
+        primary: `${shipDays}d`,
+        label: "in house",
+        urgent: shipDays > 5
+      } : null;
+    }
+    return regDays !== null ? { primary: `${regDays}d`, label: "since signup", urgent: false } : null;
+  }
+
+  const di = dateInfo();
 
   return (
     <div style={{
-      display:"grid",gridTemplateColumns:"36px 170px 1fr 110px 130px 100px",
+      display:"grid",gridTemplateColumns:"36px 170px 1fr 90px 110px 130px 100px",
       gap:10,padding:"10px 16px",
       background:selected?"#FFF8E1":G.card,
       borderBottom:`1px solid ${G.border}`,cursor:"pointer",alignItems:"center",
@@ -649,11 +690,29 @@ function CustomerRow({ customer, onClick, selected, onSelect }) {
         <div style={{color:G.muted,fontSize:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{customer.email}</div>
         {customer.phone&&<div style={{color:G.muted,fontSize:10}}>{fmtPhone(customer.phone)}</div>}
         {shipCount>1&&<div style={{color:G.blue,fontSize:10,marginTop:1}}>{shipCount} shipments</div>}
+        {activeTab==="cs" && primaryShip?.shippingType && (
+          <div style={{
+            fontSize:9,fontWeight:700,marginTop:2,
+            color:primaryShip.shippingType==="kit"?"#6A1B9A":"#AD1457",
+            textTransform:"uppercase",letterSpacing:0.5
+          }}>{primaryShip.shippingType}</div>
+        )}
       </div>
       <div onClick={onClick} style={{color:G.muted,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{topItem}</div>
+      {/* Date column */}
+      <div onClick={onClick}>
+        {di ? (
+          <div>
+            <div style={{
+              fontWeight:700, fontSize:13,
+              color: di.urgent ? G.red : G.muted
+            }}>{di.primary}</div>
+            <div style={{fontSize:10,color:G.muted}}>{di.label}</div>
+          </div>
+        ) : <div style={{color:G.muted,fontSize:12}}>—</div>}
+      </div>
       <div onClick={onClick}>
         <div style={{color:G.gold,fontWeight:800,fontSize:14}}>{high?fmt$(high):"—"}</div>
-        {lastLog&&<div style={{color:G.muted,fontSize:10}}>contacted {daysSince(lastLog)}d ago</div>}
       </div>
       <div onClick={onClick}><Badge stage={stage}/></div>
       <div onClick={e=>e.stopPropagation()}>
@@ -846,7 +905,7 @@ export default function SnappyGoldCRM() {
       </div>
 
       {/* Column headers */}
-      <div style={{display:"grid",gridTemplateColumns:"36px 170px 1fr 110px 130px 100px",
+      <div style={{display:"grid",gridTemplateColumns:"36px 170px 1fr 90px 110px 130px 100px",
         gap:10,padding:"6px 16px",background:"#EDE8DF",
         borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48,alignItems:"center"}}>
         <div onClick={selectAll} style={{display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
@@ -863,7 +922,7 @@ export default function SnappyGoldCRM() {
               : null}
           </div>
         </div>
-        {["Customer","Top Item","Est High","Stage","Actions"].map(h=>(
+        {["Customer","Top Item","Age","Est High","Stage","Actions"].map(h=>(
           <div key={h} style={{color:G.muted,fontSize:10,fontWeight:700,
             textTransform:"uppercase",letterSpacing:0.5}}>{h}</div>
         ))}
@@ -910,6 +969,7 @@ export default function SnappyGoldCRM() {
             onClick={()=>setSel(c)}
             selected={selectedIds.has(c.custId)}
             onSelect={toggleSelect}
+            activeTab={tab}
           />
         ))}
       </div>
