@@ -733,20 +733,22 @@ export default function SnappyGoldCRM() {
       return new Date(at)-new Date(bt);
     };
     return {
-      // CS: outbound fulfilled but not yet received — check-in queue
+      // cs: outbound fulfilled but not yet received — inbound pending
       cs: visible.filter(c=>["outbound_fulfilled"].includes(custPrimaryStage(c))).sort(byVal),
-      // Fulfill: ready to send OR already printed but not mailed
+      // fulfill: ready to send OR printed but not mailed — outbound pending
       fulfill: visible.filter(c=>["ready_to_fulfill","outbound_pending"].includes(custPrimaryStage(c))).sort(byVal),
-      // Process: in-house — received through accepted
+      // process: in-house — received through accepted
       process: visible.filter(c=>["received","inspected","offer_made","accepted"].includes(custPrimaryStage(c))).sort(byVal),
-      // Follow Up: estimate only, hasn't completed address — re-engagement
+      // followup: estimate only — re-engagement
       followup: visible.filter(c=>custPrimaryStage(c)==="estimate_only").sort(byStale),
+      // closed: purchased, returned, dead
+      closed: visible.filter(c=>["purchase_complete","return_complete","rejected","dead"].includes(custPrimaryStage(c))).sort(byVal),
       all: [...visible].sort(byVal),
     };
   },[visible]);
 
   const display = useMemo(()=>{
-    let base = (search||stageF!=="all") ? lists.all : (lists[tab]||[]);
+    let base = (search||stageF!=="all") ? lists.all : (lists[tab]||lists.all);
     if (search) {
       const q = search.toLowerCase();
       base = base.filter(c=>
@@ -762,9 +764,10 @@ export default function SnappyGoldCRM() {
 
   const stats = useMemo(()=>({
     total:    visible.length,
-    fulfill:  lists.fulfill.length,
-    process:  lists.process.length,
-    closed:   visible.filter(c=>custPrimaryStage(c)==="purchase_complete").length,
+    outbound: lists.fulfill.length,
+    inbound:  lists.cs.length,
+    received: lists.process.length,
+    closed:   lists.closed.length,
     pipeline: visible.reduce((s,c)=>s+custHigh(c),0),
   }),[visible,lists]);
 
@@ -772,9 +775,10 @@ export default function SnappyGoldCRM() {
 
   const TABS = [
     {k:"followup", l:`Follow Up (${lists.followup.length})`},
-    {k:"cs",       l:`CS (${lists.cs.length})`},
-    {k:"fulfill",  l:`Fulfill (${lists.fulfill.length})`},
-    {k:"process",  l:`Process (${lists.process.length})`},
+    {k:"fulfill",  l:`Outbound Pending (${lists.fulfill.length})`},
+    {k:"cs",       l:`Inbound Pending (${lists.cs.length})`},
+    {k:"process",  l:`Received (${lists.process.length})`},
+    {k:"closed",   l:`Closed (${lists.closed.length})`},
     {k:"all",      l:`All (${visible.length})`},
   ];
 
@@ -795,8 +799,9 @@ export default function SnappyGoldCRM() {
         <div style={{display:"flex",gap:18}}>
           {[
             ["Total",stats.total,G.text],
-            ["Fulfill",stats.fulfill,SC.ready_to_fulfill],
-            ["In Process",stats.process,SC.received],
+            ["Outbound",stats.outbound,SC.ready_to_fulfill],
+            ["Inbound",stats.inbound,SC.outbound_fulfilled],
+            ["Received",stats.received,SC.received],
             ["Closed",stats.closed,G.green],
             ["Pipeline","$"+Math.round(stats.pipeline/1000)+"K",G.gold],
           ].map(([l,v,color])=>(
