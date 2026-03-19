@@ -902,6 +902,7 @@ export default function SnappyGoldCRM() {
             selected={selectedIds.has(c.custId)}
             onSelect={toggleSelect}
           />
+        ))}
       </div>
 
       {/* Detail */}
