@@ -864,7 +864,7 @@ export default function App() {
 
   // Track step changes + scroll to top (skip HERO — it's the initial load)
   useEffect(() => {
-    if (step !== STEPS.HERO) window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (step !== STEPS.HERO) window.scrollTo({ top: 0, behavior: 'instant' })
     const eventMap = {
       [STEPS.HERO]: 'view_hero',
       [STEPS.CAPTURE]: 'view_capture',
@@ -1903,12 +1903,12 @@ function AnalyzingScreen({ imageData, isDone, onComplete }) {
             ))}
           </div>
         )}
-        <div style={styles.analyzingText}>
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <div style={styles.spinner} />
-          <h2 style={styles.analyzingTitle}>Analyzing your item</h2>
+          <h2 style={{ ...styles.analyzingTitle, marginBottom: 4 }}>Analyzing your item</h2>
 
           {/* Progress steps */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 320, margin: '4px 0' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 300 }}>
             {ANALYZING_STEPS.map((s, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -1918,18 +1918,18 @@ function AnalyzingScreen({ imageData, isDone, onComplete }) {
                 color: i < stepIdx ? '#22C55E' : i === stepIdx ? '#1A1816' : '#999',
                 fontWeight: i === stepIdx ? 600 : 400,
               }}>
-                <span style={{ fontSize: 14 }}>
+                <span style={{ fontSize: 13, flexShrink: 0, width: 16, textAlign: 'center' }}>
                   {i < stepIdx ? '✓' : i === stepIdx ? '›' : '○'}
                 </span>
-                {s}
+                <span style={{ lineHeight: 1.3 }}>{s}</span>
               </div>
             ))}
           </div>
 
           {/* Slow connection message */}
           <p style={{
-            fontSize: 13, color: '#7A6A50', margin: 0, textAlign: 'center',
-            minHeight: 20,
+            fontSize: 12, color: '#7A6A50', margin: 0, textAlign: 'center',
+            minHeight: 18,
             opacity: showSlow ? 1 : 0,
             transition: 'opacity 0.8s ease',
           }}>
@@ -2897,7 +2897,7 @@ const styles = {
   errorMsg: { padding: '12px 20px', borderRadius: 12, background: '#FFF0F0', color: '#B33A3A', fontSize: 14, marginBottom: 20, border: '1px solid #FFDADA' },
   analyzingCard: { borderRadius: 20, overflow: 'hidden', border: `1px solid ${border}`, background: '#FFFDF8' },
   analyzingImageWrap: { position: 'relative', overflow: 'hidden', background: '#F5F0E8' },
-  analyzingImage: { width: '100%', maxHeight: 400, objectFit: 'contain', display: 'block', opacity: 0.85 },
+  analyzingImage: { width: '100%', maxHeight: 260, objectFit: 'contain', display: 'block', opacity: 0.85 },
   analyzingMultiWrap: { display: 'flex', gap: 4, overflow: 'hidden', borderRadius: '16px 16px 0 0' },
   analyzingThumbWrap: { position: 'relative', flex: 1, minWidth: 0, maxHeight: 250, overflow: 'hidden' },
   analyzingThumb: { width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.85 },
