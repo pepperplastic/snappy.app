@@ -726,7 +726,7 @@ function CustomerRow({ customer, onClick, selected, onSelect, activeTab }) {
 
 // ── Sheet sync helpers ─────────────────────────────────────
 // Apps Script web app URL — no public sheet needed
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPLACEHOLDER/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby82CuMrlr0us5SUSCusqzGoxZYHPQg9nQuzalIplObIjtbXNUpRBNPrJWuV1qimmJbgA/exec";
 const CRM_KEY    = "snappy_crm_2026";
 
 function parseEstHighStr(est) {
