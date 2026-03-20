@@ -863,84 +863,163 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
   const complete = item.complete;
   const kit   = item.shipping === "kit";
   const label = item.shipping === "label";
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div style={{
-      display:"grid", gridTemplateColumns:"200px 1fr 140px 240px",
-      gap:10, padding:"10px 16px",
       background: complete ? G.card : "#FFFBF5",
-      borderBottom:`1px solid ${G.border}`, alignItems:"center",
+      borderBottom:`1px solid ${G.border}`,
       borderLeft: complete ? `3px solid ${G.gold}` : `3px solid ${G.border}`,
     }}>
-      {/* Customer */}
-      <div>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <div style={{color:G.text,fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-            {item.name||<span style={{color:G.muted}}>Unknown</span>}
-          </div>
-          <span style={{
-            fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:3,flexShrink:0,
-            background: complete ? "#E8F5E9" : "#FFF3E0",
-            color: complete ? "#2E7D32" : "#E65100",
-          }}>{complete ? "COMPLETE" : "INCOMPLETE"}</span>
-        </div>
-        <div style={{color:G.muted,fontSize:10}}>{item.email}</div>
-        {item.phone && <div style={{color:G.muted,fontSize:10}}>{fmtPhone(item.phone)}</div>}
-        {complete && item.shipping && (
-          <div style={{
-            fontSize:9,fontWeight:700,marginTop:2,
-            color: kit ? "#6A1B9A" : "#AD1457",
-            textTransform:"uppercase",letterSpacing:0.5
-          }}>📦 {item.shipping}</div>
-        )}
-      </div>
+      {/* Main row — click anywhere to expand */}
+      <div style={{
+        display:"grid", gridTemplateColumns:"200px 1fr 140px 240px",
+        gap:10, padding:"10px 16px", alignItems:"center", cursor:"pointer",
+      }} onClick={()=>setExpanded(e=>!e)}>
 
-      {/* Item + estimate */}
-      <div>
-        <div style={{color:G.text,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.item||"—"}</div>
-        {item.estimate && <div style={{color:G.gold,fontWeight:700,fontSize:13}}>{item.estimate}</div>}
-        {complete
-          ? <div style={{color:G.muted,fontSize:10,marginTop:1}}>{item.address.split(",")[0]}</div>
-          : <div style={{color:"#E65100",fontSize:10,marginTop:1}}>
-              {!item.address ? "No address" : "No shipping preference"}
+        {/* Customer */}
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div style={{color:G.text,fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              {item.name||<span style={{color:G.muted}}>Unknown</span>}
             </div>
-        }
-      </div>
-
-      {/* Status / shipping info */}
-      <div style={{textAlign:"center"}}>
-        {complete ? (
-          <div>
-            <div style={{fontSize:11,color:G.muted}}>Will generate:</div>
-            {kit && <div style={{fontSize:10,color:"#6A1B9A",fontWeight:600}}>Pirateship outbound</div>}
-            {kit && <div style={{fontSize:10,color:"#1565C0",fontWeight:600}}>FedEx return (in kit)</div>}
-            {label && <div style={{fontSize:10,color:"#1565C0",fontWeight:600}}>FedEx return (email)</div>}
+            <span style={{
+              fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:3,flexShrink:0,
+              background: complete ? "#E8F5E9" : "#FFF3E0",
+              color: complete ? "#2E7D32" : "#E65100",
+            }}>{complete ? "COMPLETE" : "INCOMPLETE"}</span>
           </div>
-        ) : (
-          <div style={{fontSize:11,color:G.muted}}>Incomplete —<br/>Follow Up only</div>
-        )}
-      </div>
+          <div style={{color:G.muted,fontSize:10}}>{item.email}</div>
+          {item.phone && <div style={{color:G.muted,fontSize:10}}>{fmtPhone(item.phone)}</div>}
+          {complete && item.shipping && (
+            <div style={{fontSize:9,fontWeight:700,marginTop:2,
+              color: kit ? "#6A1B9A" : "#AD1457", textTransform:"uppercase",letterSpacing:0.5
+            }}>📦 {item.shipping}</div>
+          )}
+          <div style={{color:G.gold,fontSize:9,marginTop:3}}>{expanded ? "▲ hide details" : "▼ view details"}</div>
+        </div>
 
-      {/* Actions */}
-      <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-        {complete ? (
-          <>
-            <Btn v="gold" onClick={()=>onAddToQueue(item)} st={{fontSize:11,padding:"5px 10px"}}>
-              + Add to Queue
-            </Btn>
+        {/* Item + estimate */}
+        <div>
+          <div style={{color:G.text,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.item||"—"}</div>
+          {item.estimate && <div style={{color:G.gold,fontWeight:700,fontSize:13}}>{item.estimate}</div>}
+          {complete
+            ? <div style={{color:G.muted,fontSize:10,marginTop:1}}>{item.address.split(",")[0]}</div>
+            : <div style={{color:"#E65100",fontSize:10,marginTop:1}}>
+                {!item.address ? "No address" : "No shipping preference"}
+              </div>
+          }
+        </div>
+
+        {/* Will generate */}
+        <div style={{textAlign:"center"}}>
+          {complete ? (
+            <div>
+              <div style={{fontSize:11,color:G.muted}}>Will generate:</div>
+              {kit && <div style={{fontSize:10,color:"#6A1B9A",fontWeight:600}}>Pirateship outbound</div>}
+              {kit && <div style={{fontSize:10,color:"#1565C0",fontWeight:600}}>FedEx return (in kit)</div>}
+              {label && <div style={{fontSize:10,color:"#1565C0",fontWeight:600}}>FedEx return (email)</div>}
+            </div>
+          ) : (
+            <div style={{fontSize:11,color:G.muted}}>Incomplete —<br/>Follow Up only</div>
+          )}
+        </div>
+
+        {/* Actions — stop propagation so clicks don't toggle expand */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}
+          onClick={e=>e.stopPropagation()}>
+          {complete ? (
+            <>
+              <Btn v="gold" onClick={()=>onAddToQueue(item)} st={{fontSize:11,padding:"5px 10px"}}>
+                + Add to Queue
+              </Btn>
+              <Btn v="ghost" onClick={()=>onMoveFollowUp(item)} st={{fontSize:11,padding:"5px 10px"}}>
+                → Follow Up
+              </Btn>
+            </>
+          ) : (
             <Btn v="ghost" onClick={()=>onMoveFollowUp(item)} st={{fontSize:11,padding:"5px 10px"}}>
               → Follow Up
             </Btn>
-          </>
-        ) : (
-          <Btn v="ghost" onClick={()=>onMoveFollowUp(item)} st={{fontSize:11,padding:"5px 10px"}}>
-            → Follow Up
+          )}
+          <Btn v="danger" onClick={()=>onDismiss(item.custId)} st={{fontSize:11,padding:"5px 10px"}}>
+            ✕
           </Btn>
-        )}
-        <Btn v="danger" onClick={()=>onDismiss(item.custId)} st={{fontSize:11,padding:"5px 10px"}}>
-          ✕
-        </Btn>
+        </div>
       </div>
+
+      {/* Expanded detail panel */}
+      {expanded && (
+        <div style={{
+          padding:"16px 20px 20px",
+          background: complete ? "#F7F5F0" : "#FFF3E8",
+          borderTop:`1px solid ${G.border}`,
+          display:"grid", gridTemplateColumns:"1fr 1fr 200px",
+          gap:24,
+        }}>
+          {/* Contact + shipping */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,textTransform:"uppercase",
+              letterSpacing:0.5,marginBottom:10}}>Contact & Shipping</div>
+            <IField label="Name"       value={item.name} />
+            <IField label="Email"      value={item.email} />
+            <IField label="Phone"      value={item.phone ? fmtPhone(item.phone) : null} />
+            <IField label="Address"    value={item.address} />
+            <IField label="Preference" value={item.shipping ? item.shipping.toUpperCase() : null} />
+            <IField label="Source"     value={item.source} />
+            <IField label="Signed up"  value={item.timestamp
+              ? new Date(item.timestamp).toLocaleDateString("en-US",
+                  {month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})
+              : null} />
+          </div>
+
+          {/* Item + estimate */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,textTransform:"uppercase",
+              letterSpacing:0.5,marginBottom:10}}>Item</div>
+            <IField label="Item"     value={item.item} />
+            <IField label="Estimate" value={item.estimate} color={G.gold} />
+          </div>
+
+          {/* Photo */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,textTransform:"uppercase",
+              letterSpacing:0.5,marginBottom:10}}>Photo</div>
+            {item.photo && item.photo.includes("drive.google.com") ? (
+              <div>
+                <a href={item.photo} target="_blank" rel="noreferrer">
+                  <img
+                    src={item.photo.replace(/.*\/d\/([^/]+).*/, "https://drive.google.com/thumbnail?id=$1&sz=w200")}
+                    alt="item photo"
+                    style={{width:160,height:120,objectFit:"cover",borderRadius:6,
+                      border:`1px solid ${G.border}`,display:"block",marginBottom:6}}
+                    onError={e=>{e.target.style.display="none";}}
+                  />
+                </a>
+                <a href={item.photo} target="_blank" rel="noreferrer"
+                  style={{color:G.gold,fontSize:11,textDecoration:"none"}}>
+                  🔗 Open in Drive
+                </a>
+              </div>
+            ) : item.photo ? (
+              <a href={item.photo} target="_blank" rel="noreferrer"
+                style={{color:G.gold,fontSize:11}}>🔗 View photo</a>
+            ) : (
+              <div style={{color:G.muted,fontSize:12}}>No photo submitted</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IField({ label, value, color }) {
+  if (!value) return null;
+  return (
+    <div style={{marginBottom:7}}>
+      <div style={{fontSize:9,color:G.muted,textTransform:"uppercase",letterSpacing:0.4,marginBottom:1}}>{label}</div>
+      <div style={{fontSize:12,color:color||G.text,fontWeight:color?700:400,lineHeight:1.4}}>{value}</div>
     </div>
   );
 }
