@@ -861,9 +861,9 @@ export default function App() {
     }
   }, [])
 
-  // Track step changes + scroll to top
+  // Track step changes + scroll to top (skip HERO — it's the initial load)
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (step !== STEPS.HERO) window.scrollTo({ top: 0, behavior: 'smooth' })
     const eventMap = {
       [STEPS.HERO]: 'view_hero',
       [STEPS.CAPTURE]: 'view_capture',
