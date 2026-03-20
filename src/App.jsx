@@ -860,8 +860,9 @@ export default function App() {
     }
   }, [])
 
-  // Track step changes
+  // Track step changes + scroll to top
   useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     const eventMap = {
       [STEPS.HERO]: 'view_hero',
       [STEPS.CAPTURE]: 'view_capture',
@@ -1768,13 +1769,46 @@ function CaptureScreen({ fileInputRef, onCamera, onFile, error }) {
 // ═══════════════════════════════════════════════
 //  ANALYZING SCREEN
 // ═══════════════════════════════════════════════
+const ANALYZING_STEPS = [
+  'Step 1 of 3: Identifying materials...',
+  'Step 2 of 3: Checking market prices...',
+  'Step 3 of 3: Calculating your offer...',
+]
+
+const FUN_FACTS = [
+  'Gold prices have risen over 25% in the past year.',
+  'Most people underestimate what their old jewelry is worth.',
+  '14K gold is 58.3% pure gold by weight.',
+  'A single gram of 14K gold is worth over $50 today.',
+  'We\'ve evaluated thousands of pieces just like yours.',
+  'Broken chains and single earrings still have full melt value.',
+  'Old class rings are often 10K gold — worth more than you think.',
+  'Dental gold is some of the purest gold you can sell.',
+]
+
 function AnalyzingScreen({ imageData }) {
-  const [dots, setDots] = useState('')
+  const [stepIdx, setStepIdx] = useState(0)
+  const [factIdx, setFactIdx] = useState(0)
+  const [factVisible, setFactVisible] = useState(true)
+
+  // Cycle through progress steps every 3s
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((d) => (d.length >= 3 ? '' : d + '.'))
-    }, 500)
-    return () => clearInterval(interval)
+    const t = setInterval(() => {
+      setStepIdx(i => Math.min(i + 1, ANALYZING_STEPS.length - 1))
+    }, 3000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Fade-cycle fun facts every 4s
+  useEffect(() => {
+    const t = setInterval(() => {
+      setFactVisible(false)
+      setTimeout(() => {
+        setFactIdx(i => (i + 1) % FUN_FACTS.length)
+        setFactVisible(true)
+      }, 400)
+    }, 4000)
+    return () => clearInterval(t)
   }, [])
 
   const images = Array.isArray(imageData) ? imageData : [imageData]
@@ -1799,10 +1833,46 @@ function AnalyzingScreen({ imageData }) {
         )}
         <div style={styles.analyzingText}>
           <div style={styles.spinner} />
-          <h2 style={styles.analyzingTitle}>Analyzing your item{dots}</h2>
-          <p style={styles.analyzingSub}>
-            Examining materials, craftsmanship, brand markers, and current market prices.
-          </p>
+          <h2 style={styles.analyzingTitle}>Analyzing your item</h2>
+
+          {/* Fake progress steps */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 320, margin: '4px 0' }}>
+            {ANALYZING_STEPS.map((s, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                opacity: i <= stepIdx ? 1 : 0.3,
+                transition: 'opacity 0.5s ease',
+                fontSize: 13,
+                color: i < stepIdx ? '#22C55E' : i === stepIdx ? '#1A1816' : '#999',
+                fontWeight: i === stepIdx ? 600 : 400,
+              }}>
+                <span style={{ fontSize: 14 }}>
+                  {i < stepIdx ? '✓' : i === stepIdx ? '›' : '○'}
+                </span>
+                {s}
+              </div>
+            ))}
+          </div>
+
+          {/* Rotating fun fact */}
+          <div style={{
+            marginTop: 8,
+            padding: '12px 16px',
+            background: '#F5F0E8',
+            borderRadius: 10,
+            maxWidth: 320,
+            width: '100%',
+            minHeight: 52,
+            display: 'flex', alignItems: 'center',
+          }}>
+            <p style={{
+              fontSize: 13, color: '#7A6A50', lineHeight: 1.5, margin: 0,
+              opacity: factVisible ? 1 : 0,
+              transition: 'opacity 0.4s ease',
+            }}>
+              💡 {FUN_FACTS[factIdx]}
+            </p>
+          </div>
         </div>
       </div>
     </section>
@@ -2407,7 +2477,7 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
             />
           </div>
         )}
-        <button type="submit" style={styles.heroCta}>
+        <button type="submit" style={styles.firmOfferBtn}>
           <span>{directQuote ? 'Submit' : 'Continue'}</span>
           <ArrowIcon size={18} />
         </button>
@@ -2550,7 +2620,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           </div>
         </div>
 
-        <button type="button" onClick={onSubmit} style={styles.heroCta}>
+        <button type="button" onClick={onSubmit} style={styles.firmOfferBtn}>
           <span>{isKit ? 'Send My Free Kit' : 'Email My Label Now'}</span>
           <ArrowIcon size={18} />
         </button>
