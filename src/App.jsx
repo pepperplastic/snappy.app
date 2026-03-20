@@ -792,6 +792,7 @@ export default function App() {
   // FIX 1: Initialize method as empty string so lead form submission doesn't prematurely send 'kit'
   const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: '' })
   const [showContact, setShowContact] = useState(false)
+  const [showFloatingMenu, setShowFloatingMenu] = useState(false)
   const [directQuote, setDirectQuote] = useState(false)
   const [limitGated, setLimitGated] = useState(false)
   const [legalModal, setLegalModal] = useState(null)
@@ -1143,10 +1144,17 @@ export default function App() {
             <button onClick={() => setShowContact(false)} style={styles.modalClose}>✕</button>
             <h3 style={{ fontFamily: '"Playfair Display", serif', fontSize: 24, marginBottom: 8, color: '#1A1A1A' }}>Get in Touch</h3>
             <p style={{ color: '#888', fontSize: 14, marginBottom: 24 }}>We'd love to hear from you.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <a href="mailto:hello@snappy.gold" style={styles.contactItem}>
                 <span style={styles.contactIcon}>✉</span>
                 <span>hello@snappy.gold</span>
+              </a>
+              <a href="sms:+18666130704" style={styles.contactItem}>
+                <span style={styles.contactIcon}>💬</span>
+                <div>
+                  <div>(866) 613-0704</div>
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Text us — fastest response</div>
+                </div>
               </a>
               <a href="tel:+18666130704" style={styles.contactItem}>
                 <span style={styles.contactIcon}>☎</span>
@@ -1304,14 +1312,14 @@ export default function App() {
         onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
       />
 
-      {/* Floating phone button */}
-      <a href="tel:+18666130704" style={{
+      {/* Floating contact button */}
+      <button onClick={() => setShowFloatingMenu(true)} style={{
         position: 'fixed', bottom: 90, right: 16, zIndex: 150,
         width: 52, height: 52, borderRadius: '50%',
         background: 'linear-gradient(135deg, #C8953C, #A67B2E)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 4px 20px rgba(200,149,60,0.4)',
-        textDecoration: 'none', color: '#fff', fontSize: 24,
+        border: 'none', cursor: 'pointer', color: '#fff', fontSize: 24,
         transition: 'transform 0.2s',
       }}
         onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
@@ -1320,7 +1328,59 @@ export default function App() {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
         </svg>
-      </a>
+      </button>
+
+      {/* Floating action sheet */}
+      {showFloatingMenu && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          padding: '0 16px 32px',
+        }} onClick={() => setShowFloatingMenu(false)}>
+          <div style={{
+            width: '100%', maxWidth: 400,
+            background: '#fff', borderRadius: 16,
+            overflow: 'hidden',
+            boxShadow: '0 -4px 40px rgba(0,0,0,0.15)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F0EDE8', textAlign: 'center' }}>
+              <p style={{ fontSize: 12, color: '#888', margin: 0 }}>Contact Snappy Gold</p>
+            </div>
+            <a href="sms:+18666130704" style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '16px 20px', textDecoration: 'none',
+              borderBottom: '1px solid #F0EDE8',
+              background: '#FAFDF6',
+            }}>
+              <span style={{ fontSize: 22 }}>💬</span>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#1A1816' }}>Text Us</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Fastest response · (866) 613-0704</div>
+              </div>
+            </a>
+            <a href="tel:+18666130704" style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '16px 20px', textDecoration: 'none',
+              borderBottom: '1px solid #F0EDE8',
+            }}>
+              <span style={{ fontSize: 22 }}>📞</span>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#1A1816' }}>Call Us</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>(866) 613-0704</div>
+              </div>
+            </a>
+            <button onClick={() => setShowFloatingMenu(false)} style={{
+              width: '100%', padding: '16px 20px',
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 15, fontWeight: 500, color: '#888',
+              fontFamily: 'inherit',
+            }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
