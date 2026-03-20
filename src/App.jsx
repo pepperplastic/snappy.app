@@ -783,6 +783,7 @@ export default function App() {
   const [step, setStep] = useState(STEPS.HERO)
   const [imageData, setImageData] = useState(null)
   const [analysis, setAnalysis] = useState(null)
+  const [analysisReady, setAnalysisReady] = useState(false)
   const [error, setError] = useState(null)
   const [leadData, setLeadData] = useState({ firstName: '', lastName: '', email: '', phone: '', notes: '' })
   const [userEdits, setUserEdits] = useState([])
@@ -945,7 +946,7 @@ export default function App() {
     trackEvent('photo_uploaded', { method: 'camera' })
     trackMetaEvent('ViewContent', { content_name: 'Photo Upload', content_category: 'camera' })
     analyzeImage([base64])
-      .then(result => { setAnalysis(result); setStep(STEPS.OFFER); incrementAnalysisCount(); notifyPhoto(result, [base64]); trackMetaEvent('EstimateGenerated', { content_name: result?.title || 'Unknown Item', content_category: result?.item_type || 'unknown', value: result?.offer_high || 0, currency: 'USD' }); })
+      .then(result => { setAnalysis(result); setAnalysisReady(true); incrementAnalysisCount(); notifyPhoto(result, [base64]); trackMetaEvent('EstimateGenerated', { content_name: result?.title || 'Unknown Item', content_category: result?.item_type || 'unknown', value: result?.offer_high || 0, currency: 'USD' }); })
       .catch(err => {
         console.error('Analysis error:', err)
         setError(`We could not analyze that image. Please try a clearer photo. (${err.message})`)
@@ -970,7 +971,7 @@ export default function App() {
     try {
       const result = await analyzeImage(compressed)
       setAnalysis(result)
-      setStep(STEPS.OFFER)
+      setAnalysisReady(true)
       incrementAnalysisCount()
       notifyPhoto(result, compressed)
       trackMetaEvent('EstimateGenerated', { content_name: result?.title || 'Unknown Item', content_category: result?.item_type || 'unknown', value: result?.offer_high || 0, currency: 'USD' })
@@ -1214,7 +1215,7 @@ export default function App() {
             error={error}
           />
         )}
-        {step === STEPS.ANALYZING && <AnalyzingScreen imageData={imageData} />}
+        {step === STEPS.ANALYZING && <AnalyzingScreen imageData={imageData} isDone={analysisReady} onComplete={() => { setAnalysisReady(false); setStep(STEPS.OFFER); }} />}
         {step === STEPS.OFFER && analysis && (
           <OfferScreen
             analysis={analysis}
@@ -1770,46 +1771,57 @@ function CaptureScreen({ fileInputRef, onCamera, onFile, error }) {
 //  ANALYZING SCREEN
 // ═══════════════════════════════════════════════
 const ANALYZING_STEPS = [
-  'Step 1 of 3: Identifying materials...',
-  'Step 2 of 3: Checking market prices...',
-  'Step 3 of 3: Calculating your offer...',
+  'Step 1 of 4: Identifying item type...',
+  'Step 2 of 4: Analyzing materials and condition...',
+  'Step 3 of 4: Checking current market prices...',
+  'Step 4 of 4: Calculating your offer...',
 ]
 
-const FUN_FACTS = [
-  'Gold prices have risen over 25% in the past year.',
-  'Most people underestimate what their old jewelry is worth.',
-  '14K gold is 58.3% pure gold by weight.',
-  'A single gram of 14K gold is worth over $50 today.',
-  'We\'ve evaluated thousands of pieces just like yours.',
-  'Broken chains and single earrings still have full melt value.',
-  'Old class rings are often 10K gold — worth more than you think.',
-  'Dental gold is some of the purest gold you can sell.',
-]
-
-function AnalyzingScreen({ imageData }) {
+function AnalyzingScreen({ imageData, isDone, onComplete }) {
   const [stepIdx, setStepIdx] = useState(0)
-  const [factIdx, setFactIdx] = useState(0)
-  const [factVisible, setFactVisible] = useState(true)
+  const [showSlow, setShowSlow] = useState(false)
+  const stepIdxRef = useRef(0)
+  const timerRef = useRef(null)
+  const onCompleteRef = useRef(onComplete)
+  useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
 
-  // Cycle through progress steps every 3s
+  const advanceStep = (delay) => {
+    clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
+      setStepIdx(i => {
+        const next = i + 1
+        stepIdxRef.current = next
+        if (next >= ANALYZING_STEPS.length - 1) {
+          clearInterval(timerRef.current)
+          // All steps done — transition to offer after a brief pause
+          setTimeout(() => onCompleteRef.current?.(), 600)
+        }
+        return Math.min(next, ANALYZING_STEPS.length - 1)
+      })
+    }, delay)
+  }
+
+  // Normal pace: 3s per step
   useEffect(() => {
-    const t = setInterval(() => {
-      setStepIdx(i => Math.min(i + 1, ANALYZING_STEPS.length - 1))
-    }, 3000)
-    return () => clearInterval(t)
+    advanceStep(3000)
+    const slowTimer = setTimeout(() => setShowSlow(true), 15000)
+    return () => {
+      clearInterval(timerRef.current)
+      clearTimeout(slowTimer)
+    }
   }, [])
 
-  // Fade-cycle fun facts every 4s
+  // When API is done, speed through remaining steps at 600ms each
   useEffect(() => {
-    const t = setInterval(() => {
-      setFactVisible(false)
-      setTimeout(() => {
-        setFactIdx(i => (i + 1) % FUN_FACTS.length)
-        setFactVisible(true)
-      }, 400)
-    }, 4000)
-    return () => clearInterval(t)
-  }, [])
+    if (!isDone) return
+    setShowSlow(false)
+    if (stepIdxRef.current >= ANALYZING_STEPS.length - 1) {
+      // Already on last step — just complete immediately
+      setTimeout(() => onCompleteRef.current?.(), 600)
+    } else {
+      advanceStep(600)
+    }
+  }, [isDone])
 
   const images = Array.isArray(imageData) ? imageData : [imageData]
 
@@ -1835,7 +1847,7 @@ function AnalyzingScreen({ imageData }) {
           <div style={styles.spinner} />
           <h2 style={styles.analyzingTitle}>Analyzing your item</h2>
 
-          {/* Fake progress steps */}
+          {/* Progress steps */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 320, margin: '4px 0' }}>
             {ANALYZING_STEPS.map((s, i) => (
               <div key={i} style={{
@@ -1854,25 +1866,15 @@ function AnalyzingScreen({ imageData }) {
             ))}
           </div>
 
-          {/* Rotating fun fact */}
-          <div style={{
-            marginTop: 8,
-            padding: '12px 16px',
-            background: '#F5F0E8',
-            borderRadius: 10,
-            maxWidth: 320,
-            width: '100%',
-            minHeight: 52,
-            display: 'flex', alignItems: 'center',
+          {/* Slow connection message */}
+          <p style={{
+            fontSize: 13, color: '#7A6A50', margin: 0, textAlign: 'center',
+            minHeight: 20,
+            opacity: showSlow ? 1 : 0,
+            transition: 'opacity 0.8s ease',
           }}>
-            <p style={{
-              fontSize: 13, color: '#7A6A50', lineHeight: 1.5, margin: 0,
-              opacity: factVisible ? 1 : 0,
-              transition: 'opacity 0.4s ease',
-            }}>
-              💡 {FUN_FACTS[factIdx]}
-            </p>
-          </div>
+            Still working — this one's complex...
+          </p>
         </div>
       </div>
     </section>
