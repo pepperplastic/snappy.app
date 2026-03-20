@@ -738,7 +738,6 @@ function parseEstHighStr(est) {
 
 function isComplete(item) {
   return !!(item.address && item.address.trim() &&
-    item.phone && item.phone.trim() &&
     (item.shipping === "kit" || item.shipping === "label"));
 }
 
@@ -840,7 +839,7 @@ function sheetRowToInboxItem(row) {
   const shipping = (row.shipping||"").toLowerCase().trim();
   const hasAddress = !!(row.address && row.address.trim());
   const hasPhone   = !!(row.phone   && row.phone.trim());
-  const complete   = hasAddress && hasPhone && (shipping === "kit" || shipping === "label");
+  const complete   = hasAddress && (shipping === "kit" || shipping === "label");
   return {
     custId,
     name:      row.name || "",
@@ -903,7 +902,7 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
         {complete
           ? <div style={{color:G.muted,fontSize:10,marginTop:1}}>{item.address.split(",")[0]}</div>
           : <div style={{color:"#E65100",fontSize:10,marginTop:1}}>
-              {!item.address ? "No address" : !item.phone ? "No phone" : "No shipping pref"}
+              {!item.address ? "No address" : "No shipping preference"}
             </div>
         }
       </div>
