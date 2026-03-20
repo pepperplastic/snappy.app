@@ -1832,8 +1832,8 @@ function CaptureScreen({ fileInputRef, onCamera, onFile, error }) {
 // ═══════════════════════════════════════════════
 const ANALYZING_STEPS = [
   'Step 1 of 4: Identifying item type...',
-  'Step 2 of 4: Analyzing materials and condition...',
-  'Step 3 of 4: Checking current market prices...',
+  'Step 2 of 4: Analyzing materials...',
+  'Step 3 of 4: Checking market prices...',
   'Step 4 of 4: Calculating your offer...',
 ]
 
@@ -1907,8 +1907,8 @@ function AnalyzingScreen({ imageData, isDone, onComplete }) {
           <div style={styles.spinner} />
           <h2 style={{ ...styles.analyzingTitle, marginBottom: 4 }}>Analyzing your item</h2>
 
-          {/* Progress steps */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 300 }}>
+          {/* Progress steps — left aligned, fixed width to prevent wrapping */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280, alignSelf: 'center' }}>
             {ANALYZING_STEPS.map((s, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -1917,11 +1917,12 @@ function AnalyzingScreen({ imageData, isDone, onComplete }) {
                 fontSize: 13,
                 color: i < stepIdx ? '#22C55E' : i === stepIdx ? '#1A1816' : '#999',
                 fontWeight: i === stepIdx ? 600 : 400,
+                whiteSpace: 'nowrap',
               }}>
                 <span style={{ fontSize: 13, flexShrink: 0, width: 16, textAlign: 'center' }}>
                   {i < stepIdx ? '✓' : i === stepIdx ? '›' : '○'}
                 </span>
-                <span style={{ lineHeight: 1.3 }}>{s}</span>
+                <span>{s}</span>
               </div>
             ))}
           </div>
