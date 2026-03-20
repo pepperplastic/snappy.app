@@ -725,7 +725,9 @@ function CustomerRow({ customer, onClick, selected, onSelect, activeTab }) {
 }
 
 // ── Sheet sync helpers ─────────────────────────────────────
-const SHEET_CSV = "https://docs.google.com/spreadsheets/d/1_QStkp9Gl6t3bqWLeZs2Ynrr-ATW_r07oFCKOp3EbDM/export?format=csv&gid=0";
+// Apps Script web app URL — no public sheet needed
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPLACEHOLDER/exec";
+const CRM_KEY    = "snappy_crm_2026";
 
 function parseEstHighStr(est) {
   if (!est) return 0;
@@ -830,29 +832,7 @@ function toFedExRow(item) {
 }
 
 
-function parseSheetRows(csvText) {
-  const lines = csvText.split("\n");
-  if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g,"").toLowerCase());
-
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    // simple CSV parse (handles quoted fields)
-    const cols = [];
-    let cur = "", inQ = false;
-    for (const ch of lines[i]) {
-      if (ch === '"') { inQ = !inQ; }
-      else if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; }
-      else { cur += ch; }
-    }
-    cols.push(cur.trim());
-
-    const row = {};
-    headers.forEach((h, idx) => { row[h] = (cols[idx]||"").replace(/^"|"$/g,"").trim(); });
-    rows.push(row);
-  }
-  return rows.filter(r => r.email && r.email.includes("@"));
-}
+// Apps Script returns clean JSON rows directly — no CSV parsing needed
 
 function sheetRowToInboxItem(row) {
   const email = (row.email||"").toLowerCase().trim();
@@ -985,13 +965,13 @@ export default function SnappyGoldCRM() {
   async function syncSheet() {
     setSyncStatus("syncing");
     try {
-      const res = await fetch(SHEET_CSV);
-      if (!res.ok) throw new Error("fetch failed");
-      const text = await res.text();
-      const rows = parseSheetRows(text);
-      const stored = getStore();
+      const url = `${SCRIPT_URL}?action=crm_leads&key=${CRM_KEY}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.status === "error") throw new Error(json.message || "Script error");
+      const rows = json.leads || [];
 
-      // Diff: find emails not yet in custs or inbox
       setCusts(prev => {
         const dismissed = JSON.parse(localStorage.getItem("sg_crm_dismissed")||"[]");
         const newItems = [];
@@ -999,13 +979,10 @@ export default function SnappyGoldCRM() {
           const email = (row.email||"").toLowerCase().trim();
           const custId = email === "freemantony600@gmail.com" ? "freemantony935@gmail.com" : email;
           if (!custId || !custId.includes("@")) continue;
-          // Skip if already in CRM (seeded or previously moved from inbox)
-          if (prev[custId] && !prev[custId].inInbox) continue;
-          // Skip if dismissed
-          if (dismissed.includes(custId)) continue;
+          if (prev[custId]) continue;            // already in CRM
+          if (dismissed.includes(custId)) continue; // dismissed
           newItems.push(sheetRowToInboxItem(row));
         }
-        // Dedupe by custId (keep latest)
         const deduped = {};
         for (const item of newItems) deduped[item.custId] = item;
         setInbox(Object.values(deduped).sort((a,b) =>
