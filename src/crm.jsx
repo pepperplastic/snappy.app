@@ -734,21 +734,101 @@ function parseEstHighStr(est) {
   return nums.length ? Math.max(...nums) : 0;
 }
 
-function recommendQueue(row) {
-  const hasAddress = !!(row.address && row.address.trim());
-  const shipping = (row.shipping||"").toLowerCase();
-  const hasEstimate = !!(row.estimate && row.estimate.trim());
-  const hasFedex = !!(row.returnTracking && row.returnTracking.trim());
-  const hasUsps = !!(row.outboundTracking && row.outboundTracking.trim());
-
-  if (hasFedex && hasUsps) return { queue:"cs", reason:"Both labels issued — awaiting package" };
-  if (hasFedex && !hasUsps) return { queue:"cs", reason:"Return label sent — awaiting package" };
-  if (hasUsps && !hasFedex) return { queue:"fulfill", reason:"Kit printed, no return label yet" };
-  if (hasAddress && shipping === "kit") return { queue:"fulfill", reason:"Has address + kit preference" };
-  if (hasAddress && shipping === "label") return { queue:"fulfill", reason:"Has address + label preference" };
-  if (hasEstimate && !hasAddress) return { queue:"followup", reason:"Has estimate, no address yet" };
-  return { queue:"followup", reason:"Incomplete lead — needs follow up" };
+function isComplete(item) {
+  return !!(item.address && item.address.trim() &&
+    item.phone && item.phone.trim() &&
+    (item.shipping === "kit" || item.shipping === "label"));
 }
+
+// Parse "Street, City, State, Zip" address format from Book2
+function parseAddress(addr) {
+  if (!addr) return { line1:"", city:"", state:"", zip:"" };
+  const parts = addr.split(",").map(p => p.trim());
+  return {
+    line1:  parts[0] || "",
+    city:   parts[1] || "",
+    state:  parts[2] || "",
+    zip:    parts[3] || "",
+  };
+}
+
+// Generate CSV string from array of objects
+function toCSV(rows) {
+  if (!rows.length) return "";
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(",")];
+  for (const row of rows) {
+    lines.push(headers.map(h => {
+      const v = String(row[h]??"").replace(/"/g,'""');
+      return v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v}"` : v;
+    }).join(","));
+  }
+  return lines.join("\n");
+}
+
+function downloadCSV(filename, csvStr) {
+  const blob = new Blob([csvStr], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Build Pirateship batch import row (outbound kit — Snappy Gold → Customer)
+function toPirateshipRow(item) {
+  const addr = parseAddress(item.address);
+  const phone = (item.phone||"").replace(/\D/g,"");
+  return {
+    "Name":        item.name || item.email,
+    "Company":     "",
+    "Address 1":   addr.line1,
+    "Address 2":   "",
+    "City":        addr.city,
+    "State":       addr.state,
+    "Zip":         addr.zip,
+    "Country":     "US",
+    "Phone":       phone,
+    "Email":       item.email,
+    "Weight (oz)": "6",
+    "Length":      "12",
+    "Width":       "9",
+    "Height":      "1",
+    "Reference":   item.email,
+    "Service":     "",
+  };
+}
+
+// Build FedEx Ship Manager batch import row (return label — Customer → Snappy Gold)
+function toFedExRow(item) {
+  const addr = parseAddress(item.address);
+  const phone = (item.phone||"").replace(/\D/g,"") || "8666130704";
+  return {
+    "serviceType":           "FEDEX_GROUND",
+    "shipmentType":          "STANDALONE_RETURN",
+    "senderContactName":     item.name || item.email,
+    "senderContactNumber":   phone,
+    "senderLine1":           addr.line1,
+    "senderPostcode":        addr.zip,
+    "senderCity":            addr.city,
+    "senderState":           addr.state,
+    "senderCountry":         "US",
+    "senderResidential":     "Y",
+    "recipientContactName":  "Snappy Gold",
+    "recipientContactNumber":"8666130704",
+    "recipientLine1":        "1686 S FEDERAL HWY #318",
+    "recipientPostcode":     "33483",
+    "recipientCity":         "DELRAY BEACH",
+    "recipientState":        "FL",
+    "recipientCountry":      "US",
+    "recipientEmail":        "davidisaacweiss@yahoo.com",
+    "numberOfPackages":      "1",
+    "packageWeight":         "1",
+    "weightUnits":           "LBS",
+    "packageType":           "YOUR_PACKAGING",
+    "currencyType":          "USD",
+  };
+}
+
 
 function parseSheetRows(csvText) {
   const lines = csvText.split("\n");
@@ -775,83 +855,111 @@ function parseSheetRows(csvText) {
 }
 
 function sheetRowToInboxItem(row) {
-  // Map sheet columns to inbox item
   const email = (row.email||"").toLowerCase().trim();
-  // Tony Freeman merge
   const custId = email === "freemantony600@gmail.com" ? "freemantony935@gmail.com" : email;
-  const rec = recommendQueue(row);
+  const shipping = (row.shipping||"").toLowerCase().trim();
+  const hasAddress = !!(row.address && row.address.trim());
+  const hasPhone   = !!(row.phone   && row.phone.trim());
+  const complete   = hasAddress && hasPhone && (shipping === "kit" || shipping === "label");
   return {
     custId,
-    name: row.name || "",
-    email: custId,
-    phone: row.phone || "",
-    address: row.address || "",
-    source: row["traffic source"] || row.source || "",
-    shipping: row.shipping || "",
-    estimate: row.estimate || "",
-    item: row.item || "",
-    photo: row.photo || "",
-    timestamp: row.timestamp || "",
-    recommendedQueue: rec.queue,
-    recommendReason: rec.reason,
-    inboxTs: new Date().toISOString(),
+    name:      row.name || "",
+    email:     custId,
+    phone:     row.phone || "",
+    address:   row.address || "",
+    source:    row["traffic source"] || row.source || "",
+    shipping,
+    estimate:  row.estimate || "",
+    item:      row.item || "",
+    photo:     row.photo || "",
+    timestamp: row.timestamp || new Date().toISOString(),
+    complete,
+    inboxTs:   new Date().toISOString(),
   };
 }
 
 // ── Inbox Row component ────────────────────────────────────
-function InboxRow({ item, onApprove, onDismiss }) {
-  const [chosenQueue, setChosenQueue] = useState(item.recommendedQueue);
-  const queueLabels = {
-    followup: "Follow Up", fulfill: "Outbound Pending",
-    cs: "Inbound Pending", process: "Received", closed: "Closed"
-  };
-  const queueColor = {
-    followup: G.blue, fulfill: SC.ready_to_fulfill,
-    cs: SC.outbound_fulfilled, process: SC.received, closed: G.green
-  };
+// Complete rows show fulfillment action buttons; incomplete show Follow Up only
+function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
+  const complete = item.complete;
+  const kit   = item.shipping === "kit";
+  const label = item.shipping === "label";
 
   return (
     <div style={{
-      display:"grid", gridTemplateColumns:"170px 1fr 100px 160px 180px",
-      gap:10, padding:"10px 16px", background:G.card,
-      borderBottom:`1px solid ${G.border}`, alignItems:"center"
+      display:"grid", gridTemplateColumns:"200px 1fr 140px 240px",
+      gap:10, padding:"10px 16px",
+      background: complete ? G.card : "#FFFBF5",
+      borderBottom:`1px solid ${G.border}`, alignItems:"center",
+      borderLeft: complete ? `3px solid ${G.gold}` : `3px solid ${G.border}`,
     }}>
+      {/* Customer */}
       <div>
-        <div style={{color:G.text,fontSize:13,fontWeight:700}}>{item.name||<span style={{color:G.muted}}>Unknown</span>}</div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{color:G.text,fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {item.name||<span style={{color:G.muted}}>Unknown</span>}
+          </div>
+          <span style={{
+            fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:3,flexShrink:0,
+            background: complete ? "#E8F5E9" : "#FFF3E0",
+            color: complete ? "#2E7D32" : "#E65100",
+          }}>{complete ? "COMPLETE" : "INCOMPLETE"}</span>
+        </div>
         <div style={{color:G.muted,fontSize:10}}>{item.email}</div>
         {item.phone && <div style={{color:G.muted,fontSize:10}}>{fmtPhone(item.phone)}</div>}
+        {complete && item.shipping && (
+          <div style={{
+            fontSize:9,fontWeight:700,marginTop:2,
+            color: kit ? "#6A1B9A" : "#AD1457",
+            textTransform:"uppercase",letterSpacing:0.5
+          }}>📦 {item.shipping}</div>
+        )}
       </div>
+
+      {/* Item + estimate */}
       <div>
         <div style={{color:G.text,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.item||"—"}</div>
         {item.estimate && <div style={{color:G.gold,fontWeight:700,fontSize:13}}>{item.estimate}</div>}
-        <div style={{color:G.muted,fontSize:10,marginTop:2}}>{item.recommendReason}</div>
-      </div>
-      <div>
-        {item.address
-          ? <div style={{color:G.text,fontSize:10,overflow:"hidden",textOverflow:"ellipsis"}}>{item.address.split(",")[0]}</div>
-          : <div style={{color:G.muted,fontSize:10}}>No address</div>
+        {complete
+          ? <div style={{color:G.muted,fontSize:10,marginTop:1}}>{item.address.split(",")[0]}</div>
+          : <div style={{color:"#E65100",fontSize:10,marginTop:1}}>
+              {!item.address ? "No address" : !item.phone ? "No phone" : "No shipping pref"}
+            </div>
         }
-        {item.shipping && <div style={{color:G.muted,fontSize:10,textTransform:"uppercase"}}>{item.shipping}</div>}
       </div>
-      <div>
-        <div style={{color:G.muted,fontSize:10,marginBottom:4}}>Send to:</div>
-        <select value={chosenQueue} onChange={e=>setChosenQueue(e.target.value)}
-          style={{background:G.bg,color:queueColor[chosenQueue]||G.text,
-            border:`1px solid ${queueColor[chosenQueue]||G.border}`,
-            borderRadius:5,padding:"4px 8px",fontSize:12,cursor:"pointer",fontWeight:700,width:"100%"}}>
-          <option value="followup">Follow Up</option>
-          <option value="fulfill">Outbound Pending</option>
-          <option value="cs">Inbound Pending</option>
-          <option value="process">Received</option>
-          <option value="closed">Closed</option>
-        </select>
+
+      {/* Status / shipping info */}
+      <div style={{textAlign:"center"}}>
+        {complete ? (
+          <div>
+            <div style={{fontSize:11,color:G.muted}}>Will generate:</div>
+            {kit && <div style={{fontSize:10,color:"#6A1B9A",fontWeight:600}}>Pirateship outbound</div>}
+            {kit && <div style={{fontSize:10,color:"#1565C0",fontWeight:600}}>FedEx return (in kit)</div>}
+            {label && <div style={{fontSize:10,color:"#1565C0",fontWeight:600}}>FedEx return (email)</div>}
+          </div>
+        ) : (
+          <div style={{fontSize:11,color:G.muted}}>Incomplete —<br/>Follow Up only</div>
+        )}
       </div>
-      <div style={{display:"flex",gap:6}}>
-        <Btn v="gold" onClick={()=>onApprove(item, chosenQueue)} st={{fontSize:11,padding:"5px 10px"}}>
-          ✓ Move
-        </Btn>
+
+      {/* Actions */}
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+        {complete ? (
+          <>
+            <Btn v="gold" onClick={()=>onAddToQueue(item)} st={{fontSize:11,padding:"5px 10px"}}>
+              + Add to Queue
+            </Btn>
+            <Btn v="ghost" onClick={()=>onMoveFollowUp(item)} st={{fontSize:11,padding:"5px 10px"}}>
+              → Follow Up
+            </Btn>
+          </>
+        ) : (
+          <Btn v="ghost" onClick={()=>onMoveFollowUp(item)} st={{fontSize:11,padding:"5px 10px"}}>
+            → Follow Up
+          </Btn>
+        )}
         <Btn v="danger" onClick={()=>onDismiss(item.custId)} st={{fontSize:11,padding:"5px 10px"}}>
-          ✕ Skip
+          ✕
         </Btn>
       </div>
     </div>
@@ -914,13 +1022,9 @@ export default function SnappyGoldCRM() {
     }
   }
 
-  function approveInboxItem(item, queue) {
-    // Convert inbox item to full customer record
-    const stageMap = {
-      followup: "estimate_only", fulfill: "ready_to_fulfill",
-      cs: "outbound_fulfilled", process: "received", closed: "purchase_complete"
-    };
-    const newCust = {
+  // Convert an inbox item into a CRM customer record at the given stage
+  function inboxItemToCust(item, stage, sentAt) {
+    return {
       custId: item.custId,
       name: item.name,
       email: item.email,
@@ -933,7 +1037,7 @@ export default function SnappyGoldCRM() {
       deleted: false,
       shipments: [{
         shipmentId: `SHP-${item.custId.slice(0,12).replace(/[@.]/g,"")}-01`,
-        stage: stageMap[queue] || "estimate_only",
+        stage,
         shippingType: item.shipping || "",
         outboundTracking: "",
         returnTracking: "",
@@ -945,11 +1049,14 @@ export default function SnappyGoldCRM() {
         }] : [],
         purchase: null,
         createdAt: item.timestamp || new Date().toISOString(),
-        sentAt: ["outbound_fulfilled","received"].includes(stageMap[queue]) ? new Date().toISOString() : null,
+        sentAt: sentAt || null,
         notes: ""
       }]
     };
-    saveCust(newCust);
+  }
+
+  function moveToFollowUp(item) {
+    saveCust(inboxItemToCust(item, "estimate_only", null));
     setInbox(prev => prev.filter(i => i.custId !== item.custId));
   }
 
@@ -958,6 +1065,49 @@ export default function SnappyGoldCRM() {
     dismissed.push(custId);
     localStorage.setItem("sg_crm_dismissed", JSON.stringify(dismissed));
     setInbox(prev => prev.filter(i => i.custId !== custId));
+  }
+
+  // "Add to Queue" — stages the lead as outbound_pending (kit) or outbound_fulfilled (label)
+  // but does NOT download CSVs yet; that's done via the Download buttons in the toolbar
+  function addToQueue(item) {
+    const stage = item.shipping === "label" ? "outbound_pending" : "outbound_pending";
+    saveCust(inboxItemToCust(item, stage, null));
+    setInbox(prev => prev.filter(i => i.custId !== item.custId));
+  }
+
+  // Generate and download CSVs for all complete queued items then move them to correct stage
+  function generateAndDownload(items) {
+    const kitLeads   = items.filter(i => i.shipping === "kit");
+    const labelLeads = items.filter(i => i.shipping === "label");
+
+    const now = new Date().toISOString();
+
+    if (kitLeads.length) {
+      // File 1: Pirateship outbound (kit → customer)
+      downloadCSV(`outbound_kit_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
+        toCSV(kitLeads.map(toPirateshipRow)));
+      // File 2: FedEx inbound kit (customer → Snappy Gold, to put inside kit)
+      downloadCSV(`inbound_kit_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
+        toCSV(kitLeads.map(toFedExRow)));
+    }
+
+    if (labelLeads.length) {
+      // File 3: FedEx inbound label (customer → Snappy Gold, email to customer)
+      downloadCSV(`inbound_label_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
+        toCSV(labelLeads.map(toFedExRow)));
+    }
+
+    // Move kit leads → outbound_pending (kit in transit to customer)
+    kitLeads.forEach(item => {
+      saveCust(inboxItemToCust(item, "outbound_pending", now));
+      setInbox(prev => prev.filter(i => i.custId !== item.custId));
+    });
+
+    // Move label leads → outbound_fulfilled (label emailed, waiting for return)
+    labelLeads.forEach(item => {
+      saveCust(inboxItemToCust(item, "outbound_fulfilled", now));
+      setInbox(prev => prev.filter(i => i.custId !== item.custId));
+    });
   }
 
   function saveCust(updated) {
@@ -1191,39 +1341,97 @@ export default function SnappyGoldCRM() {
               Inbox is empty — all caught up.
               {syncStatus==="syncing" && <div style={{marginTop:8,fontSize:12}}>Syncing sheet…</div>}
             </div>
-          ) : (
-            <>
-              <div style={{display:"grid",gridTemplateColumns:"170px 1fr 100px 160px 180px",
-                gap:10,padding:"6px 16px",background:"#EDE8DF",
-                borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48}}>
-                {["Customer","Item / Reason","Address","Send To","Action"].map(h=>(
-                  <div key={h} style={{color:G.muted,fontSize:10,fontWeight:700,
-                    textTransform:"uppercase",letterSpacing:0.5}}>{h}</div>
+          ) : (()=>{
+            const complete   = inbox.filter(i=>i.complete);
+            const incomplete = inbox.filter(i=>!i.complete);
+            const kitCount   = complete.filter(i=>i.shipping==="kit").length;
+            const labelCount = complete.filter(i=>i.shipping==="label").length;
+            return (
+              <>
+                {/* Column headers */}
+                <div style={{display:"grid",gridTemplateColumns:"200px 1fr 140px 240px",
+                  gap:10,padding:"6px 16px",background:"#EDE8DF",
+                  borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48}}>
+                  {["Customer","Item + Estimate","Will Generate","Action"].map(h=>(
+                    <div key={h} style={{color:G.muted,fontSize:10,fontWeight:700,
+                      textTransform:"uppercase",letterSpacing:0.5}}>{h}</div>
+                  ))}
+                </div>
+
+                {/* Toolbar */}
+                <div style={{padding:"10px 16px",background:"#FFF8E1",
+                  borderBottom:`2px solid ${G.gold}`,
+                  display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,color:G.text,fontWeight:700}}>
+                    {inbox.length} new lead{inbox.length!==1?"s":""} —
+                  </span>
+                  <span style={{fontSize:12,color:G.muted}}>
+                    {complete.length} complete ({kitCount} kit, {labelCount} label) · {incomplete.length} incomplete
+                  </span>
+                  <div style={{flex:1}}/>
+                  {complete.length > 0 && (
+                    <Btn v="gold" onClick={()=>{
+                      if (window.confirm(
+                        `Download CSVs for ${complete.length} complete lead${complete.length!==1?"s":""}?
+
+` +
+                        `${kitCount} kit → Pirateship outbound + FedEx inbound (kit)
+` +
+                        `${labelCount} label → FedEx inbound (label)
+
+` +
+                        `These leads will move to their queues immediately.`
+                      )) generateAndDownload(complete);
+                    }} st={{fontSize:12,padding:"6px 14px"}}>
+                      ⬇ Download CSVs &amp; Fulfill ({complete.length})
+                    </Btn>
+                  )}
+                  <Btn v="ghost" onClick={()=>{
+                    if (window.confirm(`Move all ${incomplete.length} incomplete leads to Follow Up?`))
+                      incomplete.forEach(i=>moveToFollowUp(i));
+                  }} st={{fontSize:11}} disabled={!incomplete.length}>
+                    → All Incomplete to Follow Up
+                  </Btn>
+                  <Btn v="danger" onClick={()=>{
+                    if (window.confirm("Skip all? They won't appear again."))
+                      inbox.forEach(i=>dismissInboxItem(i.custId));
+                  }} st={{fontSize:11}}>✕ Skip All</Btn>
+                </div>
+
+                {/* Complete leads first */}
+                {complete.length > 0 && (
+                  <div style={{background:"#F9FBE7",borderBottom:`1px solid ${G.border}`,
+                    padding:"4px 16px"}}>
+                    <span style={{fontSize:10,fontWeight:700,color:"#558B2F",textTransform:"uppercase",
+                      letterSpacing:0.5}}>● Complete leads</span>
+                  </div>
+                )}
+                {complete.map(item=>(
+                  <InboxRow key={item.custId} item={item}
+                    onMoveFollowUp={moveToFollowUp}
+                    onDismiss={dismissInboxItem}
+                    onAddToQueue={addToQueue}
+                  />
                 ))}
-              </div>
-              <div style={{padding:"8px 16px",background:"#FFF8E1",borderBottom:`1px solid ${G.border}`,
-                display:"flex",gap:10,alignItems:"center"}}>
-                <span style={{fontSize:12,color:G.text,fontWeight:600}}>{inbox.length} new lead{inbox.length!==1?"s":""} from sheet</span>
-                <span style={{color:G.muted,fontSize:12}}>—</span>
-                <Btn v="ghost" onClick={()=>{
-                  if (window.confirm(`Move all ${inbox.length} leads to their recommended queues?`)) {
-                    inbox.forEach(item => approveInboxItem(item, item.recommendedQueue));
-                  }
-                }} st={{fontSize:11}}>✓ Approve All Recommendations</Btn>
-                <Btn v="danger" onClick={()=>{
-                  if (window.confirm("Skip all inbox items? They won't appear again.")) {
-                    inbox.forEach(item => dismissInboxItem(item.custId));
-                  }
-                }} st={{fontSize:11}}>✕ Skip All</Btn>
-              </div>
-              {inbox.map(item=>(
-                <InboxRow key={item.custId} item={item}
-                  onApprove={approveInboxItem}
-                  onDismiss={dismissInboxItem}
-                />
-              ))}
-            </>
-          )}
+
+                {/* Incomplete leads */}
+                {incomplete.length > 0 && (
+                  <div style={{background:"#FFF3E0",borderBottom:`1px solid ${G.border}`,
+                    padding:"4px 16px",borderTop:`1px solid ${G.border}`}}>
+                    <span style={{fontSize:10,fontWeight:700,color:"#E65100",textTransform:"uppercase",
+                      letterSpacing:0.5}}>○ Incomplete leads — Follow Up only</span>
+                  </div>
+                )}
+                {incomplete.map(item=>(
+                  <InboxRow key={item.custId} item={item}
+                    onMoveFollowUp={moveToFollowUp}
+                    onDismiss={dismissInboxItem}
+                    onAddToQueue={addToQueue}
+                  />
+                ))}
+              </>
+            );
+          })()}
         </div>
       )}
 
