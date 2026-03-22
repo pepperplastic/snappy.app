@@ -859,26 +859,45 @@ function sheetRowToInboxItem(row) {
 
 // ── Inbox Row component ────────────────────────────────────
 // Complete rows show fulfillment action buttons; incomplete show Follow Up only
-function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
+function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue, selected, onSelect }) {
   const complete = item.complete;
   const kit   = item.shipping === "kit";
   const label = item.shipping === "label";
   const [expanded, setExpanded] = useState(false);
+  const hasEdits = !!(item.userEdits && item.userEdits.trim());
+
+  // Collect all photos (primary + any in photos array)
+  const allPhotos = [];
+  if (item.photo && item.photo.includes("drive.google.com")) allPhotos.push(item.photo);
+  if (Array.isArray(item.photos)) item.photos.forEach(p => { if (p && !allPhotos.includes(p)) allPhotos.push(p); });
 
   return (
     <div style={{
-      background: complete ? G.card : "#FFFBF5",
+      background: selected ? "#FFF8E1" : complete ? G.card : "#FFFBF5",
       borderBottom:`1px solid ${G.border}`,
-      borderLeft: complete ? `3px solid ${G.gold}` : `3px solid ${G.border}`,
+      borderLeft: selected ? `3px solid ${G.gold}` : complete ? `3px solid ${G.gold}` : `3px solid ${G.border}`,
     }}>
-      {/* Main row — click anywhere to expand */}
+      {/* Main row */}
       <div style={{
-        display:"grid", gridTemplateColumns:"200px 1fr 140px 240px",
-        gap:10, padding:"10px 16px", alignItems:"center", cursor:"pointer",
-      }} onClick={()=>setExpanded(e=>!e)}>
+        display:"grid", gridTemplateColumns:"32px 200px 1fr 140px 240px",
+        gap:10, padding:"10px 16px", alignItems:"center",
+      }}>
+        {/* Checkbox */}
+        <div onClick={e=>{e.stopPropagation(); if(complete) onSelect(item.custId);}}
+          style={{display:"flex",alignItems:"center",justifyContent:"center",
+            cursor: complete ? "pointer" : "default", opacity: complete ? 1 : 0.3}}>
+          <div style={{
+            width:16,height:16,borderRadius:3,flexShrink:0,
+            border:`2px solid ${selected ? G.gold : G.border}`,
+            background: selected ? G.gold : "transparent",
+            display:"flex",alignItems:"center",justifyContent:"center",
+          }}>
+            {selected && <span style={{color:"#fff",fontSize:11,lineHeight:1}}>✓</span>}
+          </div>
+        </div>
 
-        {/* Customer */}
-        <div>
+        {/* Customer — click to expand */}
+        <div onClick={()=>setExpanded(e=>!e)} style={{cursor:"pointer"}}>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
             <div style={{color:G.text,fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
               {item.name||<span style={{color:G.muted}}>Unknown</span>}
@@ -888,6 +907,12 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
               background: complete ? "#E8F5E9" : "#FFF3E0",
               color: complete ? "#2E7D32" : "#E65100",
             }}>{complete ? "COMPLETE" : "INCOMPLETE"}</span>
+            {hasEdits && (
+              <span style={{fontSize:9,fontWeight:800,padding:"1px 5px",borderRadius:3,
+                background:"#E3F2FD",color:"#1565C0",flexShrink:0}} title={item.userEdits}>
+                ✏ EDITED
+              </span>
+            )}
           </div>
           <div style={{color:G.muted,fontSize:10}}>{item.email}</div>
           {item.phone && <div style={{color:G.muted,fontSize:10}}>{fmtPhone(item.phone)}</div>}
@@ -896,11 +921,11 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
               color: kit ? "#6A1B9A" : "#AD1457", textTransform:"uppercase",letterSpacing:0.5
             }}>📦 {item.shipping}</div>
           )}
-          <div style={{color:G.gold,fontSize:9,marginTop:3}}>{expanded ? "▲ hide details" : "▼ view details"}</div>
+          <div style={{color:G.gold,fontSize:9,marginTop:3}}>{expanded ? "▲ hide" : "▼ details"}</div>
         </div>
 
         {/* Item + estimate */}
-        <div>
+        <div onClick={()=>setExpanded(e=>!e)} style={{cursor:"pointer"}}>
           <div style={{color:G.text,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.item||"—"}</div>
           {item.estimate && <div style={{color:G.gold,fontWeight:700,fontSize:13}}>{item.estimate}</div>}
           {complete
@@ -925,9 +950,8 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
           )}
         </div>
 
-        {/* Actions — stop propagation so clicks don't toggle expand */}
-        <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}
-          onClick={e=>e.stopPropagation()}>
+        {/* Actions */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
           {complete ? (
             <>
               <Btn v="gold" onClick={()=>onAddToQueue(item)} st={{fontSize:11,padding:"5px 10px"}}>
@@ -954,7 +978,7 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
           padding:"16px 20px 20px",
           background: complete ? "#F7F5F0" : "#FFF3E8",
           borderTop:`1px solid ${G.border}`,
-          display:"grid", gridTemplateColumns:"1fr 1fr 200px",
+          display:"grid", gridTemplateColumns:"1fr 1fr 1fr",
           gap:24,
         }}>
           {/* Contact + shipping */}
@@ -973,37 +997,50 @@ function InboxRow({ item, onMoveFollowUp, onDismiss, onAddToQueue }) {
               : null} />
           </div>
 
-          {/* Item + estimate */}
+          {/* Item + estimate + user edits */}
           <div>
             <div style={{fontSize:10,fontWeight:700,color:G.muted,textTransform:"uppercase",
               letterSpacing:0.5,marginBottom:10}}>Item</div>
             <IField label="Item"     value={item.item} />
             <IField label="Estimate" value={item.estimate} color={G.gold} />
+            {hasEdits && (
+              <div style={{marginTop:10}}>
+                <div style={{fontSize:9,fontWeight:700,color:"#1565C0",textTransform:"uppercase",
+                  letterSpacing:0.5,marginBottom:4}}>✏ User Edits</div>
+                <div style={{fontSize:11,color:"#1565C0",lineHeight:1.5,background:"#E3F2FD",
+                  padding:"8px 10px",borderRadius:6}}>
+                  {item.userEdits}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Photo */}
+          {/* Photos */}
           <div>
             <div style={{fontSize:10,fontWeight:700,color:G.muted,textTransform:"uppercase",
-              letterSpacing:0.5,marginBottom:10}}>Photo</div>
-            {item.photo && item.photo.includes("drive.google.com") ? (
-              <div>
-                <a href={item.photo} target="_blank" rel="noreferrer">
-                  <img
-                    src={item.photo.replace(/.*\/d\/([^/]+).*/, "https://drive.google.com/thumbnail?id=$1&sz=w200")}
-                    alt="item photo"
-                    style={{width:160,height:120,objectFit:"cover",borderRadius:6,
-                      border:`1px solid ${G.border}`,display:"block",marginBottom:6}}
-                    onError={e=>{e.target.style.display="none";}}
-                  />
-                </a>
-                <a href={item.photo} target="_blank" rel="noreferrer"
-                  style={{color:G.gold,fontSize:11,textDecoration:"none"}}>
-                  🔗 Open in Drive
-                </a>
+              letterSpacing:0.5,marginBottom:10}}>
+              Photos {allPhotos.length > 1 ? `(${allPhotos.length})` : ""}
+            </div>
+            {allPhotos.length > 0 ? (
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {allPhotos.map((photo, idx) => (
+                  <div key={idx}>
+                    <a href={photo} target="_blank" rel="noreferrer">
+                      <img
+                        src={photo.replace(/.*\/d\/([^/]+).*/, "https://drive.google.com/thumbnail?id=$1&sz=w200")}
+                        alt={`photo ${idx+1}`}
+                        style={{width:160,height:100,objectFit:"cover",borderRadius:6,
+                          border:`1px solid ${G.border}`,display:"block",marginBottom:3}}
+                        onError={e=>{e.target.style.display="none";}}
+                      />
+                    </a>
+                    <a href={photo} target="_blank" rel="noreferrer"
+                      style={{color:G.gold,fontSize:10,textDecoration:"none"}}>
+                      🔗 Photo {allPhotos.length > 1 ? idx+1 : ""} — Drive
+                    </a>
+                  </div>
+                ))}
               </div>
-            ) : item.photo ? (
-              <a href={item.photo} target="_blank" rel="noreferrer"
-                style={{color:G.gold,fontSize:11}}>🔗 View photo</a>
             ) : (
               <div style={{color:G.muted,fontSize:12}}>No photo submitted</div>
             )}
@@ -1029,6 +1066,7 @@ export default function SnappyGoldCRM() {
   const [unlocked, setUnlocked] = useState(false);
   const [custs, setCusts] = useState({});
   const [inbox, setInbox] = useState([]);
+  const [selectedInboxIds, setSelectedInboxIds] = useState(new Set());
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | done | error
   const [tab, setTab] = useState("inbox");
   const [sel, setSel] = useState(null);
@@ -1057,8 +1095,8 @@ export default function SnappyGoldCRM() {
           const email = (row.email||"").toLowerCase().trim();
           const custId = email === "freemantony600@gmail.com" ? "freemantony935@gmail.com" : email;
           if (!custId || !custId.includes("@")) continue;
-          if (prev[custId]) continue;            // already in CRM
-          if (dismissed.includes(custId)) continue; // dismissed
+          if (prev[custId]) continue;                        // already in CRM (including deleted)
+          if (dismissed.includes(custId)) continue;         // dismissed from inbox
           newItems.push(sheetRowToInboxItem(row));
         }
         const deduped = {};
@@ -1130,39 +1168,66 @@ export default function SnappyGoldCRM() {
     setInbox(prev => prev.filter(i => i.custId !== item.custId));
   }
 
-  // Generate and download CSVs for all complete queued items then move them to correct stage
+  // Generate label email draft CSV
+  function generateLabelEmails(labelLeads) {
+    const variations = [
+      (name, item) => ({
+        subject: `Your prepaid FedEx label is attached, ${name}`,
+        body: `Hi ${name},\n\nYour prepaid FedEx shipping label is attached — no printing costs, no postage, nothing out of pocket.\n\nJust pack up your ${item} (and feel free to include any other pieces you've been thinking about selling) and drop the package at any FedEx location.\n\nOnce we receive everything we'll evaluate within two business days and reach out with a firm offer. No pressure — if it's not the right number for you, we'll ship it all back at our expense.\n\nAny questions at all, just reply here or call/text us at 866-613-0704.\n\nLooking forward to earning your business for years to come.\n\nDavid\nSnappy Gold\n866-613-0704 (call or text)`,
+      }),
+      (name, item) => ({
+        subject: `Label attached — here's what to do next, ${name}`,
+        body: `Hi ${name},\n\nYou're all set — your prepaid FedEx return label is attached to this email.\n\nPack up your ${item} in any sturdy envelope or small box, attach the label, and hand it off at any FedEx drop-off. Fully covered in transit, no cost to you.\n\nWe'll have an evaluation to you within two business days of receiving it. If our offer works for you, great — if not, we send it straight back, no questions asked.\n\nFeel free to include any other jewelry or valuables you'd like us to look at while we have it.\n\nReply to this email or reach us at 866-613-0704 anytime.\n\nLooking forward to earning your business for years to come.\n\nDavid\nSnappy Gold\n866-613-0704 (call or text)`,
+      }),
+      (name, item) => ({
+        subject: `Your Snappy Gold shipping label is ready, ${name}`,
+        body: `Hi ${name},\n\nAttached is your prepaid FedEx label for your ${item} — everything is covered on our end, you just need to pack and ship.\n\nAny FedEx location works, and you're welcome to include additional pieces you'd like appraised at the same time. We evaluate everything together and make you one consolidated offer.\n\nTurnaround is two business days from receipt. Accept our offer and we pay you promptly — or decline and we return your items free of charge.\n\nQuestions? Call or text us at 866-613-0704 or just reply here.\n\nLooking forward to earning your business for years to come.\n\nDavid\nSnappy Gold\n866-613-0704 (call or text)`,
+      }),
+      (name, item) => ({
+        subject: `Prepaid label inside — ready when you are, ${name}`,
+        body: `Hi ${name},\n\nYour prepaid FedEx shipping label is attached and ready to go.\n\nPack up your ${item} — and anything else you'd like us to evaluate — and drop it at any FedEx location near you. No cost, fully covered.\n\nWe'll assess everything within two business days and come back to you with a cash offer. If it works for you, we'll get you paid quickly. If not, your items come straight back at no charge.\n\nDon't hesitate to reach out before you ship — 866-613-0704 by call or text, or just reply here.\n\nLooking forward to earning your business for years to come.\n\nDavid\nSnappy Gold\n866-613-0704 (call or text)`,
+      }),
+    ];
+
+    const rows = labelLeads.map((lead, i) => {
+      const firstName = (lead.name || "").split(" ")[0] || "there";
+      const itemDesc  = lead.item || "your items";
+      const variation = variations[i % variations.length](firstName, itemDesc);
+      return {
+        "To":      lead.email,
+        "Subject": variation.subject,
+        "Body":    variation.body,
+      };
+    });
+    downloadCSV(`label_emails_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
+      toCSV(rows));
+  }
+
+  // Generate and download CSVs for selected/all complete leads
   function generateAndDownload(items) {
     const kitLeads   = items.filter(i => i.shipping === "kit");
     const labelLeads = items.filter(i => i.shipping === "label");
-
     const now = new Date().toISOString();
+    const dateStr = new Date().toLocaleDateString("en-US").replace(/\//g,"-");
 
     if (kitLeads.length) {
-      // File 1: Pirateship outbound (kit → customer)
-      downloadCSV(`outbound_kit_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
-        toCSV(kitLeads.map(toPirateshipRow)));
-      // File 2: FedEx inbound kit (customer → Snappy Gold, to put inside kit)
-      downloadCSV(`inbound_kit_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
-        toCSV(kitLeads.map(toFedExRow)));
+      downloadCSV(`outbound_kit_${dateStr}.csv`, toCSV(kitLeads.map(toPirateshipRow)));
+      downloadCSV(`inbound_kit_${dateStr}.csv`,  toCSV(kitLeads.map(toFedExRow)));
     }
-
     if (labelLeads.length) {
-      // File 3: FedEx inbound label (customer → Snappy Gold, email to customer)
-      downloadCSV(`inbound_label_${new Date().toLocaleDateString("en-US").replace(/\//g,"-")}.csv`,
-        toCSV(labelLeads.map(toFedExRow)));
+      downloadCSV(`inbound_label_${dateStr}.csv`, toCSV(labelLeads.map(toFedExRow)));
+      generateLabelEmails(labelLeads);
     }
 
-    // Move kit leads → outbound_pending (kit in transit to customer)
     kitLeads.forEach(item => {
       saveCust(inboxItemToCust(item, "outbound_pending", now));
       setInbox(prev => prev.filter(i => i.custId !== item.custId));
     });
-
-    // Move label leads → outbound_fulfilled (label emailed, waiting for return)
     labelLeads.forEach(item => {
       saveCust(inboxItemToCust(item, "outbound_fulfilled", now));
       setInbox(prev => prev.filter(i => i.custId !== item.custId));
     });
+    setSelectedInboxIds(new Set());
   }
 
   function saveCust(updated) {
@@ -1404,9 +1469,27 @@ export default function SnappyGoldCRM() {
             return (
               <>
                 {/* Column headers */}
-                <div style={{display:"grid",gridTemplateColumns:"200px 1fr 140px 240px",
+                <div style={{display:"grid",gridTemplateColumns:"32px 200px 1fr 140px 240px",
                   gap:10,padding:"6px 16px",background:"#EDE8DF",
-                  borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48}}>
+                  borderBottom:`1px solid ${G.border}`,position:"sticky",top:97,zIndex:48,alignItems:"center"}}>
+                  <div onClick={()=>{
+                    const allIds = complete.map(i=>i.custId);
+                    const allSel = allIds.every(id=>selectedInboxIds.has(id));
+                    setSelectedInboxIds(allSel ? new Set() : new Set(allIds));
+                  }} style={{cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <div style={{
+                      width:14,height:14,borderRadius:3,flexShrink:0,
+                      border:`2px solid ${selectedInboxIds.size>0?G.gold:G.muted}`,
+                      background:selectedInboxIds.size===complete.length&&complete.length>0?G.gold:"transparent",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                    }}>
+                      {selectedInboxIds.size===complete.length&&complete.length>0
+                        ? <span style={{color:"#fff",fontSize:9,lineHeight:1}}>✓</span>
+                        : selectedInboxIds.size>0
+                        ? <span style={{color:G.gold,fontSize:11,lineHeight:1,fontWeight:700}}>−</span>
+                        : null}
+                    </div>
+                  </div>
                   {["Customer","Item + Estimate","Will Generate","Action"].map(h=>(
                     <div key={h} style={{color:G.muted,fontSize:10,fontWeight:700,
                       textTransform:"uppercase",letterSpacing:0.5}}>{h}</div>
@@ -1426,19 +1509,19 @@ export default function SnappyGoldCRM() {
                   <div style={{flex:1}}/>
                   {complete.length > 0 && (
                     <Btn v="gold" onClick={()=>{
+                      const toFulfill = selectedInboxIds.size > 0
+                        ? complete.filter(i => selectedInboxIds.has(i.custId))
+                        : complete;
+                      const kits   = toFulfill.filter(i=>i.shipping==="kit").length;
+                      const labels = toFulfill.filter(i=>i.shipping==="label").length;
                       if (window.confirm(
-                        `Download CSVs for ${complete.length} complete lead${complete.length!==1?"s":""}?
-
-` +
-                        `${kitCount} kit → Pirateship outbound + FedEx inbound (kit)
-` +
-                        `${labelCount} label → FedEx inbound (label)
-
-` +
+                        `Download CSVs for ${toFulfill.length} lead${toFulfill.length!==1?"s":""}?\n\n` +
+                        `${kits} kit → Pirateship outbound + FedEx inbound (kit)\n` +
+                        `${labels} label → FedEx inbound (label) + email drafts\n\n` +
                         `These leads will move to their queues immediately.`
-                      )) generateAndDownload(complete);
+                      )) generateAndDownload(toFulfill);
                     }} st={{fontSize:12,padding:"6px 14px"}}>
-                      ⬇ Download CSVs &amp; Fulfill ({complete.length})
+                      ⬇ Download CSVs &amp; Fulfill {selectedInboxIds.size > 0 ? `(${selectedInboxIds.size} selected)` : `(${complete.length})`}
                     </Btn>
                   )}
                   <Btn v="ghost" onClick={()=>{
@@ -1466,6 +1549,12 @@ export default function SnappyGoldCRM() {
                     onMoveFollowUp={moveToFollowUp}
                     onDismiss={dismissInboxItem}
                     onAddToQueue={addToQueue}
+                    selected={selectedInboxIds.has(item.custId)}
+                    onSelect={id => setSelectedInboxIds(prev => {
+                      const n = new Set(prev);
+                      n.has(id) ? n.delete(id) : n.add(id);
+                      return n;
+                    })}
                   />
                 ))}
 
@@ -1482,6 +1571,8 @@ export default function SnappyGoldCRM() {
                     onMoveFollowUp={moveToFollowUp}
                     onDismiss={dismissInboxItem}
                     onAddToQueue={addToQueue}
+                    selected={false}
+                    onSelect={()=>{}}
                   />
                 ))}
               </>
