@@ -1503,7 +1503,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "How do I get paid, and how fast?",
-    a: "We pay via Zelle, check, cash, Venmo, or PayPal — your choice. Once you accept our offer, payment goes out within 24 hours. Most customers receive payment the same day."
+    a: "We pay via Zelle, Venmo, PayPal, Cash App, check by mail, or bank transfer — your choice. Once you accept our offer, payment goes out within 24 hours. Most customers receive payment the very same day."
   },
   {
     q: "What if I don't like the offer?",
@@ -1511,15 +1511,15 @@ const FAQ_ITEMS = [
   },
   {
     q: "What items do you accept?",
-    a: "Gold and silver jewelry in any condition — broken chains, single earrings, tangled necklaces, old class rings, dental gold — all of it. We also buy watches (luxury and vintage), diamonds, platinum, and designer jewelry. If you're not sure whether something qualifies, just snap a photo and let the AI take a look."
+    a: "Gold, silver and platinum jewelry in any condition — broken chains, single earrings, tangled necklaces, old class rings, dental gold — all of it. We also love buying watches (luxury and vintage), diamonds, designer jewelry, and high-end designer accessories like Chanel bags, Cartier bracelets and Gucci bags. If you're not sure whether something qualifies, just snap a photo and let the AI take a look. You can also email us about your items at hello@snappy.gold."
   },
   {
     q: "Is my jewelry safe during shipping?",
-    a: "Yes. All shipments are fully insured through FedEx for the declared value of your items. Your jewelry is tracked every step of the way, and we notify you the moment it arrives."
+    a: "All shipments use FedEx with full tracking from the moment you drop it off to the moment it arrives at our door. FedEx's loss rate is under 0.1% — fewer than 1 in 1,000 packages go missing. Each package is also insured for $100 in case of loss; if you'd like to increase that coverage, just contact us by phone or email before you ship and we'll work something out. In the unlikely event something goes wrong in transit, we'll work with you to resolve it."
   },
   {
     q: "How is this different from a pawn shop or local jeweler?",
-    a: "Pawn shops typically offer 20-40 cents on the dollar and rely on you not knowing the value of what you have. We use live market prices, show you our math, and make competitive offers — usually 50-70% of melt value or market value depending on the item. No pressure, no haggling, no awkward in-person negotiation."
+    a: "Pawn shops typically offer 20-40 cents on the dollar and rely on you not knowing the value of what you have. We operate nationally by mail — no expensive Main Street storefront with expensive rent to cover — which means higher volume and lower cost of operating for us. That lets us be more generous with payouts than a local shop ever could be. We use live market prices, show you our math, and make competitive offers. No pressure, no haggling, no awkward in-person negotiation."
   },
   {
     q: "Is there a minimum value you'll buy?",
@@ -1530,66 +1530,58 @@ const FAQ_ITEMS = [
 function FAQSection() {
   const [open, setOpen] = useState(null);
   return (
-    <section style={{
-      maxWidth: 720, margin: '0 auto', padding: '56px 24px 64px',
-    }}>
-      <h2 style={{
-        fontFamily: '"Playfair Display", serif',
-        fontSize: 28, fontWeight: 600,
-        color: '#1A1816', textAlign: 'center',
-        marginBottom: 8,
-      }}>
-        Frequently Asked Questions
-      </h2>
-      <p style={{
-        fontSize: 14, color: '#8A8580', textAlign: 'center',
-        marginBottom: 40,
-      }}>
-        Everything you need to know before you send us anything.
-      </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {FAQ_ITEMS.map((item, i) => (
-          <div key={i} style={{
-            borderRadius: 10,
-            border: `1px solid ${open === i ? '#C8953C' : '#E8E0D4'}`,
-            overflow: 'hidden',
-            transition: 'border-color 0.2s',
-          }}>
-            <button
-              onClick={() => setOpen(open === i ? null : i)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center',
-                justifyContent: 'space-between', gap: 16,
-                padding: '16px 20px', background: open === i ? '#FDF8F0' : '#FAFAF7',
-                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                textAlign: 'left', transition: 'background 0.2s',
-              }}
-            >
-              <span style={{
-                fontSize: 15, fontWeight: 600, color: '#1A1816', lineHeight: 1.4,
-              }}>
-                {item.q}
-              </span>
-              <span style={{
-                fontSize: 18, color: '#C8953C', flexShrink: 0,
-                transform: open === i ? 'rotate(45deg)' : 'rotate(0deg)',
-                transition: 'transform 0.2s',
-                fontWeight: 300,
-              }}>
-                +
-              </span>
-            </button>
-            {open === i && (
-              <div style={{
-                padding: '0 20px 18px',
-                background: '#FDF8F0',
-                fontSize: 14, color: '#5A5248', lineHeight: 1.75,
-              }}>
-                {item.a}
-              </div>
-            )}
-          </div>
-        ))}
+    <section style={{ padding: '64px 0 80px' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '0 28px' }}>
+        <h2 style={{
+          fontFamily: '"Playfair Display", serif',
+          fontSize: 38, fontWeight: 600,
+          color: '#1A1816', textAlign: 'center',
+          marginBottom: 48, lineHeight: 1.2,
+        }}>
+          Frequently Asked Questions
+        </h2>
+        <div>
+          {FAQ_ITEMS.map((item, i) => (
+            <div key={i} style={{ borderTop: '1px solid #C8BAA8' }}>
+              <button
+                onClick={() => setOpen(open === i ? null : i)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'flex-start',
+                  justifyContent: 'space-between', gap: 24,
+                  padding: '24px 0',
+                  background: 'none', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                }}
+              >
+                <span style={{
+                  fontFamily: '"Playfair Display", serif',
+                  fontSize: 20, fontWeight: 500,
+                  color: '#1A1816', lineHeight: 1.4,
+                }}>
+                  {item.q}
+                </span>
+                <span style={{
+                  fontSize: 26, color: '#9A8A78', flexShrink: 0,
+                  lineHeight: 1, fontWeight: 300,
+                  marginTop: 1,
+                  display: 'block',
+                  transform: open === i ? 'rotate(45deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.25s ease',
+                }}>+</span>
+              </button>
+              {open === i && (
+                <div style={{
+                  paddingBottom: 24, paddingRight: 52,
+                  fontSize: 15, color: '#5A5248', lineHeight: 1.8,
+                  marginTop: -8,
+                }}>
+                  {item.a}
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{ borderTop: '1px solid #C8BAA8' }} />
+        </div>
       </div>
     </section>
   );
