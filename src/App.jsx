@@ -1905,7 +1905,9 @@ function AnalyzingScreen({ imageData, isDone, onComplete }) {
         )}
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           <div style={styles.spinner} />
-          <h2 style={{ ...styles.analyzingTitle, marginBottom: 4 }}>Analyzing your item</h2>
+          <h2 style={{ ...styles.analyzingTitle, marginBottom: 4, transition: 'all 0.4s ease' }}>
+            {isDone ? 'Get ready...' : 'Analyzing your item'}
+          </h2>
 
           {/* Progress steps — left aligned, fixed width to prevent wrapping */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280, alignSelf: 'center' }}>
