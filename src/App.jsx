@@ -1268,6 +1268,9 @@ export default function App() {
         {step === STEPS.SUBMITTED && <SubmittedScreen onReset={reset} shippingMethod={shippingData.method} directQuote={directQuote} />}
       </main>
 
+      {/* ── FAQ ── */}
+      {step === STEPS.HERO && <FAQSection />}
+
       {/* ── FOOTER ── */}
       <footer style={styles.footer}>
         <p style={styles.footerText}>© 2026 DW5 LLC d/b/a Snappy Gold · snappy.gold</p>
@@ -1485,6 +1488,112 @@ const QUOTE_POOL = [
   { item: 'Vintage Gold Pocket Watch', low: 1700, high: 2200 },
   { item: 'Silver Eagle Collection (20)', low: 1350, high: 1600 },
 ]
+
+// ═══════════════════════════════════════════════
+//  FAQ SECTION
+// ═══════════════════════════════════════════════
+const FAQ_ITEMS = [
+  {
+    q: "How does the appraisal work — is it accurate?",
+    a: "You snap a photo of your item and our AI analyzes it against current gold and silver spot prices, comparable sales, and brand/model data for watches and designer pieces. The estimate is preliminary — final offers are confirmed once we physically verify weight and karat markings — but we aim to be within 10-15% of our actual offer. No surprises."
+  },
+  {
+    q: "Is shipping really free?",
+    a: "Yes, both ways. We send you a prepaid FedEx label or a full shipping kit at no cost. If you decline our offer, we ship everything back to you — also free. You never pay a dollar regardless of the outcome."
+  },
+  {
+    q: "How do I get paid, and how fast?",
+    a: "We pay via Zelle, check, cash, Venmo, or PayPal — your choice. Once you accept our offer, payment goes out within 24 hours. Most customers receive payment the same day."
+  },
+  {
+    q: "What if I don't like the offer?",
+    a: "No problem at all. Just say no and we ship everything back to you at our expense, no questions asked. There's zero obligation and zero cost to you for the entire process."
+  },
+  {
+    q: "What items do you accept?",
+    a: "Gold and silver jewelry in any condition — broken chains, single earrings, tangled necklaces, old class rings, dental gold — all of it. We also buy watches (luxury and vintage), diamonds, platinum, and designer jewelry. If you're not sure whether something qualifies, just snap a photo and let the AI take a look."
+  },
+  {
+    q: "Is my jewelry safe during shipping?",
+    a: "Yes. All shipments are fully insured through FedEx for the declared value of your items. Your jewelry is tracked every step of the way, and we notify you the moment it arrives."
+  },
+  {
+    q: "How is this different from a pawn shop or local jeweler?",
+    a: "Pawn shops typically offer 20-40 cents on the dollar and rely on you not knowing the value of what you have. We use live market prices, show you our math, and make competitive offers — usually 50-70% of melt value or market value depending on the item. No pressure, no haggling, no awkward in-person negotiation."
+  },
+  {
+    q: "Is there a minimum value you'll buy?",
+    a: "We don't have a hard minimum, but items under $50 in melt value generally aren't worth the shipping for either party. If your estimate comes back very low, we'll let you know upfront so you can make an informed decision."
+  },
+];
+
+function FAQSection() {
+  const [open, setOpen] = useState(null);
+  return (
+    <section style={{
+      maxWidth: 720, margin: '0 auto', padding: '56px 24px 64px',
+    }}>
+      <h2 style={{
+        fontFamily: '"Playfair Display", serif',
+        fontSize: 28, fontWeight: 600,
+        color: '#1A1816', textAlign: 'center',
+        marginBottom: 8,
+      }}>
+        Frequently Asked Questions
+      </h2>
+      <p style={{
+        fontSize: 14, color: '#8A8580', textAlign: 'center',
+        marginBottom: 40,
+      }}>
+        Everything you need to know before you send us anything.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {FAQ_ITEMS.map((item, i) => (
+          <div key={i} style={{
+            borderRadius: 10,
+            border: `1px solid ${open === i ? '#C8953C' : '#E8E0D4'}`,
+            overflow: 'hidden',
+            transition: 'border-color 0.2s',
+          }}>
+            <button
+              onClick={() => setOpen(open === i ? null : i)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between', gap: 16,
+                padding: '16px 20px', background: open === i ? '#FDF8F0' : '#FAFAF7',
+                border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                textAlign: 'left', transition: 'background 0.2s',
+              }}
+            >
+              <span style={{
+                fontSize: 15, fontWeight: 600, color: '#1A1816', lineHeight: 1.4,
+              }}>
+                {item.q}
+              </span>
+              <span style={{
+                fontSize: 18, color: '#C8953C', flexShrink: 0,
+                transform: open === i ? 'rotate(45deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s',
+                fontWeight: 300,
+              }}>
+                +
+              </span>
+            </button>
+            {open === i && (
+              <div style={{
+                padding: '0 20px 18px',
+                background: '#FDF8F0',
+                fontSize: 14, color: '#5A5248', lineHeight: 1.75,
+              }}>
+                {item.a}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function RecentQuotesTicker() {
   const generateFallback = (count) => {
