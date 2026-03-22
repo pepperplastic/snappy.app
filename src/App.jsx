@@ -1511,7 +1511,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "What items do you accept?",
-    a: "Gold, silver and platinum jewelry in any condition — broken chains, single earrings, tangled necklaces, old class rings, dental gold — all of it. We also love buying watches (luxury and vintage), diamonds, designer jewelry, and high-end designer accessories like Chanel bags, Cartier bracelets and Gucci bags. If you're not sure whether something qualifies, just snap a photo and let the AI take a look. You can also email us about your items at hello@snappy.gold."
+    a: "Gold, silver and platinum jewelry in any condition — broken chains, single earrings, tangled necklaces, old class rings, dental gold — all of it. We also LOVE buying watches (luxury and vintage), diamonds, designer jewelry, and high-end designer accessories like Chanel bags, Cartier bracelets and Gucci bags. If you're not sure whether something qualifies, just snap a photo and let the AI take a look or email us about your items at hello@snappy.gold."
   },
   {
     q: "Is my jewelry safe during shipping?",
