@@ -1285,7 +1285,7 @@ export default function SnappyGoldCRM() {
     });
     return count;
   }
-    if (!stage) return;
+  function bulkMoveStage(stage) {
     setCusts(prev=>{
       const next = {...prev};
       for (const id of selectedIds) {
