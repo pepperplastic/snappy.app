@@ -1530,13 +1530,13 @@ const FAQ_ITEMS = [
 function FAQSection() {
   const [open, setOpen] = useState(null);
   return (
-    <section style={{ padding: '64px 0 80px' }}>
+    <section style={{ padding: '36px 0 44px' }}>
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '0 28px' }}>
         <h2 style={{
           fontFamily: '"Playfair Display", serif',
-          fontSize: 38, fontWeight: 600,
+          fontSize: 26, fontWeight: 600,
           color: '#1A1816', textAlign: 'center',
-          marginBottom: 48, lineHeight: 1.2,
+          marginBottom: 24, lineHeight: 1.2,
         }}>
           Frequently Asked Questions
         </h2>
@@ -1548,14 +1548,14 @@ function FAQSection() {
                 style={{
                   width: '100%', display: 'flex', alignItems: 'flex-start',
                   justifyContent: 'space-between', gap: 24,
-                  padding: '24px 0',
+                  padding: '13px 0',
                   background: 'none', border: 'none',
                   cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
                 }}
               >
                 <span style={{
                   fontFamily: '"Playfair Display", serif',
-                  fontSize: 20, fontWeight: 500,
+                  fontSize: 15, fontWeight: 500,
                   color: '#1A1816', lineHeight: 1.4,
                 }}>
                   {item.q}
@@ -1571,9 +1571,9 @@ function FAQSection() {
               </button>
               {open === i && (
                 <div style={{
-                  paddingBottom: 24, paddingRight: 52,
-                  fontSize: 15, color: '#5A5248', lineHeight: 1.8,
-                  marginTop: -8,
+                  paddingBottom: 12, paddingRight: 40,
+                  fontSize: 13, color: '#5A5248', lineHeight: 1.75,
+                  marginTop: -2,
                 }}>
                   {item.a}
                 </div>
