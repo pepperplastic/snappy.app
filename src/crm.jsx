@@ -1260,7 +1260,31 @@ export default function SnappyGoldCRM() {
     });
     setSelectedIds(new Set());
   }
-  function batchChangeStage(stage) {
+  function bulkMarkFulfilled(emailSet) {
+    // emailSet: Set of lowercase email addresses to mark as outbound_fulfilled
+    const now = new Date().toISOString();
+    let count = 0;
+    setCusts(prev => {
+      const next = {...prev};
+      for (const id in next) {
+        const c = next[id];
+        if (c.deleted) continue;
+        const email = (c.custId||'').toLowerCase();
+        if (!emailSet.has(email)) continue;
+        const ships = (c.shipments||[]).map((s, i) => {
+          if (i === 0 && (s.stage === 'outbound_pending' || s.stage === 'ready_to_fulfill')) {
+            count++;
+            return {...s, stage: 'outbound_fulfilled', sentAt: s.sentAt || now};
+          }
+          return s;
+        });
+        next[id] = {...c, shipments: ships};
+      }
+      persist(next);
+      return next;
+    });
+    return count;
+  }
     if (!stage) return;
     setCusts(prev=>{
       const next = {...prev};
@@ -1401,6 +1425,53 @@ export default function SnappyGoldCRM() {
             borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",color:G.muted}}>
             ↻ Refresh
           </button>
+          <label title="Upload Pirateship or FedEx export to bulk-mark as Outbound Fulfilled"
+            style={{background:"transparent",border:`1px solid ${G.border}`,
+            borderRadius:5,padding:"4px 10px",fontSize:11,cursor:"pointer",color:G.muted,
+            userSelect:"none"}}>
+            ↑ Import Fulfilled
+            <input type="file" accept=".xlsx,.csv" style={{display:"none"}}
+              onChange={async e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                e.target.value = "";
+                try {
+                  // Dynamically load SheetJS
+                  if (!window.XLSX) {
+                    await new Promise((res, rej) => {
+                      const s = document.createElement("script");
+                      s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+                      s.onload = res; s.onerror = rej;
+                      document.head.appendChild(s);
+                    });
+                  }
+                  const buf = await file.arrayBuffer();
+                  const wb = window.XLSX.read(buf, {type:"array"});
+                  const ws = wb.Sheets[wb.SheetNames[0]];
+                  const rows = window.XLSX.utils.sheet_to_json(ws, {header:1});
+                  if (!rows.length) { alert("No data found in file."); return; }
+                  // Find email column — Pirateship uses "Email", FedEx uses "senderEmail" or "recipientEmail"
+                  const headers = rows[0].map(h => (h||"").toString().toLowerCase());
+                  const emailCol = headers.indexOf("email");
+                  const senderCol = headers.indexOf("sendercontactemail") !== -1
+                    ? headers.indexOf("sendercontactemail")
+                    : headers.findIndex(h => h.includes("senderemail"));
+                  const colIdx = emailCol !== -1 ? emailCol : senderCol;
+                  if (colIdx === -1) { alert("Could not find email column. Make sure you're uploading a Pirateship or FedEx export."); return; }
+                  const emailSet = new Set(
+                    rows.slice(1)
+                      .map(r => (r[colIdx]||"").toString().trim().toLowerCase())
+                      .filter(e => e.includes("@"))
+                  );
+                  if (!emailSet.size) { alert("No valid email addresses found in file."); return; }
+                  const count = bulkMarkFulfilled(emailSet);
+                  alert(`✓ Marked ${count} shipment${count!==1?"s":""} as Outbound Fulfilled (matched ${emailSet.size} emails from file).`);
+                } catch(err) {
+                  alert("Error reading file: " + err.message);
+                }
+              }}
+            />
+          </label>
           {[
             ["Inbox", stats.inbox>0?`${stats.inbox} new`:"—", stats.inbox>0?G.red:G.muted],
             ["Total",stats.total,G.text],
