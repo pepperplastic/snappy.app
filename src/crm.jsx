@@ -531,8 +531,69 @@ function StageModal({ shipment, onSave, onClose }) {
 // DETAIL PANE
 // ════════════════════════════════════════════════════════
 
-function DetailPane({ shipment, customer, contactLogs, onUpdate, onClose }) {
-  const [modal, setModal] = useState(null); // "edit" | "log" | "stage"
+
+// ════════════════════════════════════════════════════════
+// ADD SHIPMENT MODAL
+// ════════════════════════════════════════════════════════
+
+function AddShipmentModal({ customer, onSave, onClose }) {
+  const [item, setItem] = useState("");
+  const [estimate, setEstimate] = useState("");
+  const [shippingType, setShippingType] = useState("kit");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await apiPost({
+        action: "createShipment",
+        data: {
+          customer_id: customer.customer_id,
+          stage: "ready_to_fulfill",
+          shipping_type: shippingType,
+          item, estimate, notes,
+          outbound_tracking: "", return_tracking: "",
+          received_at: "", purchase_price: "", appraised_value: "",
+          payment_method: "", payment_info: "", sent_at: "",
+        }
+      });
+      onSave({
+        shipment_id: res,
+        customer_id: customer.customer_id,
+        stage: "ready_to_fulfill",
+        shipping_type: shippingType,
+        item, estimate, notes,
+        created_at: new Date().toISOString(),
+      });
+    } catch(e) { alert("Failed: " + e.message); }
+    setSaving(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fff", borderRadius: 12, width: "min(480px, 95vw)", padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: G.text }}>New Shipment</div>
+        <div style={{ fontSize: 12, color: G.muted, marginBottom: 20 }}>{customer?.name || customer?.email}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Sel label="Shipping Type" value={shippingType} onChange={e => setShippingType(e.target.value)}
+            options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"Label (email FedEx label)"}]} />
+          <Inp label="Item Description" value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. 14K Yellow Gold Chain" />
+          <Inp label="Estimate" value={estimate} onChange={e => setEstimate(e.target.value)} placeholder="e.g. $1,200 – $1,800" />
+          <Inp label="Notes" value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Optional" />
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+          <Btn v="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn v="gold" onClick={save} disabled={saving}>{saving ? "Creating..." : "Create Shipment"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailPane({ shipment, customer, contactLogs, onUpdate, onNewShipment, onClose }) {
+  const [modal, setModal] = useState(null); // "edit" | "log" | "stage" | "addShipment"
   const [localLogs, setLocalLogs] = useState(contactLogs || []);
 
   if (!shipment) {
@@ -655,6 +716,7 @@ function DetailPane({ shipment, customer, contactLogs, onUpdate, onClose }) {
           ))}
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Btn v="ghost" small onClick={() => setModal("log")}>+ Log</Btn>
+            <Btn v="purple" small onClick={() => setModal("addShipment")}>+ Shipment</Btn>
             <Btn v="gold" small onClick={() => setModal("edit")}>Edit</Btn>
           </div>
         </div>
@@ -738,6 +800,11 @@ function DetailPane({ shipment, customer, contactLogs, onUpdate, onClose }) {
       {modal === "stage" && (
         <StageModal shipment={shipment}
           onSave={stage => { onUpdate({ ...shipment, stage }); setModal(null); }}
+          onClose={() => setModal(null)} />
+      )}
+      {modal === "addShipment" && customer && (
+        <AddShipmentModal customer={customer}
+          onSave={newShipment => { onNewShipment(newShipment); setModal(null); }}
           onClose={() => setModal(null)} />
       )}
     </div>
@@ -998,6 +1065,12 @@ export default function SnappyGoldCRM() {
             customer={selectedCustomer}
             contactLogs={selectedLogs}
             onUpdate={handleUpdate}
+            onNewShipment={newShipment => {
+              setShipments(prev => [newShipment, ...prev]);
+              setSelected(newShipment.shipment_id);
+              const cache = getCache();
+              if (cache) setCache({ ...cache, shipments: [newShipment, ...cache.shipments] });
+            }}
             onClose={() => setSelected(null)}
           />
         </div>
