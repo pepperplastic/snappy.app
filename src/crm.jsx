@@ -346,7 +346,9 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
           </div>
           <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{shipment.item||"(no item)"}</div>
           <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center",flexWrap:"wrap"}}>
-            <Badge stage={shipment.stage} sm/>
+            {shipment.stage==="ready_to_fulfill"&&shipment.shipping_type==="label"
+              ? <span style={{background:G.blue+"18",color:G.blue,border:`1px solid ${G.blue}33`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>Ready to Fulfill</span>
+              : <Badge stage={shipment.stage} sm/>}
             {ds!==null&&<span style={{fontSize:10,color:G.muted}}>{ds}d ago</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
           </div>
