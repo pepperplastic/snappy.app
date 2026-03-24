@@ -1081,8 +1081,8 @@ export default function SnappyGoldCRM() {
   async function syncSheet() {
     setSyncStatus("syncing");
     try {
-      const url = `${SCRIPT_URL}?action=crm_leads&key=${CRM_KEY}`;
-      const res = await fetch(url);
+      const url = `/api/crm-sync?key=${CRM_KEY}`;
+      const res = await fetch(url, { redirect: 'follow' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.status === "error") throw new Error(json.message || "Script error");
