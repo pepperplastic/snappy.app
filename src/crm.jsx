@@ -2,14 +2,14 @@ import { useState, useEffect, useMemo, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════
 // SNAPPY GOLD CRM v5
-// Four tabs: Fulfill / Process / Follow Up / Customers
+// Six tabs: Fulfill / Process / Received / Follow Up / Purchased / Customers
 // PIN: 5437
 // ═══════════════════════════════════════════════════════════
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby82CuMrlr0us5SUSCusqzGoxZYHPQg9nQuzalIplObIjtbXNUpRBNPrJWuV1qimmJbgA/exec";
 const CRM_KEY    = "snappy_crm_2026";
 const PIN        = "5437";
-const CACHE_KEY  = "sg_crm_v5_cache";
+const CACHE_KEY  = "sg_crm_v5b_cache";
 
 // ── Brand ─────────────────────────────────────────────────
 const G = {
@@ -59,7 +59,9 @@ const SC = {
 };
 
 const FULFILL_STAGES  = ["ready_to_fulfill"];
-const PROCESS_STAGES  = ["outbound_complete","received","inspected","offer_made","accepted"];
+const PROCESS_STAGES  = ["outbound_complete","inspected","offer_made","accepted"];
+const RECEIVED_STAGES = ["received"];
+const PURCHASED_STAGES = ["purchase_complete"];
 
 // ── Helpers ───────────────────────────────────────────────
 function fmt$(n) { return n ? "$" + Number(n).toLocaleString() : "—"; }
@@ -170,7 +172,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
     setSaving(true);
     try {
       await apiPost({action:"upsertCustomer",data:{email:c.email,name:c.name,phone:c.phone,address:c.address,source:c.source,notes:c.notes}});
-      await apiPost({action:"updateShipment",shipment_id:s.shipment_id,updates:{stage:s.stage,shipping_type:s.shipping_type,item:s.item,estimate:s.estimate,outbound_tracking:s.outbound_tracking,return_tracking:s.return_tracking,purchase_price:s.purchase_price,appraised_value:s.appraised_value,payment_method:s.payment_method,payment_info:s.payment_info,notes:s.notes}});
+      await apiPost({action:"updateShipment",shipment_id:s.shipment_id,updates:{stage:s.stage,shipping_type:s.shipping_type,item:s.item,estimate:s.estimate,outbound_tracking:s.outbound_tracking,return_tracking:s.return_tracking,purchase_price:s.purchase_price,appraised_value:s.appraised_value,payment_method:s.payment_method,payment_info:s.payment_info,notes:s.notes,bin_number:s.bin_number}});
       onSave({shipment:s,customer:c});
     } catch(e){alert("Save failed: "+e.message);}
     setSaving(false);
@@ -214,6 +216,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
           </div>
           <div style={{marginTop:12}}><Inp label="Payment Info" value={s.payment_info} onChange={e=>updS("payment_info",e.target.value)}/></div>
           <div style={{marginTop:12}}><Inp label="Notes" value={s.notes} onChange={e=>updS("notes",e.target.value)} rows={3}/></div>
+          <div style={{marginTop:12}}><Inp label="Bin Number" value={s.bin_number} onChange={e=>updS("bin_number",e.target.value)} placeholder="e.g. 7"/></div>
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <Btn v="ghost" onClick={onClose}>Cancel</Btn>
@@ -438,6 +441,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             {shipment.payment_method&&<div style={{fontSize:11,color:G.muted}}>via {shipment.payment_method} {shipment.payment_info}</div>}
           </div>}
           <Field label="Shipping Type" value={shipment.shipping_type}/>
+          {shipment.bin_number&&<div style={{background:"#FFF8EE",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.gold}44`}}><div style={{fontSize:10,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>Bin Number</div><div style={{fontSize:22,fontWeight:700,color:G.gold}}>{shipment.bin_number}</div></div>}
           {shipment.notes&&<Field label="Notes" value={shipment.notes}/>}
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -473,6 +477,185 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {modal==="log"&&<LogModal shipment={shipment} customer={customer} onSave={log=>{setLocalLogs(p=>[...p,log]);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="stage"&&<StageModal shipment={shipment} onSave={stage=>{onUpdate({...shipment,stage});setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="addShipment"&&customer&&<AddShipmentModal customer={customer} onSave={s=>{onNewShipment(s);setModal(null);}} onClose={()=>setModal(null)}/>}
+  </div>;
+}
+
+
+// ══════════════════════════════════════════════════════════
+// RECEIVED TAB
+// ══════════════════════════════════════════════════════════
+
+function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
+  const [selected,setSelected]=useState(null);
+  const [search,setSearch]=useState("");
+  const [binInput,setBinInput]=useState("");
+  const [savingBin,setSavingBin]=useState(false);
+
+  const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
+  const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
+
+  const filtered=useMemo(()=>{
+    let list=shipments.filter(s=>s.stage==="received");
+    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q);});}
+    return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  },[shipments,search,custById]);
+
+  const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
+  const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
+  const selectedLogs=useMemo(()=>selectedShipment?(logsByCustomer[selectedShipment.customer_id]||[]):[],[selectedShipment,logsByCustomer]);
+
+  useEffect(()=>{
+    if(selectedShipment) setBinInput(String(selectedShipment.bin_number||""));
+  },[selected]);
+
+  async function saveBin(){
+    if(!selectedShipment) return;
+    setSavingBin(true);
+    try {
+      await apiPost({action:"updateShipment",shipment_id:selectedShipment.shipment_id,updates:{bin_number:binInput}});
+      onUpdate({...selectedShipment,bin_number:binInput});
+    } catch(e){alert("Failed: "+e.message);}
+    setSavingBin(false);
+  }
+
+  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+    <div style={{width:340,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+      <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search received..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+      </div>
+      <div style={{flex:1,overflow:"auto"}}>
+        {filtered.length===0?<div style={{padding:24,textAlign:"center",color:G.muted,fontSize:13}}>No received shipments</div>:
+          filtered.map(s=>{
+            const c=custById[s.customer_id]||{};
+            const high=parseEstHigh(s.estimate);
+            return <div key={s.shipment_id} onClick={()=>setSelected(s.shipment_id)} style={{paddingLeft:16,paddingRight:16,paddingTop:12,paddingBottom:12,cursor:"pointer",borderBottom:`1px solid ${G.border}`,background:selected===s.shipment_id?"#FFF8EE":"#fff",borderLeft:selected===s.shipment_id?`3px solid ${G.gold}`:"3px solid transparent"}} onMouseEnter={e=>{if(selected!==s.shipment_id)e.currentTarget.style.background="#FDFAF6";}} onMouseLeave={e=>{if(selected!==s.shipment_id)e.currentTarget.style.background="#fff";}}>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                <Avatar name={c.name||s.customer_id} size={32}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                    <div style={{fontWeight:600,fontSize:13,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||c.email||s.customer_id}</div>
+                    {high>0&&<div style={{color:G.gold,fontWeight:700,fontSize:12,flexShrink:0}}>{fmt$(high)}</div>}
+                  </div>
+                  <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
+                  <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center"}}>
+                    <Badge stage={s.stage} sm/>
+                    {s.bin_number&&<span style={{background:"#FFF8EE",color:G.gold,border:`1px solid ${G.gold}44`,borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>Bin {s.bin_number}</span>}
+                  </div>
+                </div>
+              </div>
+            </div>;
+          })
+        }
+      </div>
+      <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} received</div>
+    </div>
+
+    {/* Right pane */}
+    {selectedShipment?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* Bin number bar */}
+      <div style={{padding:"12px 20px",borderBottom:`1px solid ${G.border}`,background:"#FFF8EE",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:G.gold}}>Bin Number</div>
+        <input value={binInput} onChange={e=>setBinInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveBin()} placeholder="Enter bin #" style={{width:100,background:"#fff",border:`2px solid ${G.gold}`,borderRadius:7,padding:"6px 12px",fontSize:18,fontWeight:700,color:G.gold,outline:"none",textAlign:"center"}}/>
+        <Btn v="gold" small onClick={saveBin} disabled={savingBin||binInput===String(selectedShipment.bin_number||"")}>{savingBin?"Saving...":"Save Bin"}</Btn>
+        {selectedShipment.bin_number&&<div style={{fontSize:12,color:G.muted}}>Currently: Bin {selectedShipment.bin_number}</div>}
+      </div>
+      <div style={{flex:1,overflow:"hidden"}}>
+        <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);if(s.shipment_id===selected)setBinInput(String(s.bin_number||""));}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+      </div>
+    </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
+      <div style={{fontSize:40,opacity:0.3}}>◈</div>
+      <div style={{fontSize:14}}>Select a received shipment</div>
+    </div>}
+  </div>;
+}
+
+
+// ══════════════════════════════════════════════════════════
+// PURCHASED TAB
+// ══════════════════════════════════════════════════════════
+
+function PurchasedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
+  const [selected,setSelected]=useState(null);
+  const [search,setSearch]=useState("");
+  const [binInput,setBinInput]=useState("");
+  const [savingBin,setSavingBin]=useState(false);
+
+  const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
+  const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
+
+  const filtered=useMemo(()=>{
+    let list=shipments.filter(s=>s.stage==="purchase_complete");
+    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q);});}
+    return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  },[shipments,search,custById]);
+
+  const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
+  const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
+  const selectedLogs=useMemo(()=>selectedShipment?(logsByCustomer[selectedShipment.customer_id]||[]):[],[selectedShipment,logsByCustomer]);
+
+  useEffect(()=>{
+    if(selectedShipment) setBinInput(String(selectedShipment.bin_number||""));
+  },[selected]);
+
+  async function saveBin(){
+    if(!selectedShipment) return;
+    setSavingBin(true);
+    try {
+      await apiPost({action:"updateShipment",shipment_id:selectedShipment.shipment_id,updates:{bin_number:binInput}});
+      onUpdate({...selectedShipment,bin_number:binInput});
+    } catch(e){alert("Failed: "+e.message);}
+    setSavingBin(false);
+  }
+
+  const totalPurchased=filtered.reduce((sum,s)=>sum+(parseFloat(s.purchase_price)||0),0);
+
+  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+    <div style={{width:340,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+      <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search purchased..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+      </div>
+      {totalPurchased>0&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${G.border}`,background:"#F0FFF4",fontSize:12,color:G.green,fontWeight:700}}>Total purchased: {fmt$(totalPurchased)}</div>}
+      <div style={{flex:1,overflow:"auto"}}>
+        {filtered.length===0?<div style={{padding:24,textAlign:"center",color:G.muted,fontSize:13}}>No purchased shipments</div>:
+          filtered.map(s=>{
+            const c=custById[s.customer_id]||{};
+            return <div key={s.shipment_id} onClick={()=>setSelected(s.shipment_id)} style={{paddingLeft:16,paddingRight:16,paddingTop:12,paddingBottom:12,cursor:"pointer",borderBottom:`1px solid ${G.border}`,background:selected===s.shipment_id?"#FFF8EE":"#fff",borderLeft:selected===s.shipment_id?`3px solid ${G.gold}`:"3px solid transparent"}} onMouseEnter={e=>{if(selected!==s.shipment_id)e.currentTarget.style.background="#FDFAF6";}} onMouseLeave={e=>{if(selected!==s.shipment_id)e.currentTarget.style.background="#fff";}}>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                <Avatar name={c.name||s.customer_id} size={32}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                    <div style={{fontWeight:600,fontSize:13,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||c.email||s.customer_id}</div>
+                    {s.purchase_price&&<div style={{color:G.green,fontWeight:700,fontSize:12,flexShrink:0}}>{fmt$(s.purchase_price)}</div>}
+                  </div>
+                  <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
+                  <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center"}}>
+                    <span style={{background:"#F0FFF4",color:G.green,border:`1px solid ${G.green}30`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>Purchased ✓</span>
+                    {s.bin_number&&<span style={{background:"#FFF8EE",color:G.gold,border:`1px solid ${G.gold}44`,borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>Bin {s.bin_number}</span>}
+                    {s.payment_method&&<span style={{fontSize:10,color:G.muted}}>{s.payment_method}</span>}
+                  </div>
+                </div>
+              </div>
+            </div>;
+          })
+        }
+      </div>
+      <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} purchased</div>
+    </div>
+
+    {selectedShipment?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{padding:"12px 20px",borderBottom:`1px solid ${G.border}`,background:"#FFF8EE",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:G.gold}}>Bin Number</div>
+        <input value={binInput} onChange={e=>setBinInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveBin()} placeholder="Enter bin #" style={{width:100,background:"#fff",border:`2px solid ${G.gold}`,borderRadius:7,padding:"6px 12px",fontSize:18,fontWeight:700,color:G.gold,outline:"none",textAlign:"center"}}/>
+        <Btn v="gold" small onClick={saveBin} disabled={savingBin||binInput===String(selectedShipment.bin_number||"")}>{savingBin?"Saving...":"Save Bin"}</Btn>
+        {selectedShipment.bin_number&&<div style={{fontSize:12,color:G.muted}}>Currently: Bin {selectedShipment.bin_number}</div>}
+      </div>
+      <div style={{flex:1,overflow:"hidden"}}>
+        <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);if(s.shipment_id===selected)setBinInput(String(s.bin_number||""));}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+      </div>
+    </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
+      <div style={{fontSize:40,opacity:0.3}}>◈</div>
+      <div style={{fontSize:14}}>Select a purchased shipment</div>
+    </div>}
   </div>;
 }
 
@@ -920,11 +1103,13 @@ export default function SnappyGoldCRM() {
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"process",label:"Process",color:G.teal},{id:"followup",label:"Follow Up",color:G.orange},{id:"customers",label:"Customers",color:G.blue}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"process",label:"Process",color:G.teal},{id:"received",label:"Received",color:G.teal},{id:"followup",label:"Follow Up",color:G.orange},{id:"purchased",label:"Purchased",color:G.green},{id:"customers",label:"Customers",color:G.blue}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
   const processCount=shipments.filter(s=>PROCESS_STAGES.includes(s.stage)).length;
+  const receivedCount=shipments.filter(s=>s.stage==="received").length;
+  const purchasedCount=shipments.filter(s=>s.stage==="purchase_complete").length;
 
   if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
 
@@ -942,7 +1127,7 @@ export default function SnappyGoldCRM() {
     {/* Tab bar */}
     <div style={{background:"#fff",borderBottom:`1px solid ${G.border}`,padding:"0 16px",display:"flex",gap:0,flexShrink:0}}>
       {TABS.map(t=>{
-        const count=t.id==="fulfill"?fulfillCount:t.id==="process"?processCount:t.id==="followup"?followUpCount:t.id==="customers"?customers.length:null;
+        const count=t.id==="fulfill"?fulfillCount:t.id==="process"?processCount:t.id==="received"?receivedCount:t.id==="followup"?followUpCount:t.id==="purchased"?purchasedCount:t.id==="customers"?customers.length:null;
         const active=tab===t.id;
         return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"12px 20px",background:"none",border:"none",borderBottom:active?`3px solid ${t.color}`:"3px solid transparent",color:active?t.color:G.muted,fontWeight:active?700:400,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,transition:"all 0.15s",fontFamily:"inherit"}}>
           {t.label}
@@ -955,7 +1140,9 @@ export default function SnappyGoldCRM() {
     <div style={{flex:1,display:"flex",overflow:"hidden"}}>
       {tab==="fulfill"&&<FulfillTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="process"&&<ProcessTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="received"&&<ReceivedTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="followup"&&<FollowUpTab activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
+      {tab==="purchased"&&<PurchasedTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
     </div>
   </div>;
