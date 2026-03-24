@@ -78,14 +78,16 @@ const ACTIVE_STAGES = [
 function fmt$(n) { return n ? "$" + Number(n).toLocaleString() : "—"; }
 function fmtPhone(p) {
   if (!p) return "";
-  const d = p.replace(/\D/g, "");
+  const d = String(p).replace(/\D/g, "");
   if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
   if (d.length === 11 && d[0] === "1") return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
   return p;
 }
 function daysSince(ts) {
   if (!ts) return null;
-  return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
 }
 function parseEstHigh(est) {
   if (!est) return 0;
@@ -793,7 +795,9 @@ export default function SnappyGoldCRM() {
       setShipments(s);
       setContactLogs(l);
       setLastLoaded(Date.now());
-      setCache({ customers: c, shipments: s, contactLogs: l });
+      if (c.length || s.length) {
+        setCache({ customers: c, shipments: s, contactLogs: l });
+      }
     } catch(e) {
       setError("Failed to load: " + e.message);
     }
