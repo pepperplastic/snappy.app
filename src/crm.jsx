@@ -113,7 +113,21 @@ function initCustomers() {
   }
   // User-added records not in seed
   for (const [k,v] of Object.entries(stored)) {
-    if (!map[k] && !v.deleted) map[k] = v;
+    if (!map[k] && !v.deleted) {
+      map[k] = {
+        custId:     k,
+        name:       v.name || "",
+        email:      v.email || k,
+        phone:      v.phone || "",
+        address:    v.address || "",
+        source:     v.source || "",
+        timestamp:  v.timestamp || "",
+        contactLog: v.contactLog || [],
+        notes:      v.notes || "",
+        shipments:  v.shipments || [],
+        deleted:    v.deleted ?? false,
+      };
+    }
   }
   return map;
 }
@@ -121,7 +135,19 @@ function initCustomers() {
 function persist(map) {
   const out = {};
   for (const [k,v] of Object.entries(map)) {
-    out[k] = { contactLog:v.contactLog, notes:v.notes, shipments:v.shipments, deleted:v.deleted??false };
+    out[k] = {
+      contactLog: v.contactLog,
+      notes:      v.notes,
+      shipments:  v.shipments,
+      deleted:    v.deleted ?? false,
+      // Also persist identity fields for non-seed records
+      name:       v.name || "",
+      email:      v.email || "",
+      phone:      v.phone || "",
+      address:    v.address || "",
+      source:     v.source || "",
+      timestamp:  v.timestamp || "",
+    };
   }
   putStore(out);
 }
@@ -1232,7 +1258,26 @@ export default function SnappyGoldCRM() {
 
   function saveCust(updated) {
     setCusts(prev=>{
-      const next = {...prev,[updated.custId]:updated};
+      const existing = prev[updated.custId];
+      const merged = existing ? {
+        ...existing,
+        // Only update contact info if the new data has it and existing doesn't
+        name:       updated.name || existing.name,
+        phone:      updated.phone || existing.phone,
+        address:    updated.address || existing.address,
+        source:     updated.source || existing.source,
+        // Always preserve contact log and notes
+        contactLog: existing.contactLog || [],
+        notes:      existing.notes || "",
+        deleted:    existing.deleted || false,
+        // Merge shipments: add new shipment if not already present
+        shipments: (() => {
+          const existingIds = new Set((existing.shipments||[]).map(s=>s.shipmentId));
+          const newShips = (updated.shipments||[]).filter(s=>!existingIds.has(s.shipmentId));
+          return [...(existing.shipments||[]), ...newShips];
+        })(),
+      } : updated;
+      const next = {...prev,[updated.custId]:merged};
       persist(next); return next;
     });
   }
