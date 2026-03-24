@@ -913,7 +913,7 @@ export default function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        firstName: '(anonymous)',
+        firstName: '',
         lastName: '',
         email: '',
         phone: '',
