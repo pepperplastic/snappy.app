@@ -295,6 +295,35 @@ function AddShipmentModal({customer,onSave,onClose}) {
   </div>;
 }
 
+
+// ══════════════════════════════════════════════════════════
+// CUSTOMER HISTORY (inline in detail pane)
+// ══════════════════════════════════════════════════════════
+
+function CustomerHistory({shipment,allShipments,allCustomers}) {
+  if(!shipment||!allShipments) return null;
+  const others=allShipments.filter(s=>s.customer_id===shipment.customer_id&&s.shipment_id!==shipment.shipment_id);
+  if(others.length===0) return null;
+  const sorted=[...others].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  return <div style={{marginTop:16,background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`}}>
+    <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Customer History ({others.length} other shipment{others.length!==1?"s":""})</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {sorted.map(s=>{
+        const high=parseEstHigh(s.estimate);
+        return <div key={s.shipment_id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"6px 8px",borderRadius:6,background:G.bg}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:600,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
+            <div style={{fontSize:10,color:G.muted,marginTop:2}}>{s.shipment_id} · {s.created_at?new Date(s.created_at).toLocaleDateString():""}</div>
+          </div>
+          {high>0&&<div style={{color:G.gold,fontWeight:700,flexShrink:0}}>{fmt$(high)}</div>}
+          <Badge stage={s.stage} sm/>
+          {s.purchase_price&&<div style={{color:G.green,fontWeight:700,fontSize:11,flexShrink:0}}>paid {fmt$(s.purchase_price)}</div>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 // ══════════════════════════════════════════════════════════
 // SHIPMENT ROW (left pane list item)
 // ══════════════════════════════════════════════════════════
@@ -328,7 +357,7 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
 // DETAIL PANE
 // ══════════════════════════════════════════════════════════
 
-function DetailPane({shipment,customer,contactLogs,onUpdate,onNewShipment,onClose}) {
+function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onUpdate,onNewShipment,onClose}) {
   const [modal,setModal]=useState(null);
   const [localLogs,setLocalLogs]=useState(contactLogs||[]);
 
@@ -436,6 +465,7 @@ function DetailPane({shipment,customer,contactLogs,onUpdate,onNewShipment,onClos
           </div>)}
         </div>
       </div>}
+    <CustomerHistory shipment={shipment} allShipments={allShipments} customers={allCustomers}/>
     </div>
 
     {/* Modals */}
@@ -554,7 +584,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} shipments ready</div>
     </div>
     {/* Right */}
-    <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+    <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
     {/* Bulk modal */}
     {bulkModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#fff",borderRadius:12,width:"min(400px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
@@ -625,7 +655,7 @@ function ProcessTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       </div>
       <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} shipments</div>
     </div>
-    <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+    <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
     {bulkModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#fff",borderRadius:12,width:"min(400px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
         <div style={{fontWeight:700,fontSize:15,marginBottom:4,color:G.text}}>Bulk Stage Update</div>
@@ -644,7 +674,7 @@ function ProcessTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 // FOLLOW UP TAB
 // ══════════════════════════════════════════════════════════
 
-function FollowUpTab({activeCustomerEmails}) {
+function FollowUpTab({activeCustomerEmails,onCountChange}) {
   const [leads,setLeads]=useState([]);
   const [loading,setLoading]=useState(false);
   const [selected,setSelected]=useState(null);
@@ -667,6 +697,8 @@ function FollowUpTab({activeCustomerEmails}) {
     if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q));}
     return [...list].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[leads,search,activeCustomerEmails]);
+
+  useEffect(()=>{if(onCountChange)onCountChange(filtered.length);},[filtered.length]);
 
   const sel=selected?filtered.find(l=>l.email===selected):null;
 
@@ -825,7 +857,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
     </div>}
 
     {/* Right: shipment detail */}
-    {selCustomer&&selShipment?<DetailPane shipment={selShipment} customer={selCustomer} contactLogs={selLogs} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={s=>{onNewShipment(s);setSelectedShipId(s.shipment_id);}} onClose={()=>setSelectedShipId(null)}/>
+    {selCustomer&&selShipment?<DetailPane shipment={selShipment} customer={selCustomer} contactLogs={selLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={s=>{onNewShipment(s);setSelectedShipId(s.shipment_id);}} onClose={()=>setSelectedShipId(null)}/>
     :selCustomer?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a shipment to view details</div>
@@ -889,6 +921,7 @@ export default function SnappyGoldCRM() {
   }
 
   const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"process",label:"Process",color:G.teal},{id:"followup",label:"Follow Up",color:G.orange},{id:"customers",label:"Customers",color:G.blue}];
+  const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
   const processCount=shipments.filter(s=>PROCESS_STAGES.includes(s.stage)).length;
@@ -909,7 +942,7 @@ export default function SnappyGoldCRM() {
     {/* Tab bar */}
     <div style={{background:"#fff",borderBottom:`1px solid ${G.border}`,padding:"0 16px",display:"flex",gap:0,flexShrink:0}}>
       {TABS.map(t=>{
-        const count=t.id==="fulfill"?fulfillCount:t.id==="process"?processCount:null;
+        const count=t.id==="fulfill"?fulfillCount:t.id==="process"?processCount:t.id==="followup"?followUpCount:t.id==="customers"?customers.length:null;
         const active=tab===t.id;
         return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"12px 20px",background:"none",border:"none",borderBottom:active?`3px solid ${t.color}`:"3px solid transparent",color:active?t.color:G.muted,fontWeight:active?700:400,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,transition:"all 0.15s",fontFamily:"inherit"}}>
           {t.label}
@@ -922,7 +955,7 @@ export default function SnappyGoldCRM() {
     <div style={{flex:1,display:"flex",overflow:"hidden"}}>
       {tab==="fulfill"&&<FulfillTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="process"&&<ProcessTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="followup"&&<FollowUpTab activeCustomerEmails={activeCustomerEmails}/>}
+      {tab==="followup"&&<FollowUpTab activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
     </div>
   </div>;
