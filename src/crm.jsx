@@ -1602,15 +1602,15 @@ export default function SnappyGoldCRM() {
                     → All Incomplete to Follow Up
                   </Btn>
                   <Btn v="danger" onClick={()=>{
-                    const targets = selectedIds.size > 0
-                      ? inbox.filter(i => selectedIds.has(i.custId))
+                    const targets = selectedInboxIds.size > 0
+                      ? inbox.filter(i => selectedInboxIds.has(i.custId))
                       : inbox;
-                    const msg = selectedIds.size > 0
-                      ? `Skip ${selectedIds.size} selected item${selectedIds.size!==1?'s':''}? They won't appear again.`
+                    const msg = selectedInboxIds.size > 0
+                      ? `Skip ${selectedInboxIds.size} selected item${selectedInboxIds.size!==1?'s':''}? They won't appear again.`
                       : `Skip ALL ${inbox.length} inbox items? They won't appear again.`;
                     if (window.confirm(msg))
                       targets.forEach(i=>dismissInboxItem(i.custId));
-                  }} st={{fontSize:11}}>✕ Skip {selectedIds.size > 0 ? `Selected (${selectedIds.size})` : 'All'}</Btn>
+                  }} st={{fontSize:11}}>✕ Skip {selectedInboxIds.size > 0 ? `Selected (${selectedInboxIds.size})` : 'All'}</Btn>
                 </div>
 
                 {/* Complete leads first */}
