@@ -1530,7 +1530,7 @@ const FAQ_ITEMS = [
 function FAQSection() {
   const [open, setOpen] = useState(null);
   return (
-    <section style={{ padding: '36px 0 44px' }}>
+    <section style={{ padding: '56px 0 44px' }}>
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '0 28px' }}>
         <h2 style={{
           fontFamily: '"Playfair Display", serif',
