@@ -661,6 +661,89 @@ function PurchasedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) 
   </div>;
 }
 
+
+// ══════════════════════════════════════════════════════════
+// UPLOAD SHIP REPORTS MODAL
+// ══════════════════════════════════════════════════════════
+
+function UploadModal({onProcess, onClose, results, uploading}) {
+  const [pirateshipFile, setPirateshipFile] = useState(null);
+  const [fedexFile, setFedexFile] = useState(null);
+  const psRef = useRef();
+  const fxRef = useRef();
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:"#fff",borderRadius:12,width:"min(560px,95vw)",maxHeight:"85vh",overflow:"auto",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:4,color:G.text}}>Upload Ship Reports</div>
+        <div style={{fontSize:12,color:G.muted,marginBottom:20}}>Upload Pirateship and/or FedEx exports to reconcile tracking numbers</div>
+
+        {!results ? <>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {/* Pirateship */}
+            <div style={{border:`1px solid ${G.border}`,borderRadius:8,padding:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:G.purple,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Pirateship Export (CSV)</div>
+              <div style={{fontSize:11,color:G.muted,marginBottom:10}}>Outbound USPS tracking — matches by customer email</div>
+              <input ref={psRef} type="file" accept=".csv,.xlsx" style={{display:"none"}} onChange={e=>setPirateshipFile(e.target.files[0])}/>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <Btn v="ghost" small onClick={()=>psRef.current.click()}>Choose File</Btn>
+                {pirateshipFile
+                  ? <span style={{fontSize:12,color:G.green,fontWeight:600}}>✓ {pirateshipFile.name}</span>
+                  : <span style={{fontSize:12,color:G.muted}}>No file selected</span>}
+              </div>
+            </div>
+
+            {/* FedEx */}
+            <div style={{border:`1px solid ${G.border}`,borderRadius:8,padding:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:G.teal,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>FedEx Ship Report (CSV)</div>
+              <div style={{fontSize:11,color:G.muted,marginBottom:10}}>Return tracking — matches by sender name. Moves shipment to Outbound Complete.</div>
+              <input ref={fxRef} type="file" accept=".csv,.xlsx" style={{display:"none"}} onChange={e=>setFedexFile(e.target.files[0])}/>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <Btn v="ghost" small onClick={()=>fxRef.current.click()}>Choose File</Btn>
+                {fedexFile
+                  ? <span style={{fontSize:12,color:G.green,fontWeight:600}}>✓ {fedexFile.name}</span>
+                  : <span style={{fontSize:12,color:G.muted}}>No file selected</span>}
+              </div>
+            </div>
+          </div>
+
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+            <Btn v="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn v="gold" onClick={()=>onProcess(pirateshipFile,fedexFile)}
+              disabled={uploading||(!pirateshipFile&&!fedexFile)}>
+              {uploading?"Processing...":"Process Reports"}
+            </Btn>
+          </div>
+        </> : <>
+          {/* Results */}
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:"#F0FFF4",borderRadius:8,padding:14,border:`1px solid ${G.green}30`}}>
+              <div style={{fontSize:12,fontWeight:700,color:G.green,marginBottom:8}}>✓ Matched & Updated ({results.matched.length})</div>
+              {results.matched.map((m,i)=><div key={i} style={{fontSize:11,color:G.text,marginBottom:4}}>
+                <span style={{fontWeight:600}}>{m.name}</span> → {m.shipment_id} · {m.tracking}
+              </div>)}
+            </div>
+            {results.unmatched.length>0&&<div style={{background:"#FFF8E1",borderRadius:8,padding:14,border:"1px solid #FFD54F"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#E65100",marginBottom:8}}>⚠ Unmatched ({results.unmatched.length})</div>
+              {results.unmatched.map((m,i)=><div key={i} style={{fontSize:11,color:G.text,marginBottom:4}}>
+                <span style={{fontWeight:600}}>{m.name}</span> — {m.reason}
+              </div>)}
+            </div>}
+            {results.errors.length>0&&<div style={{background:"#FFF0F0",borderRadius:8,padding:14,border:`1px solid ${G.red}30`}}>
+              <div style={{fontSize:12,fontWeight:700,color:G.red,marginBottom:8}}>✗ Errors</div>
+              {results.errors.map((e,i)=><div key={i} style={{fontSize:11,color:G.red}}>{e}</div>)}
+            </div>}
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:20}}>
+            <Btn v="gold" onClick={onClose}>Done</Btn>
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════
 // FULFILL TAB
 // ══════════════════════════════════════════════════════════
@@ -672,6 +755,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [bulkModal,setBulkModal]=useState(false);
   const [bulkStage,setBulkStage]=useState("outbound_complete");
   const [bulkSaving,setBulkSaving]=useState(false);
+  const [uploadModal,setUploadModal]=useState(false);
+  const [uploadResults,setUploadResults]=useState(null);
+  const [uploading,setUploading]=useState(false);
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
@@ -688,6 +774,122 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
   const selectedLogs=useMemo(()=>selectedShipment?(logsByCustomer[selectedShipment.customer_id]||[]):[],[selectedShipment,logsByCustomer]);
+
+
+  async function processShipReports(pirateshipFile, fedexFile) {
+    setUploading(true);
+    const results = { matched: [], unmatched: [], errors: [] };
+
+    // Build lookup maps
+    const emailToCustId = {};
+    const nameToCustId = {};
+    customers.forEach(c => {
+      if (c.email) emailToCustId[c.email.toLowerCase().trim()] = c.customer_id;
+      if (c.name) nameToCustId[c.name.toLowerCase().trim().replace(/\s+/g,' ')] = c.customer_id;
+    });
+
+    // Get ready_to_fulfill shipments, index by customer_id
+    const rtfByCustomer = {};
+    const outboundCompleteByCustomer = {};
+    shipments.forEach(s => {
+      if (s.stage === 'ready_to_fulfill') rtfByCustomer[s.customer_id] = s;
+      if (s.stage === 'outbound_complete') outboundCompleteByCustomer[s.customer_id] = s;
+    });
+
+    // Parse CSV text
+    function parseCSV(text) {
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim());
+      return lines.slice(1).map(line => {
+        const vals = []; let cur = ''; let inQ = false;
+        for (let ch of line) {
+          if (ch === '"') inQ = !inQ;
+          else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
+          else cur += ch;
+        }
+        vals.push(cur.trim());
+        const obj = {};
+        headers.forEach((h,i) => obj[h] = vals[i] || '');
+        return obj;
+      });
+    }
+
+    // Parse XLSX using SheetJS-style manual read — actually just read as text if CSV
+    async function readFile(file) {
+      return new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => res(e.target.result);
+        reader.onerror = rej;
+        if (file.name.endsWith('.xlsx')) {
+          // Read as binary for xlsx - we'll use a simple approach
+          reader.readAsText(file); // fallback - most exports can be read as csv if saved as csv
+        } else {
+          reader.readAsText(file);
+        }
+      });
+    }
+
+    const updates = []; // {shipment_id, outbound_tracking, return_tracking, stage}
+
+    // Process Pirateship (CSV) - match by email -> outbound tracking
+    if (pirateshipFile) {
+      try {
+        const text = await readFile(pirateshipFile);
+        const rows = parseCSV(text);
+        rows.forEach(r => {
+          const email = (r['Email'] || r['email'] || '').toLowerCase().trim();
+          const tracking = (r['Tracking Number'] || r['tracking_number'] || r['TrackingNumber'] || '').trim();
+          if (!email || !tracking) return;
+          const custId = emailToCustId[email];
+          if (!custId) { results.unmatched.push({source:'Pirateship', name:email, reason:'No customer found'}); return; }
+          const ship = rtfByCustomer[custId];
+          if (!ship) { results.unmatched.push({source:'Pirateship', name:email, reason:'No ready_to_fulfill shipment'}); return; }
+          updates.push({shipment_id: ship.shipment_id, outbound_tracking: tracking, customer_id: custId, name: email});
+          results.matched.push({source:'Pirateship', name:email, shipment_id:ship.shipment_id, tracking});
+        });
+      } catch(e) { results.errors.push('Pirateship parse error: ' + e.message); }
+    }
+
+    // Process FedEx (CSV) - match by senderContactName -> return tracking
+    if (fedexFile) {
+      try {
+        const text = await readFile(fedexFile);
+        const rows = parseCSV(text);
+        rows.forEach(r => {
+          const name = (r['senderContactName'] || '').toLowerCase().trim().replace(/\s+/g,' ');
+          const tracking = (r['masterTrackingNumber'] || r['returnTrackingId'] || '').trim();
+          if (!name || !tracking) return;
+          const custId = nameToCustId[name];
+          if (!custId) { results.unmatched.push({source:'FedEx', name, reason:'No customer found'}); return; }
+          // Find shipment - prefer rtf, fall back to outbound_complete
+          const ship = rtfByCustomer[custId] || outboundCompleteByCustomer[custId];
+          if (!ship) { results.unmatched.push({source:'FedEx', name, reason:'No active shipment'}); return; }
+          // Add return tracking and mark outbound_complete
+          const existing = updates.find(u => u.shipment_id === ship.shipment_id);
+          if (existing) { existing.return_tracking = tracking; existing.stage = 'outbound_complete'; }
+          else updates.push({shipment_id: ship.shipment_id, return_tracking: tracking, customer_id: custId, name, stage: 'outbound_complete'});
+          results.matched.push({source:'FedEx', name, shipment_id:ship.shipment_id, tracking});
+        });
+      } catch(e) { results.errors.push('FedEx parse error: ' + e.message); }
+    }
+
+    // Apply all updates to Sheets + local state
+    for (const u of updates) {
+      const updateObj = {};
+      if (u.outbound_tracking) updateObj.outbound_tracking = u.outbound_tracking;
+      if (u.return_tracking) updateObj.return_tracking = u.return_tracking;
+      // Move to outbound_complete if return tracking set
+      if (u.return_tracking || u.stage === 'outbound_complete') updateObj.stage = 'outbound_complete';
+      try {
+        await apiPost({action:'updateShipment', shipment_id:u.shipment_id, updates:updateObj});
+        const ship = shipments.find(s => s.shipment_id === u.shipment_id);
+        if (ship) onUpdate({...ship, ...updateObj});
+      } catch(e) { results.errors.push('Save error for ' + u.shipment_id + ': ' + e.message); }
+    }
+
+    setUploadResults(results);
+    setUploading(false);
+  }
 
   function generateBatch(){
     const today=new Date().toISOString().slice(0,10);
@@ -797,6 +999,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{flex:1,background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <Btn v="ghost" small onClick={()=>setUploadModal(true)}>⬆ Ship Reports</Btn>
           <Btn v="gold" small onClick={generateBatch} disabled={filtered.length===0}>⬇ Batch</Btn>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11,color:G.muted}}>
@@ -814,6 +1017,14 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     </div>
     {/* Right */}
     <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+
+    {/* Upload Ship Reports Modal */}
+    {uploadModal&&<UploadModal
+      onProcess={processShipReports}
+      onClose={()=>{setUploadModal(false);setUploadResults(null);}}
+      results={uploadResults}
+      uploading={uploading}
+    />}
     {/* Bulk modal */}
     {bulkModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#fff",borderRadius:12,width:"min(400px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
@@ -841,6 +1052,9 @@ function ProcessTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [bulkModal,setBulkModal]=useState(false);
   const [bulkStage,setBulkStage]=useState("received");
   const [bulkSaving,setBulkSaving]=useState(false);
+  const [uploadModal,setUploadModal]=useState(false);
+  const [uploadResults,setUploadResults]=useState(null);
+  const [uploading,setUploading]=useState(false);
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
