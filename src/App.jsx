@@ -1499,7 +1499,7 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is shipping really free?",
-    a: "Yes, both ways. We send you a prepaid FedEx label or a full shipping kit at no cost. If you decline our offer, we ship everything back to you — also free. You never pay a dollar regardless of the outcome."
+    a: "Yes, completely free both ways. We email you a prepaid shipping label at no cost. If you decline our offer, we ship everything back to you — also free. You never pay a dollar regardless of the outcome."
   },
   {
     q: "How do I get paid, and how fast?",
@@ -2662,7 +2662,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
   const update = (field) => (e) =>
     setShippingData((prev) => ({ ...prev, [field]: e.target.value }))
 
-  const isKit = shippingData.method === 'kit'
+  const isUsps = shippingData.method === 'usps'
   const isReturn = new URLSearchParams(window.location.search).get('return') === 'shipping'
 
   return (
@@ -2702,7 +2702,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           <button
             type="button"
             onClick={() => setShippingData(prev => ({ ...prev, method: 'label' }))}
-            style={{ ...(!isKit ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
+            style={{ ...(shippingData.method === 'label' ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
           >
             <span style={{
               position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
@@ -2716,24 +2716,24 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           </button>
           <button
             type="button"
-            onClick={() => setShippingData(prev => ({ ...prev, method: 'kit' }))}
-            style={isKit ? styles.shippingOptionActive : styles.shippingOption}
+            onClick={() => setShippingData(prev => ({ ...prev, method: 'usps' }))}
+            style={shippingData.method === 'usps' ? styles.shippingOptionActive : styles.shippingOption}
           >
-            <span style={styles.shippingOptionIcon}>📦</span>
-            <span style={styles.shippingOptionTitle}>Send Me a Kit</span>
-            <span style={styles.shippingOptionDesc}>Free box, padding & pre-paid label mailed to you</span>
+            <span style={styles.shippingOptionIcon}>📬</span>
+            <span style={styles.shippingOptionTitle}>Email Me a USPS Label</span>
+            <span style={styles.shippingOptionDesc}>Hand to your postman or drop at any post office</span>
           </button>
         </div>
 
-        {!isKit && (
+        {!isUsps && (
           <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll email you a pre-paid FedEx shipping label — just print it, pack your item in any box or padded envelope, and drop it off. <strong>Label arrives in minutes.</strong>
+            We'll email you a prepaid FedEx label — print it, pack your item in any box or padded envelope, and drop it at any FedEx location. <strong>Label arrives in minutes.</strong>
           </p>
         )}
 
-        {isKit && (
+        {isUsps && (
           <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll mail you a free kit with a box, padding, and pre-paid shipping label — everything you need. Arrives in 2-3 business days.
+            We'll email you a prepaid USPS label — hand it to your postman or drop it at any post office. <strong>Label arrives in minutes.</strong>
           </p>
         )}
 
@@ -2787,7 +2787,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
         </div>
 
         <button type="button" onClick={onSubmit} style={styles.firmOfferBtn}>
-          <span>{isKit ? 'Send My Free Kit' : 'Email My Label Now'}</span>
+          <span>Email My Label Now</span>
           <ArrowIcon size={18} />
         </button>
         <p style={styles.formDisclaimer}>
@@ -2802,7 +2802,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
 //  SUBMITTED CONFIRMATION
 // ═══════════════════════════════════════════════
 function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
-  const isKit = shippingMethod === 'kit'
+  const isUsps = shippingMethod === 'usps'
 
   if (directQuote) {
     return (
@@ -2832,20 +2832,20 @@ function SubmittedScreen({ onReset, shippingMethod, directQuote }) {
       </div>
       <h2 style={styles.sectionTitle}>You're all set!</h2>
       <p style={styles.sectionSub}>
-        {isKit
-          ? 'Your free shipping kit is on its way! You\'ll receive a box with padding and a prepaid return label within 2-3 business days.'
+        {isUsps
+          ? 'Your prepaid USPS shipping label is on its way to your inbox! Print it, pack your item in any box or padded envelope, and hand it to your postman or drop it at any post office.'
           : 'Your prepaid FedEx shipping label is on its way to your inbox right now! Print it, pack your item in any box or padded envelope, and drop it off at any FedEx location.'
         }
       </p>
       <div style={styles.successSteps}>
-        {(isKit ? [
-          'Shipping kit arrives in 2-3 days',
-          'Pack your item & drop it off',
+        {(isUsps ? [
+          'Check your email for the USPS label',
+          'Print, pack & hand to your postman',
           'Expert evaluation within 24 hours',
           'Accept offer → get paid instantly',
         ] : [
-          'Check your email for the label',
-          'Print, pack & drop off today',
+          'Check your email for the FedEx label',
+          'Print, pack & drop at any FedEx',
           'Expert evaluation within 24 hours',
           'Accept offer → get paid instantly',
         ]).map((s, i) => (
