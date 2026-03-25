@@ -10,6 +10,10 @@ const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby82CuMrlr0us5SUSCus
 const CRM_KEY    = "snappy_crm_2026";
 const PIN        = "5437";
 const CACHE_KEY  = "sg_crm_v5b_cache";
+const JUNK_KEY   = "sg_crm_junk_emails";
+
+function getJunkList() { try { return JSON.parse(localStorage.getItem(JUNK_KEY)||"[]"); } catch { return []; } }
+function addToJunkList(email) { try { const j=getJunkList(); if(!j.includes(email)) { j.push(email); localStorage.setItem(JUNK_KEY,JSON.stringify(j)); } } catch {} }
 
 // ── Brand ─────────────────────────────────────────────────
 const G = {
@@ -1134,9 +1138,11 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
     setLoading(false);
   }
 
+  const [junkList,setJunkList]=useState(()=>getJunkList());
+
   const filtered=useMemo(()=>{
-    // Exclude leads who already have an active shipment
-    let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase()));
+    // Exclude leads who already have an active shipment or are junked
+    let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkList.includes(String(l.email).toLowerCase()));
     if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q));}
     return [...list].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[leads,search,activeCustomerEmails]);
@@ -1191,6 +1197,7 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
       <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
         {sel.phone&&<><a href={`tel:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="green">📞 Call</Btn></a><a href={`sms:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="blue">💬 Text</Btn></a></>}
         {sel.email&&<a href={`mailto:${sel.email}`} style={{textDecoration:"none"}}><Btn v="ghost">✉ Email</Btn></a>}
+        <Btn v="danger" onClick={()=>{addToJunkList(sel.email.toLowerCase());setJunkList(getJunkList());setSelected(null);}}>✕ Remove</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
