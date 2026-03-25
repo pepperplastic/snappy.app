@@ -713,7 +713,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         rows.push([
           "FEDEX_GROUND","STANDALONE_RETURN",
           c.name||"Unknown",
-          `${s.shipment_id}|${s.customer_id}`,
+          String(c.phone||"").replace(/\D/g,"")||SNAPPY_PHONE,
           a.line1, a.zip, a.city, a.state, "US", "Y",
           SNAPPY_NAME, SNAPPY_PHONE,
           SNAPPY_ADDR, SNAPPY_ZIP, SNAPPY_CITY, SNAPPY_STATE, "US",
