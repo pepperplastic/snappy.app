@@ -2710,9 +2710,9 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
               borderRadius: 20, padding: '2px 10px', letterSpacing: '0.5px',
               textTransform: 'uppercase', whiteSpace: 'nowrap',
             }}>⚡ Fastest</span>
-            <span style={styles.shippingOptionIcon}>🏷️</span>
-            <span style={styles.shippingOptionTitle}>Email Me a Label</span>
-            <span style={styles.shippingOptionDesc}>Pre-paid label in your inbox in minutes — ship today</span>
+            <span style={{ background: '#4D148C', color: '#FF6600', fontSize: 13, fontWeight: 700, padding: '3px 12px', borderRadius: 4, letterSpacing: '0.5px', display: 'inline-block', marginBottom: 2 }}>Fed<span style={{ color: '#ffffff' }}>Ex</span></span>
+            <span style={styles.shippingOptionTitle}>Email Me a FedEx Label</span>
+            <span style={styles.shippingOptionDesc}>Pre-paid label in your inbox in minutes — drop at any FedEx location</span>
           </button>
           <button
             type="button"
