@@ -1141,8 +1141,9 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
   const [junkList,setJunkList]=useState(()=>getJunkList());
 
   const filtered=useMemo(()=>{
+    const junkSet=new Set(junkList.map(e=>e.toLowerCase()));
     // Exclude leads who already have an active shipment or are junked
-    let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkList.includes(String(l.email).toLowerCase()));
+    let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkSet.has(String(l.email).toLowerCase()));
     if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q));}
     return [...list].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[leads,search,activeCustomerEmails]);
@@ -1197,7 +1198,7 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
       <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
         {sel.phone&&<><a href={`tel:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="green">📞 Call</Btn></a><a href={`sms:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="blue">💬 Text</Btn></a></>}
         {sel.email&&<a href={`mailto:${sel.email}`} style={{textDecoration:"none"}}><Btn v="ghost">✉ Email</Btn></a>}
-        <Btn v="danger" onClick={()=>{addToJunkList(sel.email.toLowerCase());setJunkList(getJunkList());setSelected(null);}}>✕ Remove</Btn>
+        <Btn v="danger" onClick={()=>{const email=sel.email.toLowerCase();addToJunkList(email);setJunkList(prev=>[...prev,email]);setSelected(null);}}>✕ Remove</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
