@@ -1138,15 +1138,13 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
     setLoading(false);
   }
 
-  const [junkList,setJunkList]=useState(()=>getJunkList());
+  const [junkEmails,setJunkEmails]=useState(()=>new Set(getJunkList()));
 
   const filtered=useMemo(()=>{
-    const junkSet=new Set(junkList.map(e=>e.toLowerCase()));
-    // Exclude leads who already have an active shipment or are junked
-    let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkSet.has(String(l.email).toLowerCase()));
+    let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkEmails.has(String(l.email).toLowerCase()));
     if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q));}
     return [...list].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
-  },[leads,search,activeCustomerEmails]);
+  },[leads,search,activeCustomerEmails,junkEmails]);
 
   useEffect(()=>{if(onCountChange)onCountChange(filtered.length);},[filtered.length]);
 
@@ -1203,7 +1201,7 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
           if(!email) return;
           addToJunkList(email);
           setSelected(null);
-          setJunkList(prev=>[...prev,email]);
+          setJunkEmails(prev=>new Set([...prev,email]));
         }}>✕ Remove</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
