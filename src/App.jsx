@@ -2712,7 +2712,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
             }}>⚡ Fastest</span>
             <span style={{ background: '#4D148C', color: '#FF6600', fontSize: 13, fontWeight: 700, padding: '3px 12px', borderRadius: 4, letterSpacing: '0.5px', display: 'inline-block', marginBottom: 2 }}>Fed<span style={{ color: '#ffffff' }}>Ex</span></span>
             <span style={styles.shippingOptionTitle}>Email Me a FedEx Label</span>
-            <span style={styles.shippingOptionDesc}>Pre-paid label in your inbox in minutes — drop at any FedEx location</span>
+            <span style={styles.shippingOptionDesc}>Drop at any FedEx location or call FedEx for an at-home pickup</span>
           </button>
           <button
             type="button"
@@ -2725,17 +2725,9 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
           </button>
         </div>
 
-        {!isUsps && (
-          <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll email you a prepaid FedEx label — print it, pack your item in any box or padded envelope, and drop it at any FedEx location. <strong>Label arrives in minutes.</strong>
-          </p>
-        )}
-
-        {isUsps && (
-          <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-            We'll email you a prepaid USPS label — hand it to your postman or drop it at any post office. <strong>Label arrives in minutes.</strong>
-          </p>
-        )}
+        <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
+          The shipping cost is <strong>prepaid</strong> by us — just print the label, pack your item in a padded box or envelope, and {isUsps ? 'mail it out.' : 'drop it at any FedEx location.'}
+        </p>
 
         <div style={styles.formGroup}>
           <label style={styles.formLabel}>Street Address *</label>
