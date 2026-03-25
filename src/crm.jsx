@@ -1121,6 +1121,59 @@ function ProcessTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 // FOLLOW UP TAB
 // ══════════════════════════════════════════════════════════
 
+
+// ══════════════════════════════════════════════════════════
+// CONVERT LEAD TO SHIPMENT MODAL
+// ══════════════════════════════════════════════════════════
+
+function ConvertLeadModal({lead, onSave, onClose}) {
+  const [stage, setStage] = useState("outbound_complete");
+  const [shippingType, setShippingType] = useState("kit");
+  const [item, setItem] = useState(lead.item||"");
+  const [estimate, setEstimate] = useState(lead.estimate||"");
+  const [outboundTracking, setOutboundTracking] = useState("");
+  const [returnTracking, setReturnTracking] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await onSave({
+      stage, shipping_type:shippingType, item, estimate,
+      outbound_tracking:outboundTracking, return_tracking:returnTracking,
+      notes, received_at:"", purchase_price:"", appraised_value:"",
+      payment_method:"", payment_info:"", sent_at:""
+    });
+    setSaving(false);
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(520px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontWeight:700,fontSize:16,marginBottom:4,color:G.text}}>Create Shipment</div>
+      <div style={{fontSize:12,color:G.muted,marginBottom:20}}>{lead.name||lead.email}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Sel label="Stage" value={stage} onChange={e=>setStage(e.target.value)}
+            options={STAGES.filter(s=>s!=="estimate_only").map(v=>({value:v,label:SL[v]||v}))}/>
+          <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)}
+            options={[{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
+        </div>
+        <Inp label="Item" value={item} onChange={e=>setItem(e.target.value)}/>
+        <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Inp label="Outbound Tracking" value={outboundTracking} onChange={e=>setOutboundTracking(e.target.value)} mono/>
+          <Inp label="Return Tracking" value={returnTracking} onChange={e=>setReturnTracking(e.target.value)} mono/>
+        </div>
+        <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional"/>
+      </div>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+        <Btn v="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn v="gold" onClick={save} disabled={saving}>{saving?"Creating...":"Create Shipment"}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
 function FollowUpTab({activeCustomerEmails,onCountChange}) {
   const [leads,setLeads]=useState([]);
   const [loading,setLoading]=useState(false);
@@ -1139,6 +1192,7 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
   }
 
   const [junkEmails,setJunkEmails]=useState(()=>new Set(getJunkList()));
+  const [convertModal,setConvertModal]=useState(false);
 
   const filtered=useMemo(()=>{
     let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkEmails.has(String(l.email).toLowerCase()));
@@ -1196,6 +1250,7 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
       <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
         {sel.phone&&<><a href={`tel:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="green">📞 Call</Btn></a><a href={`sms:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="blue">💬 Text</Btn></a></>}
         {sel.email&&<a href={`mailto:${sel.email}`} style={{textDecoration:"none"}}><Btn v="ghost">✉ Email</Btn></a>}
+        <Btn v="purple" onClick={()=>setConvertModal(true)}>+ Shipment</Btn>
         <Btn v="danger" onClick={()=>{
           const email=String(sel.email||"").toLowerCase();
           if(!email) return;
@@ -1204,6 +1259,19 @@ function FollowUpTab({activeCustomerEmails,onCountChange}) {
           setJunkEmails(prev=>new Set([...prev,email]));
         }}>✕ Remove</Btn>
       </div>
+      {convertModal&&sel&&<ConvertLeadModal lead={sel} onSave={async(shipData)=>{
+        try {
+          // Upsert customer first
+          const custRes=await apiPost({action:"upsertCustomer",data:{email:sel.email,name:sel.name,phone:sel.phone,address:sel.address||"",source:sel.source||""}});
+          const custId=custRes.customer_id||custRes;
+          // Create shipment
+          await apiPost({action:"createShipment",data:{customer_id:custId,...shipData}});
+          setConvertModal(false);
+          setSelected(null);
+          // Add to active emails so they filter out
+          setJunkEmails(prev=>new Set([...prev,sel.email.toLowerCase()]));
+        } catch(e){alert("Failed: "+e.message);}
+      }} onClose={()=>setConvertModal(false)}/>}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
         <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Lead Details</div>
