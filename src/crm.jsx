@@ -369,6 +369,17 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
 function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onUpdate,onNewShipment,onClose}) {
   const [modal,setModal]=useState(null);
   const [localLogs,setLocalLogs]=useState(contactLogs||[]);
+  const [photos,setPhotos]=useState([]);
+  const [photosLoading,setPhotosLoading]=useState(false);
+
+  useEffect(()=>{
+    if(!shipment) return;
+    setPhotos([]);
+    setPhotosLoading(true);
+    apiFetch({action:"getPhotos",shipment_id:shipment.shipment_id})
+      .then(res=>{ setPhotos(Array.isArray(res)?res:[]); setPhotosLoading(false); })
+      .catch(()=>setPhotosLoading(false));
+  },[shipment?.shipment_id]);
 
   if(!shipment){
     return <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
@@ -476,6 +487,29 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         </div>
       </div>}
     <CustomerHistory shipment={shipment} allShipments={allShipments} customers={allCustomers}/>
+    {/* Photos */}
+    <div style={{marginTop:16,background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`}}>
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>
+        Photos {photos.length>0&&`(${photos.length})`}
+      </div>
+      {photosLoading&&<div style={{fontSize:12,color:G.muted}}>Loading...</div>}
+      {!photosLoading&&photos.length===0&&<div style={{fontSize:12,color:G.muted}}>No photos on file</div>}
+      {photos.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+        {photos.map((p,i)=>{
+          const url = String(p.drive_url||"");
+          // Convert Drive view URL to thumbnail URL
+          const fileIdMatch = url.match(/\/d\/([^\/]+)\//);
+          const fileId = fileIdMatch ? fileIdMatch[1] : null;
+          const thumbUrl = fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w200` : null;
+          return <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{display:"block",border:`1px solid ${G.border}`,borderRadius:8,overflow:"hidden",width:100,height:100,flexShrink:0,background:G.bg}}>
+            {thumbUrl
+              ? <img src={thumbUrl} alt={`Photo ${i+1}`} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:G.muted}}>View</div>
+            }
+          </a>;
+        })}
+      </div>}
+    </div>
     </div>
 
     {/* Modals */}
