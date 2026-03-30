@@ -825,9 +825,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
 
-  const kits=filtered.filter(s=>s.shipping_type==="kit");
-  const labels=filtered.filter(s=>s.shipping_type==="label");
-  const uspsLabels=filtered.filter(s=>s.shipping_type==="usps");
+  const kits=filtered.filter(s=>String(s.shipping_type||"").trim()==="kit");
+  const labels=filtered.filter(s=>String(s.shipping_type||"").trim()==="label");
+  const uspsLabels=filtered.filter(s=>String(s.shipping_type||"").trim()==="usps");
 
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
@@ -1129,7 +1129,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11,color:G.muted}}>
           <span style={{background:"#F5F0FF",color:G.purple,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{kits.length} kits</span>
           <span style={{background:"#EEF4FF",color:G.blue,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{labels.length} FedEx</span>
-          {uspsLabels.length>0&&<span style={{background:"#F0FFF4",color:G.green,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{uspsLabels.length} USPS</span>}
+          <span style={{background:"#F0FFF4",color:G.green,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{uspsLabels.length} USPS</span>
           {selectedIds.size>0&&<button onClick={()=>setBulkModal(true)} style={{marginLeft:"auto",fontSize:10,padding:"2px 10px",borderRadius:4,background:G.gold,color:"#fff",border:"none",cursor:"pointer",fontWeight:700}}>Bulk ({selectedIds.size})</button>}
         </div>
       </div>
