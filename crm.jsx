@@ -773,6 +773,15 @@ function UploadModal({onProcess, onClose, results, uploading}) {
               <div style={{fontSize:12,fontWeight:700,color:G.red,marginBottom:8}}>✗ Errors</div>
               {results.errors.map((e,i)=><div key={i} style={{fontSize:11,color:G.red}}>{e}</div>)}
             </div>}
+          {results.debug&&<div style={{background:"#F5F5F5",borderRadius:8,padding:14,border:"1px solid #ddd",marginTop:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#666",marginBottom:6}}>Debug Info</div>
+              <div style={{fontSize:11,color:"#555",fontFamily:"monospace"}}>
+                Customers loaded: {results.debug.customersLoaded}<br/>
+                Shipments loaded: {results.debug.shipmentsLoaded}<br/>
+                RTF shipments: {results.debug.rtfCount}<br/>
+                Name map sample: {results.debug.nameMapSample.join(', ')}
+              </div>
+            </div>}
           </div>
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:20}}>
             <Btn v="gold" onClick={onClose}>Done</Btn>
@@ -825,7 +834,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     const nameToCustId = {};
     customers.forEach(c => {
       if (c.email) emailToCustId[c.email.toLowerCase().trim()] = c.customer_id;
-      if (c.name) nameToCustId[c.name.toLowerCase().trim().replace(/\s+/g,' ')] = c.customer_id;
+      if (c.name) nameToCustId[c.name.toLowerCase().trim().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'')] = c.customer_id;
     });
 
     // Get ready_to_fulfill shipments, index by customer_id
@@ -912,7 +921,22 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
           const name = (r['senderContactName'] || '').toLowerCase().trim().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'');
           const tracking = (r['masterTrackingNumber'] || r['returnTrackingId'] || '').trim();
           if (!name || !tracking) return;
-          const custId = nameToCustId[name];
+          // Try full name match first, then first+last word match
+          let custId = nameToCustId[name];
+          if (!custId) {
+            // Try matching just first and last word (handles middle names/initials)
+            const nameParts = name.split(' ').filter(Boolean);
+            if (nameParts.length >= 2) {
+              const shortName = nameParts[0] + ' ' + nameParts[nameParts.length-1];
+              custId = Object.keys(nameToCustId).find(k => {
+                const kParts = k.split(' ').filter(Boolean);
+                return kParts[0] === nameParts[0] && kParts[kParts.length-1] === nameParts[nameParts.length-1];
+              }) ? nameToCustId[Object.keys(nameToCustId).find(k => {
+                const kParts = k.split(' ').filter(Boolean);
+                return kParts[0] === nameParts[0] && kParts[kParts.length-1] === nameParts[nameParts.length-1];
+              })] : null;
+            }
+          }
           if (!custId) { results.unmatched.push({source:'FedEx', name, reason:'No customer found'}); return; }
           // Find shipment - prefer rtf, fall back to outbound_complete
           const ship = rtfByCustomer[custId] || outboundCompleteByCustomer[custId];
@@ -940,6 +964,13 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       } catch(e) { results.errors.push('Save error for ' + u.shipment_id + ': ' + e.message); }
     }
 
+    // Add debug info
+    results.debug = {
+      customersLoaded: customers.length,
+      shipmentsLoaded: shipments.length,
+      rtfCount: Object.keys(rtfByCustomer).length,
+      nameMapSample: Object.keys(nameToCustId).slice(0,5),
+    };
     setUploadResults(results);
     setUploading(false);
   }
