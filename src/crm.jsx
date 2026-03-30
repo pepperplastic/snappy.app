@@ -31,7 +31,7 @@ const G = {
 const STAGES = [
   "estimate_only", "ready_to_fulfill", "outbound_complete",
   "received", "inspected", "offer_made",
-  "accepted", "rejected", "purchase_complete", "return_complete", "dead"
+  "dead"
 ];
 
 const SL = {
@@ -43,7 +43,7 @@ const SL = {
   offer_made:        "Offer Made",
   accepted:          "Accepted",
   rejected:          "Rejected",
-  purchase_complete: "Purchased ✓",
+  purchased: "Purchased ✓", returned: "Returned",
   return_complete:   "Returned",
   dead:              "Dead",
 };
@@ -57,7 +57,7 @@ const SC = {
   offer_made:        "#F57F17",
   accepted:          "#2E7D32",
   rejected:          "#B71C1C",
-  purchase_complete: "#1B5E20",
+  
   return_complete:   "#546E7A",
   dead:              "#9E9E9E",
 };
@@ -404,7 +404,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       case "received": return [{label:"→ Inspected",v:"green",stage:"inspected"}];
       case "inspected": return [{label:"→ Offer Made",v:"orange",stage:"offer_made"}];
       case "offer_made": return [{label:"→ Accepted",v:"green",stage:"accepted"},{label:"→ Rejected",v:"danger",stage:"rejected"}];
-      case "accepted": return [{label:"→ Purchased ✓",v:"green",stage:"purchase_complete"}];
+      case "offer_made": return [{label:"→ Purchased",v:"green",stage:"purchased"},{label:"→ Returned",v:"outline",stage:"returned"}];
       default: return [];
     }
   }
@@ -667,7 +667,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       </div>
       {totalPurchased>0&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${G.border}`,background:"#F0FFF4",fontSize:12,color:G.green,fontWeight:700}}>Total purchased: {fmt$(totalPurchased)}</div>}
       <div style={{flex:1,overflow:"auto"}}>
-        {filtered.length===0?<div style={{padding:24,textAlign:"center",color:G.muted,fontSize:13}}>No purchased shipments</div>:
+        {filtered.length===0?<div style={{padding:24,textAlign:"center",color:G.muted,fontSize:13}}>No completed shipments</div>:
           filtered.map(s=>{
             const c=custById[s.customer_id]||{};
             return <div key={s.shipment_id} onClick={()=>setSelected(s.shipment_id)} style={{paddingLeft:16,paddingRight:16,paddingTop:12,paddingBottom:12,cursor:"pointer",borderBottom:`1px solid ${G.border}`,background:selected===s.shipment_id?"#FFF8EE":"#fff",borderLeft:selected===s.shipment_id?`3px solid ${G.gold}`:"3px solid transparent"}} onMouseEnter={e=>{if(selected!==s.shipment_id)e.currentTarget.style.background="#FDFAF6";}} onMouseLeave={e=>{if(selected!==s.shipment_id)e.currentTarget.style.background="#fff";}}>
@@ -680,7 +680,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
                   </div>
                   <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
                   <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center"}}>
-                    <span style={{background:"#F0FFF4",color:G.green,border:`1px solid ${G.green}30`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>Purchased ✓</span>
+                    <span style={{background:s.stage==="returned"?"#F5F5F5":"#F0FFF4",color:s.stage==="returned"?G.muted:G.green,border:`1px solid ${s.stage==="returned"?G.muted:G.green}30`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{s.stage==="returned"?"Returned":"Purchased ✓"}</span>
                     {s.bin_number&&<span style={{background:"#FFF8EE",color:G.gold,border:`1px solid ${G.gold}44`,borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>Bin {s.bin_number}</span>}
                     {s.payment_method&&<span style={{fontSize:10,color:G.muted}}>{s.payment_method}</span>}
                   </div>
@@ -705,7 +705,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       </div>
     </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
-      <div style={{fontSize:14}}>Select a purchased shipment</div>
+      <div style={{fontSize:14}}>Select a shipment</div>
     </div>}
   </div>;
 }
