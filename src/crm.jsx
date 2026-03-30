@@ -955,7 +955,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       list.forEach(s=>{
         const c=custById[s.customer_id]||{};
         const a=parseAddr(c.address);
-        const phone=String(c.phone||"").replace(/\D/g,"")||SNAPPY_PHONE;
+        const rawPhone=String(c.phone||"").replace(/\D/g,"").replace(/^1/,""); const phone=rawPhone.length>=10?rawPhone:SNAPPY_PHONE;
         rows.push([
           "FEDEX_GROUND","STANDALONE_RETURN",
           c.name||"Unknown", phone,
