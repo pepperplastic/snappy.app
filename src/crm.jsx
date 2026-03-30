@@ -62,8 +62,11 @@ const SC = {
   dead:              "#9E9E9E",
 };
 
-const FULFILL_STAGES  = ["ready_to_fulfill"];
-const PROCESS_STAGES  = ["outbound_complete","inspected","offer_made","accepted"];
+const FULFILL_STAGES   = ["ready_to_fulfill"];
+const OUTBOUND_STAGES  = ["outbound_complete"];
+const RECEIVED_STAGES  = ["received","offer_made"];
+const COMPLETE_STAGES  = ["purchased","returned"];
+const OUTBOUND_STAGES = ["outbound_complete"];
 const RECEIVED_STAGES = ["received"];
 const PURCHASED_STAGES = ["purchase_complete"];
 
@@ -438,6 +441,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
           {customer?.phone&&<><a href={`tel:${customer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞 Call</Btn></a><a href={`sms:${customer.phone}`} style={{textDecoration:"none"}}><Btn v="blue" small>💬 Text</Btn></a></>}
           {customer?.email&&<a href={`mailto:${customer.email}`} style={{textDecoration:"none"}}><Btn v="ghost" small>✉ Email</Btn></a>}
+          <Btn v={shipment?.is_urgent==="true"||shipment?.is_urgent===true?"red":"outline"} small onClick={async()=>{const nv=shipment?.is_urgent==="true"||shipment?.is_urgent===true?"false":"true";await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{is_urgent:nv}});onUpdate({...shipment,is_urgent:nv});}}>{shipment?.is_urgent==="true"||shipment?.is_urgent===true?"🚨 Urgent":"⚐ Mark Urgent"}</Btn>
           <Btn v="ghost" small onClick={onClose}>✕</Btn>
         </div>
       </div>
@@ -624,7 +628,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 // PURCHASED TAB
 // ══════════════════════════════════════════════════════════
 
-function PurchasedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
+function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
@@ -634,7 +638,7 @@ function PurchasedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) 
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
 
   const filtered=useMemo(()=>{
-    let list=shipments.filter(s=>s.stage==="purchase_complete");
+    let list=shipments.filter(s=>COMPLETE_STAGES.includes(s.stage));
     if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
@@ -1169,7 +1173,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 // PROCESS TAB
 // ══════════════════════════════════════════════════════════
 
-function ProcessTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
+function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
   const [search,setSearch]=useState("");
   const [stageFilter,setStageFilter]=useState(null);
@@ -1185,7 +1189,7 @@ function ProcessTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
 
   const filtered=useMemo(()=>{
-    let list=shipments.filter(s=>PROCESS_STAGES.includes(s.stage));
+    let list=shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage));
     if(stageFilter) list=list.filter(s=>s.stage===stageFilter);
     if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
@@ -1295,7 +1299,7 @@ function ConvertLeadModal({lead, onSave, onClose}) {
   </div>;
 }
 
-function FollowUpTab({activeCustomerEmails,onCountChange}) {
+function LeadsTab({activeCustomerEmails,onCountChange}) {
   const [leads,setLeads]=useState([]);
   const [loading,setLoading]=useState(false);
   const [selected,setSelected]=useState(null);
@@ -1518,6 +1522,50 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
 // MAIN APP
 // ══════════════════════════════════════════════════════════
 
+
+function UrgentTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
+  const [selected,setSelected]=useState(null);
+  const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
+  const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
+  const filtered=shipments.filter(s=>s.is_urgent==="true"||s.is_urgent===true);
+  const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
+  const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
+  const selectedLogs=useMemo(()=>selectedShipment?(logsByCustomer[selectedShipment.customer_id]||[]):[],[selectedShipment,logsByCustomer]);
+  return <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+    <div style={{width:320,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",overflow:"hidden"}}>
+      <div style={{padding:"12px 16px",borderBottom:`1px solid ${G.border}`,fontSize:12,color:G.muted}}>{filtered.length} urgent {filtered.length===1?"shipment":"shipments"}</div>
+      <div style={{flex:1,overflow:"auto"}}>
+        {filtered.length===0
+          ?<div style={{padding:24,textAlign:"center",color:G.muted,fontSize:13}}>No urgent shipments</div>
+          :filtered.map(s=>{
+            const c=custById[s.customer_id]||{};
+            const isSelected=selected===s.shipment_id;
+            return <div key={s.shipment_id} onClick={()=>setSelected(s.shipment_id)}
+              style={{padding:"12px 16px",borderBottom:`1px solid ${G.border}`,cursor:"pointer",background:isSelected?"#FFF8EE":"#fff",borderLeft:isSelected?`3px solid ${G.red}`:"3px solid transparent"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:G.red,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{(c.name||"?").split(" ").map(w=>w[0]).slice(0,2).join("")}</div>
+                  <div><div style={{fontWeight:600,fontSize:13,color:G.text}}>{c.name||"Unknown"}</div><div style={{fontSize:11,color:G.muted,marginTop:1}}>{s.item||"(no item)"}</div></div>
+                </div>
+                {s.estimate&&<div style={{fontSize:12,fontWeight:700,color:G.gold}}>{s.estimate}</div>}
+              </div>
+              <div style={{display:"flex",gap:6,marginTop:4}}>
+                <span style={{background:SC[s.stage]+"22",color:SC[s.stage],borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{SL[s.stage]||s.stage}</span>
+                <span style={{background:"#FFE8E8",color:G.red,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>🚨 Urgent</span>
+              </div>
+            </div>;
+          })
+        }
+      </div>
+    </div>
+    <div style={{flex:1,overflow:"auto",padding:16}}>
+      {selectedShipment
+        ?<DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={onUpdate} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+        :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:G.muted,fontSize:13}}>Select a shipment to view details</div>
+      }
+    </div>
+  </div>;
+}
 export default function SnappyGoldCRM() {
   const [unlocked,setUnlocked]=useState(false);
   const [customers,setCustomers]=useState([]);
@@ -1564,13 +1612,14 @@ export default function SnappyGoldCRM() {
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"process",label:"Process",color:G.teal},{id:"received",label:"Received",color:G.teal},{id:"followup",label:"Follow Up",color:G.orange},{id:"purchased",label:"Purchased",color:G.green},{id:"customers",label:"Customers",color:G.blue}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"customers",label:"Customers",color:G.blue}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
-  const processCount=shipments.filter(s=>PROCESS_STAGES.includes(s.stage)).length;
-  const receivedCount=shipments.filter(s=>s.stage==="received").length;
-  const purchasedCount=shipments.filter(s=>s.stage==="purchase_complete").length;
+  const outboundCount=shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage)).length;
+  const receivedCount=shipments.filter(s=>RECEIVED_STAGES.includes(s.stage)).length;
+  const completeCount=shipments.filter(s=>COMPLETE_STAGES.includes(s.stage)).length;
+  const urgentCount=shipments.filter(s=>s.is_urgent==="true"||s.is_urgent===true).length;
 
   if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
 
@@ -1588,7 +1637,7 @@ export default function SnappyGoldCRM() {
     {/* Tab bar */}
     <div style={{background:"#fff",borderBottom:`1px solid ${G.border}`,padding:"0 16px",display:"flex",gap:0,flexShrink:0}}>
       {TABS.map(t=>{
-        const count=t.id==="fulfill"?fulfillCount:t.id==="process"?processCount:t.id==="received"?receivedCount:t.id==="followup"?followUpCount:t.id==="purchased"?purchasedCount:t.id==="customers"?customers.length:null;
+        const count=t.id==="fulfill"?fulfillCount:t.id==="outbound"?outboundCount:t.id==="received"?receivedCount:t.id==="complete"?completeCount:t.id==="urgent"?urgentCount:t.id==="leads"?followUpCount:t.id==="customers"?customers.length:null;
         const active=tab===t.id;
         return <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"12px 20px",background:"none",border:"none",borderBottom:active?`3px solid ${t.color}`:"3px solid transparent",color:active?t.color:G.muted,fontWeight:active?700:400,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6,transition:"all 0.15s",fontFamily:"inherit"}}>
           {t.label}
@@ -1599,11 +1648,12 @@ export default function SnappyGoldCRM() {
 
     {/* Tab content */}
     <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-      {tab==="fulfill"&&<FulfillTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="process"&&<ProcessTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="received"&&<ReceivedTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="followup"&&<FollowUpTab activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
-      {tab==="purchased"&&<PurchasedTab shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="fulfill"  &&<FulfillTab   shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="outbound" &&<OutboundTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="received" &&<ReceivedTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="complete" &&<CompleteTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="urgent"   &&<UrgentTab    shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="leads"    &&<LeadsTab     activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
     </div>
   </div>;
