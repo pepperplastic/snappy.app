@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════
 // SNAPPY GOLD CRM v5
@@ -869,26 +868,42 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     }
 
     // Parse XLSX using SheetJS-style manual read — actually just read as text if CSV
-    async function readFile(file) {
+    async function loadXLSX() {
+      if (window.XLSX) return window.XLSX;
       return new Promise((res, rej) => {
-        const reader = new FileReader();
-        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        s.onload = () => res(window.XLSX);
+        s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+
+    async function readFile(file) {
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const XLSX = await loadXLSX();
+        return new Promise((res, rej) => {
+          const reader = new FileReader();
           reader.onload = e => {
             try {
               const data = new Uint8Array(e.target.result);
               const workbook = XLSX.read(data, {type:'array'});
               const sheet = workbook.Sheets[workbook.SheetNames[0]];
               const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
-              res(JSON.stringify(rows)); // pass as JSON string, parseCSV will detect
+              res(JSON.stringify(rows));
             } catch(err) { rej(err); }
           };
+          reader.onerror = rej;
           reader.readAsArrayBuffer(file);
-        } else {
+        });
+      } else {
+        return new Promise((res, rej) => {
+          const reader = new FileReader();
           reader.onload = e => res(e.target.result);
           reader.onerror = rej;
           reader.readAsText(file);
-        }
-      });
+        });
+      }
     }
 
     const updates = []; // {shipment_id, outbound_tracking, return_tracking, stage}
