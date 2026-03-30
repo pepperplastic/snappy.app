@@ -479,6 +479,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Customer</div>
+            <Field label="ID" value={customer?.customer_id}/>
             <Field label="Email" value={customer?.email||<span style={{color:G.muted,fontStyle:"italic"}}>Not available</span>}/>
             <Field label="Phone" value={customer?.phone?fmtPhone(customer.phone):<span style={{color:G.muted,fontStyle:"italic"}}>Not available</span>}/>
             <Field label="Address" value={customer?.address}/>
