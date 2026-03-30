@@ -66,9 +66,6 @@ const FULFILL_STAGES   = ["ready_to_fulfill"];
 const OUTBOUND_STAGES  = ["outbound_complete"];
 const RECEIVED_STAGES  = ["received","offer_made"];
 const COMPLETE_STAGES  = ["purchased","returned"];
-const OUTBOUND_STAGES = ["outbound_complete"];
-const RECEIVED_STAGES = ["received"];
-const PURCHASED_STAGES = ["purchase_complete"];
 
 // ── Helpers ───────────────────────────────────────────────
 function fmt$(n) { return n ? "$" + Number(n).toLocaleString() : "—"; }
@@ -1195,7 +1192,7 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,stageFilter,custById]);
 
-  const counts=useMemo(()=>{const m={};shipments.filter(s=>PROCESS_STAGES.includes(s.stage)).forEach(s=>m[s.stage]=(m[s.stage]||0)+1);return m;},[shipments]);
+  const counts=useMemo(()=>{const m={};shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage)).forEach(s=>m[s.stage]=(m[s.stage]||0)+1);return m;},[shipments]);
 
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
@@ -1216,7 +1213,7 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
           <button onClick={()=>setStageFilter(null)} style={{background:!stageFilter?G.gold:"transparent",color:!stageFilter?"#fff":G.muted,border:`1px solid ${!stageFilter?G.gold:G.border}`,borderRadius:20,padding:"2px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>All {Object.values(counts).reduce((a,b)=>a+b,0)}</button>
-          {PROCESS_STAGES.filter(s=>counts[s]).map(s=><button key={s} onClick={()=>setStageFilter(stageFilter===s?null:s)} style={{background:stageFilter===s?SC[s]+"22":"transparent",color:stageFilter===s?SC[s]:G.muted,border:`1px solid ${stageFilter===s?SC[s]+"66":G.border}`,borderRadius:20,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{SL[s]} {counts[s]}</button>)}
+          {OUTBOUND_STAGES.filter(s=>counts[s]).map(s=><button key={s} onClick={()=>setStageFilter(stageFilter===s?null:s)} style={{background:stageFilter===s?SC[s]+"22":"transparent",color:stageFilter===s?SC[s]:G.muted,border:`1px solid ${stageFilter===s?SC[s]+"66":G.border}`,borderRadius:20,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{SL[s]} {counts[s]}</button>)}
           {selectedIds.size>0&&<button onClick={()=>setBulkModal(true)} style={{marginLeft:"auto",fontSize:10,padding:"2px 10px",borderRadius:4,background:G.gold,color:"#fff",border:"none",cursor:"pointer",fontWeight:700}}>Bulk ({selectedIds.size})</button>}
         </div>
       </div>
