@@ -1002,7 +1002,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     // 3. Email copy doc (all label customers)
     if(allLabelCustomers.length>0){
       setTimeout(()=>{
-        let doc=`LABEL EMAIL GUIDE\n${new Date().toLocaleDateString()}\n${"=".repeat(60)}\n\n`;
+        let doc=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Verdana,sans-serif;font-size:10pt;color:#222;max-width:700px;margin:40px auto;line-height:1.6;}h1{font-size:12pt;border-bottom:1px solid #ccc;padding-bottom:8px;}.entry{border-bottom:1px solid #eee;padding:20px 0;}.label{font-size:9pt;color:#888;font-weight:bold;text-transform:uppercase;margin-bottom:2px;}.value{margin-bottom:10px;}.subject{font-weight:bold;color:#C8953C;}.body-text{white-space:pre-wrap;background:#f9f9f9;padding:12px;border-radius:4px;border:1px solid #eee;}</style></head><body><h1>Label Email Guide — ${new Date().toLocaleDateString()}</h1>`;
         allLabelCustomers.forEach((s,i)=>{
           const c=custById[s.customer_id]||{};
           const firstName=(c.name||"").trim().split(" ")[0]||"there";
@@ -1018,13 +1018,14 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
           doc+=`Hi ${firstName},\n\n`;
           doc+=`Your prepaid ${carrierName} return label is attached to this email.\n\n`;
           doc+=`Just print the label, pack ${item} in any sturdy box or padded envelope, attach it, and ${dropText} — completely free.\n\n`;
-          doc+=`Feel free to include any other pieces you'd like me to look at while I have it — no extra charge. I'll evaluate everything within two business days and reach out with a firm offer. Don't like the number? I send it all back at no cost.\n\n`;
+          doc+=`Feel free to include any other pieces you'd like me to look at while I have it. I'll evaluate everything within two business days and reach out with a firm offer. Don't like the number? I send it all back at no cost.\n\n`;
           doc+=`Any questions, just reply here or call/text me at 866-613-0704.\n\n`;
           doc+=`David\nSnappy Gold\n\n`;
-          doc+="─".repeat(60)+"\n\n";
+          doc+="-".repeat(60)+"\n\n";
         });
-        const blob=new Blob([doc],{type:"text/plain"});
-        const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${today}_label_email_copy.txt`; a.click();
+        doc+='</body></html>';
+        const blob=new Blob([doc],{type:"text/html"});
+        const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${today}_label_email_copy.html`; a.click();
       }, 1000);
     }
 
