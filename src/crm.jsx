@@ -377,7 +377,16 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     setPhotos([]);
     setPhotosLoading(true);
     apiFetch({action:"getPhotos",shipment_id:shipment.shipment_id})
-      .then(res=>{ setPhotos(Array.isArray(res)?res:[]); setPhotosLoading(false); })
+      .then(res=>{
+        let photoList = Array.isArray(res) ? res : [];
+        // Also check notes field for photo URLs (newer shipments before Photos tab backfill)
+        const notesPhotoMatch = String(shipment.notes||'').match(/photo:\s*(https:\/\/drive\.google\.com\/[^\s|]+)/);
+        if (notesPhotoMatch && !photoList.find(p=>p.drive_url===notesPhotoMatch[1])) {
+          photoList = [...photoList, {drive_url: notesPhotoMatch[1], source: 'notes'}];
+        }
+        setPhotos(photoList);
+        setPhotosLoading(false);
+      })
       .catch(()=>setPhotosLoading(false));
   },[shipment?.shipment_id]);
 
@@ -469,7 +478,8 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Customer</div>
-            <Field label="Phone" value={fmtPhone(customer?.phone)}/>
+            <Field label="Email" value={customer?.email||<span style={{color:G.muted,fontStyle:"italic"}}>Not available</span>}/>
+            <Field label="Phone" value={customer?.phone?fmtPhone(customer.phone):<span style={{color:G.muted,fontStyle:"italic"}}>Not available</span>}/>
             <Field label="Address" value={customer?.address}/>
             <Field label="Source" value={customer?.source}/>
             {customer?.notes&&<Field label="Notes" value={customer.notes}/>}
