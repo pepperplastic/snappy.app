@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════
 // SNAPPY GOLD CRM v5
@@ -824,7 +825,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     const nameToCustId = {};
     customers.forEach(c => {
       if (c.email) emailToCustId[c.email.toLowerCase().trim()] = c.customer_id;
-      if (c.name) nameToCustId[c.name.toLowerCase().trim().replace(/\s+/g,' ')] = c.customer_id;
+      if (c.name) nameToCustId[c.name.toLowerCase().trim().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'')] = c.customer_id;
     });
 
     // Get ready_to_fulfill shipments, index by customer_id
@@ -837,9 +838,14 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
     // Parse CSV text
     function parseCSV(text) {
+      // Handle XLSX-parsed JSON
+      if (text.trim().startsWith('[')) {
+        try { return JSON.parse(text); } catch(e) {}
+      }
+      // Handle CSV text
       const lines = text.trim().split('\n');
       const headers = lines[0].split(',').map(h => h.replace(/"/g,'').trim());
-      return lines.slice(1).map(line => {
+      return lines.slice(1).filter(l=>l.trim()).map(line => {
         const vals = []; let cur = ''; let inQ = false;
         for (let ch of line) {
           if (ch === '"') inQ = !inQ;
@@ -848,7 +854,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         }
         vals.push(cur.trim());
         const obj = {};
-        headers.forEach((h,i) => obj[h] = vals[i] || '');
+        headers.forEach((h,i) => obj[h] = (vals[i]||'').replace(/^"|"$/g,''));
         return obj;
       });
     }
@@ -857,12 +863,20 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     async function readFile(file) {
       return new Promise((res, rej) => {
         const reader = new FileReader();
-        reader.onload = e => res(e.target.result);
-        reader.onerror = rej;
-        if (file.name.endsWith('.xlsx')) {
-          // Read as binary for xlsx - we'll use a simple approach
-          reader.readAsText(file); // fallback - most exports can be read as csv if saved as csv
+        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+          reader.onload = e => {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, {type:'array'});
+              const sheet = workbook.Sheets[workbook.SheetNames[0]];
+              const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+              res(JSON.stringify(rows)); // pass as JSON string, parseCSV will detect
+            } catch(err) { rej(err); }
+          };
+          reader.readAsArrayBuffer(file);
         } else {
+          reader.onload = e => res(e.target.result);
+          reader.onerror = rej;
           reader.readAsText(file);
         }
       });
@@ -895,10 +909,25 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         const text = await readFile(fedexFile);
         const rows = parseCSV(text);
         rows.forEach(r => {
-          const name = (r['senderContactName'] || '').toLowerCase().trim().replace(/\s+/g,' ');
+          const name = (r['senderContactName'] || '').toLowerCase().trim().replace(/\s+/g,' ').replace(/[^a-z0-9 ]/g,'');
           const tracking = (r['masterTrackingNumber'] || r['returnTrackingId'] || '').trim();
           if (!name || !tracking) return;
-          const custId = nameToCustId[name];
+          // Try full name match first, then first+last word match
+          let custId = nameToCustId[name];
+          if (!custId) {
+            // Try matching just first and last word (handles middle names/initials)
+            const nameParts = name.split(' ').filter(Boolean);
+            if (nameParts.length >= 2) {
+              const shortName = nameParts[0] + ' ' + nameParts[nameParts.length-1];
+              custId = Object.keys(nameToCustId).find(k => {
+                const kParts = k.split(' ').filter(Boolean);
+                return kParts[0] === nameParts[0] && kParts[kParts.length-1] === nameParts[nameParts.length-1];
+              }) ? nameToCustId[Object.keys(nameToCustId).find(k => {
+                const kParts = k.split(' ').filter(Boolean);
+                return kParts[0] === nameParts[0] && kParts[kParts.length-1] === nameParts[nameParts.length-1];
+              })] : null;
+            }
+          }
           if (!custId) { results.unmatched.push({source:'FedEx', name, reason:'No customer found'}); return; }
           // Find shipment - prefer rtf, fall back to outbound_complete
           const ship = rtfByCustomer[custId] || outboundCompleteByCustomer[custId];
@@ -1017,7 +1046,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
           doc+=`SUBJECT: Your prepaid ${carrierName} label is ready, ${firstName}\n\n`;
           doc+=`Hi ${firstName},\n\n`;
           doc+=`Your prepaid ${carrierName} return label is attached to this email.\n\n`;
-          doc+=`Just print the label, pack ${item} in any sturdy box or padded envelope, attach it, and ${dropText} — completely free.\n\n`;
+          doc+=`Just print the label, pack your ${item} in any sturdy box or padded envelope, attach it, and ${dropText} — completely free.\n\n`;
           doc+=`Feel free to include any other pieces you'd like me to look at while I have it. I'll evaluate everything within two business days and reach out with a firm offer. Don't like the number? I send it all back at no cost.\n\n`;
           doc+=`Any questions, just reply here or call/text me at 866-613-0704.\n\n`;
           doc+=`David\nSnappy Gold\n\n`;
