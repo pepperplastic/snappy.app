@@ -941,7 +941,11 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
     function parseAddr(addr){
       const parts=String(addr||"").split(",").map(x=>x.trim());
-      return {line1:parts[0]||"",city:parts[1]||"",state:(parts[2]||"").replace(/\d/g,"").trim(),zip:(parts[2]||"").replace(/\D/g,"").trim()||parts[3]||""};
+      // Try to extract state and zip from last parts
+      let line1=parts[0]||"", city=parts[1]||"", state="", zip="";
+      const stateZip=(parts[2]||"").trim().split(/\s+/);
+      state=stateZip[0]||""; zip=stateZip[1]||parts[3]||"";
+      return {line1, city, state, zip};
     }
 
     function fedexCSV(list){
@@ -950,16 +954,27 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       list.forEach(s=>{
         const c=custById[s.customer_id]||{};
         const a=parseAddr(c.address);
+        const phone=String(c.phone||"").replace(/\D/g,"")||SNAPPY_PHONE;
         rows.push([
           "FEDEX_GROUND","STANDALONE_RETURN",
-          c.name||"Unknown",
-          String(c.phone||"").replace(/\D/g,"")||SNAPPY_PHONE,
+          c.name||"Unknown", phone,
           a.line1, a.zip, a.city, a.state, "US", "Y",
           SNAPPY_NAME, SNAPPY_PHONE,
           SNAPPY_ADDR, SNAPPY_ZIP, SNAPPY_CITY, SNAPPY_STATE, "US",
-          SNAPPY_EMAIL,
-          "1","1","LBS","YOUR_PACKAGING","USD"
+          SNAPPY_EMAIL, "1","1","LBS","YOUR_PACKAGING","USD"
         ]);
+      });
+      return rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    }
+
+    function pirateshipCSV(list){
+      const headers=["Name","Company","Address1","Address2","City","State","Zip","Country","Email","Phone","Weight","Length","Width","Height","Reference1","Reference2"];
+      const rows=[headers];
+      list.forEach(s=>{
+        const c=custById[s.customer_id]||{};
+        const a=parseAddr(c.address);
+        const phone=String(c.phone||"").replace(/\D/g,"");
+        rows.push([c.name||"","",a.line1,"",a.city,a.state,a.zip,"US",c.email||"",phone,"1","9","6","2",s.shipment_id,s.customer_id]);
       });
       return rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     }
@@ -969,52 +984,51 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
     }
 
-    // 1. Pirateship CSV (kit outbound USPS labels)
-    if(kits.length>0){
-      const headers=["Name","Company","Address1","Address2","City","State","Zip","Country","Email","Phone","Weight","Length","Width","Height","Reference1","Reference2"];
-      const rows=[headers];
-      kits.forEach(s=>{
-        const c=custById[s.customer_id]||{};
-        const a=parseAddr(c.address);
-        rows.push([c.name||"",""  ,a.line1,"",a.city,a.state,a.zip,"US",c.email||"",String(c.phone||"").replace(/\D/g,""),"1","9","6","2",s.shipment_id,s.customer_id]);
-      });
-      downloadCSV(`pirateship_outbound_${today}.csv`, rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n"));
+    const fedexCustomers=filtered.filter(s=>s.shipping_type==="label");
+    const uspsCustomers=filtered.filter(s=>s.shipping_type==="usps");
+    const allLabelCustomers=[...fedexCustomers,...uspsCustomers];
+
+    // 1. FedEx return labels CSV
+    if(fedexCustomers.length>0){
+      downloadCSV(`${today}_fedex_labels.csv`, fedexCSV(fedexCustomers));
     }
 
-    // 2. FedEx inbound CSV (return labels for kit customers - go inside kits)
-    if(kits.length>0){
-      setTimeout(()=>downloadCSV(`${today}_fedex_inbound_kits.csv`, fedexCSV(kits)), 500);
+    // 2. Pirateship USPS return labels CSV
+    if(uspsCustomers.length>0){
+      setTimeout(()=>downloadCSV(`${today}_pirateship_usps_labels.csv`, pirateshipCSV(uspsCustomers)), 500);
     }
 
-    // 3. FedEx label-only CSV (return labels for label customers - email to them)
-    if(labels.length>0){
-      setTimeout(()=>downloadCSV(`${today}_fedex_labels_only.csv`, fedexCSV(labels)), 1000);
-    }
-
-    // 4. Word doc (email copy for label customers)
-    if(labels.length>0){
+    // 3. Email copy doc (all label customers)
+    if(allLabelCustomers.length>0){
       setTimeout(()=>{
-        let doc="LABEL EMAIL GUIDE\n"+new Date().toLocaleDateString()+"\n"+"=".repeat(60)+"\n\n";
-        labels.forEach((s,i)=>{
+        let doc=`LABEL EMAIL GUIDE\n${new Date().toLocaleDateString()}\n${"=".repeat(60)}\n\n`;
+        allLabelCustomers.forEach((s,i)=>{
           const c=custById[s.customer_id]||{};
           const firstName=(c.name||"").trim().split(" ")[0]||"there";
           const item=s.item||"your item";
-          doc+=`[${i+1}] ${s.shipment_id} | ${s.customer_id}\n`;
+          const isFedex=s.shipping_type==="label";
+          const carrierName=isFedex?"FedEx":"USPS";
+          const dropText=isFedex?"drop it at any FedEx location":"hand it to your postman or drop it at any post office";
+          doc+=`[${i+1}] ${s.shipment_id} | ${s.customer_id} | ${carrierName}\n`;
           doc+=`TO: ${c.email||""}\n`;
           doc+=`NAME: ${c.name||""}  |  PHONE: ${fmtPhone(c.phone)}\n`;
           doc+=`ITEM: ${item}\n\n`;
-          doc+=`SUBJECT: Your prepaid FedEx label is ready, ${firstName}\n\n`;
+          doc+=`SUBJECT: Your prepaid ${carrierName} label is ready, ${firstName}\n\n`;
           doc+=`Hi ${firstName},\n\n`;
-          doc+=`Your prepaid FedEx return label is attached to this email.\n\n`;
-          doc+=`Just pack your ${item} in any sturdy box or padded envelope, attach the label, and drop it off at any FedEx location — completely free on our end.\n\n`;
-          doc+=`Feel free to throw in any other pieces you'd like me to look at while I have it — no extra charge. I'll evaluate everything within two business days and reach out with a firm offer. Don't like the number? I send it all back at no cost to you.\n\n`;
+          doc+=`Your prepaid ${carrierName} return label is attached to this email.\n\n`;
+          doc+=`Just print the label, pack ${item} in any sturdy box or padded envelope, attach it, and ${dropText} — completely free.\n\n`;
+          doc+=`Feel free to include any other pieces you'd like me to look at while I have it — no extra charge. I'll evaluate everything within two business days and reach out with a firm offer. Don't like the number? I send it all back at no cost.\n\n`;
           doc+=`Any questions, just reply here or call/text me at 866-613-0704.\n\n`;
           doc+=`David\nSnappy Gold\n\n`;
           doc+="─".repeat(60)+"\n\n";
         });
         const blob=new Blob([doc],{type:"text/plain"});
         const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${today}_label_email_copy.txt`; a.click();
-      }, 1500);
+      }, 1000);
+    }
+
+    if(allLabelCustomers.length===0){
+      alert("No label shipments in the fulfill queue.");
     }
   }
 
