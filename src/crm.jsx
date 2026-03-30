@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════
 // SNAPPY GOLD CRM v5
@@ -773,6 +772,15 @@ function UploadModal({onProcess, onClose, results, uploading}) {
               <div style={{fontSize:12,fontWeight:700,color:G.red,marginBottom:8}}>✗ Errors</div>
               {results.errors.map((e,i)=><div key={i} style={{fontSize:11,color:G.red}}>{e}</div>)}
             </div>}
+          {results.debug&&<div style={{background:"#F5F5F5",borderRadius:8,padding:14,border:"1px solid #ddd",marginTop:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#666",marginBottom:6}}>Debug Info</div>
+              <div style={{fontSize:11,color:"#555",fontFamily:"monospace"}}>
+                Customers loaded: {results.debug.customersLoaded}<br/>
+                Shipments loaded: {results.debug.shipmentsLoaded}<br/>
+                RTF shipments: {results.debug.rtfCount}<br/>
+                Name map sample: {results.debug.nameMapSample.join(', ')}
+              </div>
+            </div>}
           </div>
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:20}}>
             <Btn v="gold" onClick={onClose}>Done</Btn>
@@ -860,26 +868,42 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     }
 
     // Parse XLSX using SheetJS-style manual read — actually just read as text if CSV
-    async function readFile(file) {
+    async function loadXLSX() {
+      if (window.XLSX) return window.XLSX;
       return new Promise((res, rej) => {
-        const reader = new FileReader();
-        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+        s.onload = () => res(window.XLSX);
+        s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+
+    async function readFile(file) {
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const XLSX = await loadXLSX();
+        return new Promise((res, rej) => {
+          const reader = new FileReader();
           reader.onload = e => {
             try {
               const data = new Uint8Array(e.target.result);
               const workbook = XLSX.read(data, {type:'array'});
               const sheet = workbook.Sheets[workbook.SheetNames[0]];
               const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
-              res(JSON.stringify(rows)); // pass as JSON string, parseCSV will detect
+              res(JSON.stringify(rows));
             } catch(err) { rej(err); }
           };
+          reader.onerror = rej;
           reader.readAsArrayBuffer(file);
-        } else {
+        });
+      } else {
+        return new Promise((res, rej) => {
+          const reader = new FileReader();
           reader.onload = e => res(e.target.result);
           reader.onerror = rej;
           reader.readAsText(file);
-        }
-      });
+        });
+      }
     }
 
     const updates = []; // {shipment_id, outbound_tracking, return_tracking, stage}
@@ -955,6 +979,13 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       } catch(e) { results.errors.push('Save error for ' + u.shipment_id + ': ' + e.message); }
     }
 
+    // Add debug info
+    results.debug = {
+      customersLoaded: customers.length,
+      shipmentsLoaded: shipments.length,
+      rtfCount: Object.keys(rtfByCustomer).length,
+      nameMapSample: Object.keys(nameToCustId).slice(0,5),
+    };
     setUploadResults(results);
     setUploading(false);
   }
