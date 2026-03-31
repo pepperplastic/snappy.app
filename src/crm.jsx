@@ -31,7 +31,7 @@ const G = {
 const STAGES = [
   "estimate_only", "ready_to_fulfill", "outbound_complete",
   "received", "inspected", "offer_made",
-  "dead"
+  "purchased", "returned", "dead"
 ];
 
 const SL = {
@@ -58,13 +58,15 @@ const SC = {
   accepted:          "#2E7D32",
   rejected:          "#B71C1C",
   
+  purchased:         "#1B5E20",
+  returned:          "#546E7A",
   return_complete:   "#546E7A",
   dead:              "#9E9E9E",
 };
 
 const FULFILL_STAGES   = ["ready_to_fulfill"];
 const OUTBOUND_STAGES  = ["outbound_complete"];
-const RECEIVED_STAGES  = ["received","offer_made"];
+const RECEIVED_STAGES  = ["received","inspected","offer_made"];
 const COMPLETE_STAGES  = ["purchased","returned"];
 
 // ── Helpers ───────────────────────────────────────────────
@@ -372,6 +374,9 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   const [photos,setPhotos]=useState([]);
   const [photosLoading,setPhotosLoading]=useState(false);
 
+  // Sync localLogs when contactLogs prop changes (different customer selected)
+  useEffect(()=>{ setLocalLogs(contactLogs||[]); },[contactLogs]);
+
   useEffect(()=>{
     if(!shipment) return;
     setPhotos([]);
@@ -403,7 +408,6 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       case "outbound_complete": return [{label:"→ Received",v:"green",stage:"received"},{label:"Log Contact",v:"blue",action:"log"}];
       case "received": return [{label:"→ Inspected",v:"green",stage:"inspected"}];
       case "inspected": return [{label:"→ Offer Made",v:"orange",stage:"offer_made"}];
-      case "offer_made": return [{label:"→ Accepted",v:"green",stage:"accepted"},{label:"→ Rejected",v:"danger",stage:"rejected"}];
       case "offer_made": return [{label:"→ Purchased",v:"green",stage:"purchased"},{label:"→ Returned",v:"outline",stage:"returned"}];
       default: return [];
     }
@@ -547,7 +551,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
 
   const filtered=useMemo(()=>{
-    let list=shipments.filter(s=>s.stage==="received");
+    let list=shipments.filter(s=>RECEIVED_STAGES.includes(s.stage));
     if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
