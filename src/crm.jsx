@@ -1836,6 +1836,17 @@ export default function SnappyGoldCRM() {
   const [lastLoaded,setLastLoaded]=useState(null);
   const [error,setError]=useState(null);
   const [tab,setTab]=useState("fulfill");
+  const [tsFlash,setTsFlash]=useState(false);
+
+  // Auto-refresh every 5 minutes when tab is visible
+  useEffect(()=>{
+    const interval = setInterval(()=>{
+      if(!document.hidden) {
+        loadData(true).then(()=>{ setTsFlash(true); setTimeout(()=>setTsFlash(false), 1200); });
+      }
+    }, 5 * 60 * 1000);
+    return ()=>clearInterval(interval);
+  },[]);
 
   async function loadData(force=false){
     if(!force){const cache=getCache();if(cache){setCustomers(cache.customers||[]);setShipments(cache.shipments||[]);setContactLogs(cache.contactLogs||[]);setLastLoaded(cache._ts);return;}}
@@ -1891,7 +1902,7 @@ export default function SnappyGoldCRM() {
       <div style={{color:G.muted,fontSize:11,flexShrink:0}}>CRM v5</div>
       <div style={{flex:1}}/>
       {error&&<div style={{color:G.red,fontSize:11}}>{error}</div>}
-      {lastLoaded&&<div style={{color:G.muted,fontSize:11}}>Loaded {new Date(lastLoaded).toLocaleTimeString()}</div>}
+      {lastLoaded&&<div style={{color:tsFlash?G.gold:G.muted,fontSize:11,fontWeight:tsFlash?700:400,transition:"color 0.3s, font-weight 0.3s"}}>Loaded {new Date(lastLoaded).toLocaleTimeString()}</div>}
       <button onClick={()=>loadData(true)} disabled={loading} style={{background:"transparent",color:G.muted,border:`1px solid #444`,borderRadius:6,padding:"4px 12px",fontSize:11,fontWeight:600,cursor:loading?"not-allowed":"pointer"}}>{loading?"Loading…":"⟳ Refresh"}</button>
     </div>
 
