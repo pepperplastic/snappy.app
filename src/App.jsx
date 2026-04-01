@@ -562,21 +562,21 @@ Step 2: Look up per-gram value from list above (e.g. GOLD_14K_PER_GRAM)
 Step 3: Estimate weight range (e.g. 35-50g)
 Step 4: Compute LOW melt = low weight × per-gram (e.g. 35 × GOLD_14K_PER_GRAM)
 Step 5: Compute HIGH melt = high weight × per-gram (e.g. 50 × GOLD_14K_PER_GRAM)
-Step 6: Your offer_low MUST be >= Step 4 result. Your offer_high MUST be >= Step 5 result.
-Step 7: Add any brand/design/collectible premium ON TOP of melt value.
+Step 6: Your offer_low = Step 4 × 0.70. Your offer_high = Step 5 × 0.75. We are a secondary buyer — we cannot pay full melt value.
+Step 7: Add any brand/design/collectible premium ON TOP of Step 6 values only.
 
 WORKED EXAMPLE (at $5,000/oz gold, 14K per-gram = ~$93.73):
 - Item: 14K gold chain, estimated 35-50g
-- Low melt: 35 × $93.73 = $3,280
-- High melt: 50 × $93.73 = $4,687
-- Offer: $3,300 - $4,700 (melt floor, no premium needed for generic chain)
-- WITH premium (branded/collectible): $3,500 - $5,000+
+- Low melt: 35 × $93.73 = $3,280 → offer_low = $3,280 × 0.70 = $2,296 → round to $2,300
+- High melt: 50 × $93.73 = $4,687 → offer_high = $4,687 × 0.75 = $3,515 → round to $3,500
+- Offer: $2,300 - $3,500
+- WITH premium (branded/collectible): add 10-15% on top
 
 SANITY CHECK — MANDATORY BEFORE RESPONDING:
-- If your offer for a 14K gold item is less than GOLD_14K_PER_GRAM × your low weight estimate, YOUR MATH IS WRONG. Redo it.
-- A 35g 14K gold item at current spot is ALWAYS worth over $3,000. If your offer is under $2,000 for anything over 30g of 14K gold, you have made an error.
-- For silver bullion bars/coins: offer should be 85-95% of spot × weight in troy ounces
-- NEVER offer below melt value. That is the absolute floor.
+- Your offer_low must be approximately 70% of (low weight × per-gram). If it equals the full melt value, you have made an error.
+- Your offer_high must be approximately 75% of (high weight × per-gram).
+- For silver bullion bars/coins: offer should be 70-80% of spot × weight in troy ounces
+- NEVER reference "melt value" in your offer_notes — say "based on gold weight and current market" instead.
 
 WEIGHT ESTIMATION — MANDATORY DECISION TREE (you MUST follow this exactly):
 
@@ -2116,29 +2116,31 @@ function EditableDetail({ label, value, onChange, itemType }) {
   }
 
   return (
-    <div style={{ ...styles.detailRow, ...(isHighlight ? styles.weightRow : {}) }}>
-      <span style={styles.detailLabel}>
-        {label}
-        {isHighlight && (
-          <span
-            style={styles.weightInfoIcon}
-            onMouseEnter={() => setShowTooltip(true)}
-            onMouseLeave={() => setShowTooltip(false)}
-            onClick={() => setShowTooltip(!showTooltip)}
-          >
-            ⓘ
-            {tooltip}
-          </span>
-        )}
-      </span>
-      <span style={styles.detailValueWrap}>
-        <span style={{ ...styles.detailValue, cursor: 'pointer', ...(isHighlight ? styles.weightValue : {}) }} onClick={() => setEditing(true)}>{value}</span>
-        <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
-          <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}>✏️</span>
-        </button>
-      </span>
+    <div style={{ padding: '8px 0', borderBottom: 'none' }}>
+      <div style={{ ...styles.detailRow, ...(isHighlight ? styles.weightRow : {}), padding: 0, borderBottom: 'none' }}>
+        <span style={styles.detailLabel}>
+          {label}
+          {isHighlight && (
+            <span
+              style={styles.weightInfoIcon}
+              onMouseEnter={() => setShowTooltip(true)}
+              onMouseLeave={() => setShowTooltip(false)}
+              onClick={() => setShowTooltip(!showTooltip)}
+            >
+              ⓘ
+              {tooltip}
+            </span>
+          )}
+        </span>
+        <span style={styles.detailValueWrap}>
+          <span style={{ ...styles.detailValue, cursor: 'pointer', ...(isHighlight ? styles.weightValue : {}) }} onClick={() => setEditing(true)}>{value}</span>
+          <button onClick={() => setEditing(true)} style={styles.pencilBtn} title="Edit">
+            <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}>✏️</span>
+          </button>
+        </span>
+      </div>
       {isJewelryMaterial && (
-        <div style={{ width: '100%', fontSize: 11, color: '#8B7D70', marginTop: 4, fontStyle: 'italic', paddingLeft: 2 }}>
+        <div style={{ fontSize: 11, color: '#8B7D70', marginTop: 3, textAlign: 'right', paddingRight: 2 }}>
           Estimate assumes this material. If incorrect, tap ✏️ to update.
         </div>
       )}
