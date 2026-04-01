@@ -1575,6 +1575,252 @@ function UrgentTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     </div>
   </div>;
 }
+
+// ══════════════════════════════════════════════════════════
+// ANALYTICS TAB
+// ══════════════════════════════════════════════════════════
+
+const ANALYTICS_STORAGE_KEY = "sg_analytics_settings";
+
+function loadAnalyticsSettings() {
+  try { return JSON.parse(localStorage.getItem(ANALYTICS_STORAGE_KEY)||"{}"); } catch { return {}; }
+}
+function saveAnalyticsSettings(s) {
+  try { localStorage.setItem(ANALYTICS_STORAGE_KEY, JSON.stringify(s)); } catch {}
+}
+
+function AnalyticsTab({shipments, customers}) {
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate()-30);
+  const fmt$ = n => n!=null&&n!==""&&!isNaN(Number(n)) ? "$"+Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
+  const fmtN = n => n!=null&&n!==""&&!isNaN(Number(n)) ? Number(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}) : "—";
+
+  // Date range state
+  const [range, setRange] = useState("all"); // "all" | "30d" | "custom"
+  const [customFrom, setCustomFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate()-30);
+    return d.toISOString().slice(0,10);
+  });
+  const [customTo, setCustomTo] = useState(() => new Date().toISOString().slice(0,10));
+
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false);
+  const saved = loadAnalyticsSettings();
+  const [inboundCost, setInboundCost] = useState(saved.inboundCost ?? 14);
+  const [outboundCost, setOutboundCost] = useState(saved.outboundCost ?? 7);
+  const [adSpendEntries, setAdSpendEntries] = useState(saved.adSpendEntries || []); // [{month:"2026-03", amount:1800}]
+  const [adSpendInput, setAdSpendInput] = useState({month: new Date().toISOString().slice(0,7), amount:""});
+
+  function saveSettings(updates={}) {
+    const s = { inboundCost, outboundCost, adSpendEntries, ...updates };
+    saveAnalyticsSettings(s);
+  }
+
+  // Filter shipments by date range
+  const filtered = useMemo(() => {
+    if (range === "all") return shipments;
+    const from = range === "30d" ? thirtyDaysAgo : new Date(customFrom+"T00:00:00");
+    const to   = range === "custom" ? new Date(customTo+"T23:59:59") : today;
+    return shipments.filter(s => {
+      const d = new Date(s.created_at);
+      return d >= from && d <= to;
+    });
+  }, [shipments, range, customFrom, customTo]);
+
+  // Compute metrics
+  const metrics = useMemo(() => {
+    const purchased  = filtered.filter(s => s.stage === "purchased");
+    const returned   = filtered.filter(s => s.stage === "returned");
+    const received   = filtered.filter(s => ["received","inspected","offer_made"].includes(s.stage));
+    const outbound   = filtered.filter(s => s.stage === "outbound_complete");
+    const kits       = filtered.filter(s => s.stage === "outbound_complete" && s.shipping_type === "kit");
+
+    const revenue    = purchased.reduce((sum,s) => sum + (parseFloat(s.appraised_value)||0), 0);
+    const projectedOutbound = outbound.reduce((sum,s) => {
+      const parts = String(s.estimate||"").replace(/[$,]/g,"").split(/[–\-]/).map(p=>parseFloat(p.trim())).filter(n=>!isNaN(n));
+      return sum + (parts.length ? Math.max(...parts) : 0);
+    }, 0);
+    const projectedReceived = received.reduce((sum,s) => {
+      const parts = String(s.estimate||"").replace(/[$,]/g,"").split(/[–\-]/).map(p=>parseFloat(p.trim())).filter(n=>!isNaN(n));
+      return sum + (parts.length ? Math.max(...parts) : 0);
+    }, 0);
+    const purchaseCosts = purchased.reduce((sum,s) => sum + (parseFloat(s.purchase_price)||0), 0);
+    const inboundTotal  = (purchased.length + returned.length + received.length) * Number(inboundCost);
+    const outboundTotal = kits.length * Number(outboundCost);
+
+    // Ad spend for range
+    let adSpend = 0;
+    if (range === "all") {
+      adSpend = adSpendEntries.reduce((sum,e) => sum + (parseFloat(e.amount)||0), 0);
+    } else {
+      const from = range === "30d" ? thirtyDaysAgo : new Date(customFrom+"T00:00:00");
+      const to   = range === "custom" ? new Date(customTo+"T23:59:59") : today;
+      adSpend = adSpendEntries.filter(e => {
+        const d = new Date(e.month+"-01");
+        return d >= new Date(from.getFullYear(), from.getMonth(), 1) &&
+               d <= new Date(to.getFullYear(), to.getMonth(), 1);
+      }).reduce((sum,e) => sum + (parseFloat(e.amount)||0), 0);
+    }
+
+    const totalCosts = purchaseCosts + inboundTotal + outboundTotal + adSpend;
+    const grossProfit = revenue - purchaseCosts - inboundTotal - outboundTotal;
+    const netProfit   = grossProfit - adSpend;
+
+    // Stage counts
+    const stageCounts = {};
+    filtered.forEach(s => { stageCounts[s.stage] = (stageCounts[s.stage]||0)+1; });
+
+    return { revenue, projectedOutbound, projectedReceived, purchaseCosts, inboundTotal, outboundTotal, adSpend, totalCosts, grossProfit, netProfit, stageCounts,
+      purchasedCount: purchased.length, returnedCount: returned.length, receivedCount: received.length,
+      outboundCount: outbound.length, kitsCount: kits.length };
+  }, [filtered, inboundCost, outboundCost, adSpendEntries]);
+
+  // KPI card component
+  function KPI({label, value, sub, color, big}) {
+    return <div style={{background:"#fff",borderRadius:10,padding:"16px 20px",border:`1px solid ${G.border}`,flex:1,minWidth:140}}>
+      <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>{label}</div>
+      <div style={{fontSize:big?28:22,fontWeight:700,color:color||G.text,fontFamily:"monospace"}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:G.muted,marginTop:4}}>{sub}</div>}
+    </div>;
+  }
+
+  // Pipeline bar chart
+  const PIPELINE_STAGES = [
+    {key:"ready_to_fulfill", label:"Fulfill"},
+    {key:"outbound_complete", label:"Outbound"},
+    {key:"received", label:"Received"},
+    {key:"inspected", label:"Inspected"},
+    {key:"offer_made", label:"Offer Made"},
+    {key:"purchased", label:"Purchased"},
+    {key:"returned", label:"Returned"},
+    {key:"dead", label:"Dead"},
+  ];
+  const maxCount = Math.max(...PIPELINE_STAGES.map(s => metrics.stageCounts[s.key]||0), 1);
+
+  return <div style={{flex:1,overflow:"auto",padding:20,display:"flex",flexDirection:"column",gap:20}}>
+
+    {/* Date range selector */}
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <div style={{fontSize:13,fontWeight:700,color:G.text}}>Period:</div>
+      {[["all","All Time"],["30d","Last 30 Days"],["custom","Custom"]].map(([v,l])=>
+        <button key={v} onClick={()=>setRange(v)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+          background:range===v?G.gold:"transparent",color:range===v?"#fff":G.muted,
+          border:`1px solid ${range===v?G.gold:G.border}`}}>{l}</button>
+      )}
+      {range==="custom"&&<>
+        <input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${G.border}`,fontSize:12}}/>
+        <span style={{fontSize:12,color:G.muted}}>to</span>
+        <input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} style={{padding:"4px 8px",borderRadius:6,border:`1px solid ${G.border}`,fontSize:12}}/>
+      </>}
+      <div style={{flex:1}}/>
+      <button onClick={()=>setShowSettings(s=>!s)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+        background:showSettings?G.dark:"transparent",color:showSettings?"#fff":G.muted,border:`1px solid ${showSettings?G.dark:G.border}`}}>
+        ⚙ Settings
+      </button>
+    </div>
+
+    {/* Settings panel */}
+    {showSettings&&<div style={{background:"#fff",borderRadius:10,padding:20,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{fontSize:12,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Cost Settings</div>
+      <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:11,color:G.muted,marginBottom:4}}>Inbound shipping cost per package ($)</div>
+          <input type="number" value={inboundCost} onChange={e=>setInboundCost(e.target.value)}
+            onBlur={()=>saveSettings({inboundCost})}
+            style={{width:100,padding:"6px 10px",borderRadius:6,border:`1px solid ${G.border}`,fontSize:14,fontWeight:700}}/>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:G.muted,marginBottom:4}}>Outbound kit shipping cost ($)</div>
+          <input type="number" value={outboundCost} onChange={e=>setOutboundCost(e.target.value)}
+            onBlur={()=>saveSettings({outboundCost})}
+            style={{width:100,padding:"6px 10px",borderRadius:6,border:`1px solid ${G.border}`,fontSize:14,fontWeight:700}}/>
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:12,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>Ad Spend by Month</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+          <input type="month" value={adSpendInput.month} onChange={e=>setAdSpendInput(p=>({...p,month:e.target.value}))}
+            style={{padding:"5px 8px",borderRadius:6,border:`1px solid ${G.border}`,fontSize:12}}/>
+          <span style={{fontSize:12,color:G.muted}}>$</span>
+          <input type="number" value={adSpendInput.amount} onChange={e=>setAdSpendInput(p=>({...p,amount:e.target.value}))}
+            placeholder="e.g. 1800" style={{width:100,padding:"5px 8px",borderRadius:6,border:`1px solid ${G.border}`,fontSize:12}}/>
+          <button onClick={()=>{
+            if(!adSpendInput.amount) return;
+            const updated = [...adSpendEntries.filter(e=>e.month!==adSpendInput.month), {month:adSpendInput.month, amount:parseFloat(adSpendInput.amount)}]
+              .sort((a,b)=>a.month.localeCompare(b.month));
+            setAdSpendEntries(updated); saveSettings({adSpendEntries:updated});
+            setAdSpendInput(p=>({...p,amount:""}));
+          }} style={{padding:"5px 14px",borderRadius:6,background:G.gold,color:"#fff",border:"none",fontSize:12,fontWeight:600,cursor:"pointer"}}>Save</button>
+        </div>
+        {adSpendEntries.length>0&&<table style={{fontSize:12,borderCollapse:"collapse",width:"100%",maxWidth:300}}>
+          <thead><tr><th style={{textAlign:"left",color:G.muted,fontWeight:600,padding:"4px 8px"}}>Month</th><th style={{textAlign:"right",color:G.muted,fontWeight:600,padding:"4px 8px"}}>Amount</th><th/></tr></thead>
+          <tbody>{adSpendEntries.map(e=><tr key={e.month}>
+            <td style={{padding:"3px 8px",color:G.text}}>{e.month}</td>
+            <td style={{padding:"3px 8px",color:G.text,textAlign:"right",fontWeight:600}}>{fmt$(e.amount)}</td>
+            <td style={{padding:"3px 8px"}}><button onClick={()=>{
+              const updated=adSpendEntries.filter(x=>x.month!==e.month);
+              setAdSpendEntries(updated); saveSettings({adSpendEntries:updated});
+            }} style={{background:"none",border:"none",color:G.muted,cursor:"pointer",fontSize:11}}>✕</button></td>
+          </tr>)}</tbody>
+        </table>}
+      </div>
+    </div>}
+
+    {/* Revenue KPIs */}
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Revenue</div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <KPI label="Actual Revenue" value={fmt$(metrics.revenue)} sub={`${metrics.purchasedCount} purchased`} color={G.green} big/>
+        <KPI label="Projected (Outbound)" value={fmt$(metrics.projectedOutbound)} sub={`${metrics.outboundCount} in transit`} color={G.blue}/>
+        <KPI label="Projected (Received)" value={fmt$(metrics.projectedReceived)} sub={`${metrics.receivedCount} in hand`} color={G.teal}/>
+      </div>
+    </div>
+
+    {/* Cost KPIs */}
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Costs</div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <KPI label="Purchase Costs" value={fmt$(metrics.purchaseCosts)} sub={`Paid to ${metrics.purchasedCount} customers`} color={G.red}/>
+        <KPI label="Inbound Shipping" value={fmt$(metrics.inboundTotal)} sub={`${metrics.purchasedCount+metrics.returnedCount+metrics.receivedCount} packages × $${inboundCost}`} color={G.orange}/>
+        <KPI label="Outbound (Kits)" value={fmt$(metrics.outboundTotal)} sub={`${metrics.kitsCount} kits × $${outboundCost}`} color={G.orange}/>
+        <KPI label="Ad Spend" value={fmt$(metrics.adSpend)} sub="Manual entry" color={G.purple}/>
+      </div>
+    </div>
+
+    {/* Profit KPIs */}
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Profit</div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <KPI label="Gross Profit" value={fmt$(metrics.grossProfit)} sub="Revenue - Purchase - Shipping" color={metrics.grossProfit>=0?G.green:G.red} big/>
+        <KPI label="Net Profit" value={fmt$(metrics.netProfit)} sub="Gross Profit - Ad Spend" color={metrics.netProfit>=0?G.green:G.red} big/>
+        <KPI label="Total Costs" value={fmt$(metrics.totalCosts)} sub="All costs combined" color={G.red}/>
+      </div>
+    </div>
+
+    {/* Pipeline */}
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Pipeline</div>
+      <div style={{background:"#fff",borderRadius:10,padding:20,border:`1px solid ${G.border}`}}>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {PIPELINE_STAGES.map(({key,label})=>{
+            const count = metrics.stageCounts[key]||0;
+            const pct = Math.round((count/maxCount)*100);
+            const color = SC[key]||G.muted;
+            return <div key={key} style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:90,fontSize:11,color:G.muted,textAlign:"right",flexShrink:0}}>{label}</div>
+              <div style={{flex:1,background:G.bg,borderRadius:4,height:20,overflow:"hidden"}}>
+                <div style={{width:pct+"%",height:"100%",background:color,borderRadius:4,transition:"width 0.3s",minWidth:count>0?4:0}}/>
+              </div>
+              <div style={{width:28,fontSize:12,fontWeight:700,color:color,flexShrink:0}}>{count}</div>
+            </div>;
+          })}
+        </div>
+      </div>
+    </div>
+
+  </div>;
+}
+
 export default function SnappyGoldCRM() {
   const [unlocked,setUnlocked]=useState(false);
   const [customers,setCustomers]=useState([]);
@@ -1621,7 +1867,7 @@ export default function SnappyGoldCRM() {
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"customers",label:"Customers",color:G.blue}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"customers",label:"Customers",color:G.blue},{id:"analytics",label:"Analytics",color:G.gold}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -1664,6 +1910,7 @@ export default function SnappyGoldCRM() {
       {tab==="urgent"   &&<UrgentTab    shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="leads"    &&<LeadsTab     activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
     </div>
   </div>;
 }
