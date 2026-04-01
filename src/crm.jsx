@@ -1670,9 +1670,14 @@ function AnalyticsTab({shipments, customers}) {
     const stageCounts = {};
     filtered.forEach(s => { stageCounts[s.stage] = (stageCounts[s.stage]||0)+1; });
 
-    return { revenue, projectedOutbound, projectedReceived, purchaseCosts, inboundTotal, outboundTotal, adSpend, totalCosts, grossProfit, netProfit, stageCounts,
+    const completeCount = purchased.length + returned.length;
+    const marginPerPurchase = purchased.length > 0 ? (revenue - purchaseCosts) / purchased.length : 0;
+    const marginPerComplete = completeCount > 0 ? (revenue - purchaseCosts) / completeCount : 0;
+
+    return { revenue, purchaseCosts, inboundTotal, outboundTotal, adSpend, totalCosts, grossProfit, netProfit, stageCounts,
       purchasedCount: purchased.length, returnedCount: returned.length, receivedCount: received.length,
-      outboundCount: outbound.length, kitsCount: kits.length };
+      outboundCount: outbound.length, kitsCount: kits.length, completeCount,
+      marginPerPurchase, marginPerComplete };
   }, [filtered, inboundCost, outboundCost, adSpendEntries]);
 
   // KPI card component
@@ -1771,6 +1776,8 @@ function AnalyticsTab({shipments, customers}) {
       <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Revenue</div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KPI label="Actual Revenue" value={fmt$(metrics.revenue)} sub={`${metrics.purchasedCount} purchased`} color={G.green} big/>
+        <KPI label="Margin / Purchase" value={fmt$(metrics.marginPerPurchase)} sub={`(Revenue - Purchase Costs) ÷ ${metrics.purchasedCount} purchased`} color={G.teal}/>
+        <KPI label="Margin / Complete" value={fmt$(metrics.marginPerComplete)} sub={`(Revenue - Purchase Costs) ÷ ${metrics.completeCount} complete`} color={G.blue}/>
       </div>
     </div>
 
