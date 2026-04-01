@@ -1771,33 +1771,34 @@ function AnalyticsTab({shipments, customers}) {
       </div>
     </div>}
 
-    {/* Revenue KPIs */}
+    {/* Row 1: Revenue strip */}
     <div>
       <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Revenue</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KPI label="Actual Revenue" value={fmt$(metrics.revenue)} sub={`${metrics.purchasedCount} purchased`} color={G.green} big/>
-        <KPI label="Margin / Purchase" value={fmt$(metrics.marginPerPurchase)} sub={`(Revenue - Purchase Costs) ÷ ${metrics.purchasedCount} purchased`} color={G.teal}/>
-        <KPI label="Margin / Complete" value={fmt$(metrics.marginPerComplete)} sub={`(Revenue - Purchase Costs) ÷ ${metrics.completeCount} complete`} color={G.blue}/>
-      </div>
-    </div>
-
-    {/* Cost KPIs */}
-    <div>
-      <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Costs</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <KPI label="Estimated Revenue" value={fmt$(metrics.revenue)} sub={`${metrics.purchasedCount} purchased`} color={G.green}/>
         <KPI label="Purchase Costs" value={fmt$(metrics.purchaseCosts)} sub={`Paid to ${metrics.purchasedCount} customers`} color={G.red}/>
-        <KPI label="Inbound Shipping" value={fmt$(metrics.inboundTotal)} sub={`${metrics.purchasedCount+metrics.returnedCount+metrics.receivedCount} packages × $${inboundCost}`} color={G.orange}/>
-        <KPI label="Outbound (Kits)" value={fmt$(metrics.outboundTotal)} sub={`${metrics.kitsCount} kits × $${outboundCost}`} color={G.orange}/>
-        <KPI label="Ad Spend" value={fmt$(metrics.adSpend)} sub="Manual entry" color={G.purple}/>
+        <KPI label="Gross Margin" value={fmt$(metrics.revenue - metrics.purchaseCosts)} sub="Revenue − Purchase Costs" color={metrics.revenue-metrics.purchaseCosts>=0?G.green:G.red}/>
+        <KPI label="Margin / Purchase" value={fmt$(metrics.marginPerPurchase)} sub={`÷ ${metrics.purchasedCount} purchased`} color={G.teal}/>
+        <KPI label="Margin / Complete" value={fmt$(metrics.marginPerComplete)} sub={`÷ ${metrics.completeCount} complete`} color={G.blue}/>
       </div>
     </div>
 
-    {/* Profit KPIs */}
+    {/* Row 2: Operating costs */}
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Operating Costs</div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <KPI label="Ad Spend" value={fmt$(metrics.adSpend)} sub="Manual entry" color={G.purple}/>
+        <KPI label="Outbound (Kits)" value={fmt$(metrics.outboundTotal)} sub={`${metrics.kitsCount} kits × $${outboundCost}`} color={G.orange}/>
+        <KPI label="Inbound Shipping" value={fmt$(metrics.inboundTotal)} sub={`${metrics.purchasedCount+metrics.returnedCount+metrics.receivedCount} packages × $${inboundCost}`} color={G.orange}/>
+      </div>
+    </div>
+
+    {/* Row 3: Profit */}
     <div>
       <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Profit</div>
-      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-        <KPI label="Gross Profit" value={fmt$(metrics.grossProfit)} sub="Revenue - Purchase - Shipping" color={metrics.grossProfit>=0?G.green:G.red} big/>
-        <KPI label="Net Profit" value={fmt$(metrics.netProfit)} sub="Gross Profit - Ad Spend" color={metrics.netProfit>=0?G.green:G.red} big/>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <KPI label="Gross Profit" value={fmt$(metrics.grossProfit)} sub="Revenue − Purchase − Shipping" color={metrics.grossProfit>=0?G.green:G.red} big/>
+        <KPI label="Net Profit" value={fmt$(metrics.netProfit)} sub="Gross Profit − Ad Spend" color={metrics.netProfit>=0?G.green:G.red} big/>
         <KPI label="Total Costs" value={fmt$(metrics.totalCosts)} sub="All costs combined" color={G.red}/>
       </div>
     </div>
