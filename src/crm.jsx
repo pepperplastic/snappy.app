@@ -1771,8 +1771,6 @@ function AnalyticsTab({shipments, customers}) {
       <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Revenue</div>
       <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
         <KPI label="Actual Revenue" value={fmt$(metrics.revenue)} sub={`${metrics.purchasedCount} purchased`} color={G.green} big/>
-        <KPI label="Projected (Outbound)" value={fmt$(metrics.projectedOutbound)} sub={`${metrics.outboundCount} in transit`} color={G.blue}/>
-        <KPI label="Projected (Received)" value={fmt$(metrics.projectedReceived)} sub={`${metrics.receivedCount} in hand`} color={G.teal}/>
       </div>
     </div>
 
