@@ -559,7 +559,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>RECEIVED_STAGES.includes(s.stage));
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q);});}
+    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
 
@@ -648,7 +648,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>COMPLETE_STAGES.includes(s.stage));
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q);});}
+    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
 
@@ -834,7 +834,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>FULFILL_STAGES.includes(s.stage));
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
+    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
 
@@ -1200,7 +1200,7 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage));
     if(stageFilter) list=list.filter(s=>s.stage===stageFilter);
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
+    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,stageFilter,custById]);
 
@@ -1330,7 +1330,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
 
   const filtered=useMemo(()=>{
     let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkEmails.has(String(l.email).toLowerCase()));
-    if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q));}
+    if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q)||String(l.phone||"").toLowerCase().includes(q)||String(l.address||"").toLowerCase().includes(q));}
     return [...list].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[leads,search,activeCustomerEmails,junkEmails]);
 
