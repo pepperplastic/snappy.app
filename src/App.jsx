@@ -2140,8 +2140,8 @@ function EditableDetail({ label, value, onChange, itemType }) {
         </span>
       </div>
       {isJewelryMaterial && (
-        <div style={{ fontSize: 11, color: '#8B7D70', marginTop: 3, textAlign: 'right', paddingRight: 2 }}>
-          Estimate assumes this material. If incorrect, tap ✏️ to update.
+        <div style={{ fontSize: 11, color: '#8B7D70', marginTop: 3, textAlign: 'right', paddingRight: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          Estimate assumes this material — tap to correct if needed.
         </div>
       )}
     </div>
