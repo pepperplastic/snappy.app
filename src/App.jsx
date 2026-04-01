@@ -623,6 +623,19 @@ CRITICAL RULES:
 - ALWAYS show weight as a range (e.g. "35-50 grams") not a single number.
 - When in doubt, round UP. The seller knows the actual weight — a lowball guess loses credibility instantly.
 
+DIAMOND & GEMSTONE PRICING — MANDATORY:
+Diamonds and gemstones resell at a FRACTION of retail. Use ONLY these resale values:
+- Small accent diamonds (under 0.25ct each, common in bands/halos): $0 added value — ignore completely, they are worth nothing at resale
+- Single round diamond 0.25-0.50ct: add $50-150 to gold melt value only
+- Single round diamond 0.50-1.00ct: add $150-400 to gold melt value only
+- Single round diamond 1.00-2.00ct: add $400-900 to gold melt value only
+- Single round diamond over 2.00ct: add $800-3,500 depending on apparent quality and whether GIA certified
+- Colored gemstones (sapphire, ruby, emerald): add $25-200 unless clearly fine quality with visible certificate
+- Lab-grown diamonds: add $0 — no resale value
+- DO NOT use retail, insurance, or appraised values. Use secondary market / cash buyer resale values only.
+- A typical 1ct diamond solitaire ring has a cash resale value of $400-900 — not thousands. Price accordingly.
+- When in doubt about stone quality or size, use the LOW end of these ranges.
+
 ═══════════════════════════════════════
 
 ═══════════════════════════════════════
@@ -2124,6 +2137,11 @@ function EditableDetail({ label, value, onChange, itemType }) {
           <span style={{ display: 'inline-block', transform: 'scaleX(-1)' }}>✏️</span>
         </button>
       </span>
+      {isJewelryMaterial && (
+        <div style={{ width: '100%', fontSize: 11, color: '#8B7D70', marginTop: 4, fontStyle: 'italic', paddingLeft: 2 }}>
+          Estimate assumes this material. If incorrect, tap ✏️ to update.
+        </div>
+      )}
     </div>
   )
 }
