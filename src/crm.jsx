@@ -352,8 +352,15 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
           </div>
           <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{shipment.item||"(no item)"}</div>
           <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center",flexWrap:"wrap"}}>
-            {shipment.stage==="ready_to_fulfill"&&shipment.shipping_type==="label"
-              ? <span style={{background:G.blue+"18",color:G.blue,border:`1px solid ${G.blue}33`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>Ready to Fulfill</span>
+            {shipment.stage==="ready_to_fulfill"
+              ? <span style={{
+                  background: shipment.shipping_type==="usps" ? G.green+"18" : shipment.shipping_type==="label" ? G.blue+"18" : G.purple+"18",
+                  color:      shipment.shipping_type==="usps" ? G.green      : shipment.shipping_type==="label" ? G.blue      : G.purple,
+                  border:     `1px solid ${shipment.shipping_type==="usps" ? G.green+"33" : shipment.shipping_type==="label" ? G.blue+"33" : G.purple+"33"}`,
+                  borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"
+                }}>
+                  {shipment.shipping_type==="usps" ? "USPS Label" : shipment.shipping_type==="label" ? "FedEx Label" : shipment.shipping_type==="kit" ? "Kit" : "Ready to Fulfill"}
+                </span>
               : <Badge stage={shipment.stage} sm/>}
             {ds!==null&&<span style={{fontSize:10,color:G.muted}}>{ds}d ago</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
