@@ -433,6 +433,38 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     </div>;
   }
 
+  function NotesField({value}){
+    if(!value) return null;
+    // Split into lines, separate item lines (start with +) from provenance/customer notes
+    const lines = value.split('\n').filter(l=>l.trim());
+    const itemLines = lines.filter(l=>l.trim().startsWith('+'));
+    const provenanceLines = lines.filter(l=>!l.trim().startsWith('+'));
+    return <div>
+      <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6}}>Notes</div>
+      {itemLines.length>0&&<div style={{marginBottom:provenanceLines.length>0?8:0}}>
+        {itemLines.map((line,i)=>{
+          // Parse: "+ Item Name ($X – $Y)"
+          const match = line.match(/^\+\s*(.+?)\s*(\(\$[\d,\s–$]+\))\s*(\[.*?\])?$/);
+          if(match){
+            return <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"3px 0",borderBottom:`1px solid ${G.border}`}}>
+              <span style={{fontSize:13,color:G.text}}>{match[1]}{match[3]?<span style={{fontSize:11,color:G.muted,marginLeft:4}}>{match[3]}</span>:null}</span>
+              <span style={{fontSize:13,fontWeight:600,color:"#C8953C",marginLeft:8,whiteSpace:"nowrap"}}>{match[2].replace(/[()]/g,'')}</span>
+            </div>;
+          }
+          return <div key={i} style={{fontSize:13,color:G.text,padding:"3px 0",borderBottom:`1px solid ${G.border}`}}>{line.replace(/^\+\s*/,'')}</div>;
+        })}
+      </div>}
+      {provenanceLines.length>0&&<div style={{background:"#FFF8EC",border:"1px solid #F0D080",borderRadius:6,padding:"8px 10px",marginTop:4}}>
+        <div style={{fontSize:10,fontWeight:700,color:"#A07020",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}}>Customer Note</div>
+        {provenanceLines.map((line,i)=>{
+          // Strip "Customer note:" prefix if present
+          const clean = line.replace(/^Customer note:\s*/i,'');
+          return <div key={i} style={{fontSize:13,color:"#5A3E00",lineHeight:1.5}}>{clean}</div>;
+        })}
+      </div>}
+    </div>;
+  }
+
   const actions=getActions();
 
   return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -480,7 +512,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>}
           <Field label="Shipping Type" value={shipment.shipping_type}/>
           {shipment.bin_number&&<div style={{background:"#FFF8EE",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.gold}44`}}><div style={{fontSize:10,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>Bin Number</div><div style={{fontSize:22,fontWeight:700,color:G.gold}}>{shipment.bin_number}</div></div>}
-          {shipment.notes&&<Field label="Notes" value={shipment.notes}/>}
+          {shipment.notes&&<NotesField value={shipment.notes}/>}
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
