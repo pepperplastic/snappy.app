@@ -377,9 +377,9 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
 
 // CONTACT LOG LIST with inline edit
 function ContactLogList({logs, onUpdate, onDelete}) {
-  const [editingIdx, setEditingIdx] = React.useState(null);
-  const [editNotes, setEditNotes] = React.useState('');
-  const [saving, setSaving] = React.useState(false);
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const reversed = [...logs].reverse();
 
