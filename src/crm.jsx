@@ -375,6 +375,73 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
 // DETAIL PANE
 // ══════════════════════════════════════════════════════════
 
+// CONTACT LOG LIST with inline edit
+function ContactLogList({logs, onUpdate, onDelete}) {
+  const [editingIdx, setEditingIdx] = React.useState(null);
+  const [editNotes, setEditNotes] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+
+  const reversed = [...logs].reverse();
+
+  async function saveEdit(log, idx) {
+    if (!editNotes.trim()) return;
+    setSaving(true);
+    try {
+      // Update in sheet via log_id if available
+      if (log.log_id) {
+        await apiPost({action:'updateContactLog', log_id:log.log_id, updates:{notes:editNotes.trim()}});
+      }
+      onUpdate({...log, notes:editNotes.trim()}, idx);
+      setEditingIdx(null);
+    } catch(e) {
+      alert('Save failed: ' + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function deleteLog(log, idx) {
+    if (!window.confirm('Delete this log entry?')) return;
+    try {
+      if (log.log_id) {
+        await apiPost({action:'deleteContactLog', log_id:log.log_id});
+      }
+      onDelete(idx);
+    } catch(e) {
+      alert('Delete failed: ' + e.message);
+    }
+  }
+
+  return <div style={{marginTop:16,background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`}}>
+    <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Contact Log</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {reversed.map((log,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12}}>
+        <span style={{background:G.bg,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700,color:G.muted,flexShrink:0,textTransform:"capitalize"}}>{log.type||"note"}</span>
+        <div style={{flex:1}}>
+          {editingIdx===i
+            ? <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input
+                  value={editNotes}
+                  onChange={e=>setEditNotes(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter')saveEdit(log,i);if(e.key==='Escape')setEditingIdx(null);}}
+                  style={{flex:1,fontSize:12,padding:"3px 6px",border:`1px solid ${G.gold}`,borderRadius:4,outline:"none"}}
+                  autoFocus
+                />
+                <button onClick={()=>saveEdit(log,i)} disabled={saving} style={{fontSize:11,padding:"2px 8px",background:G.gold,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{saving?"…":"Save"}</button>
+                <button onClick={()=>setEditingIdx(null)} style={{fontSize:11,padding:"2px 6px",background:"none",border:`1px solid ${G.border}`,borderRadius:4,cursor:"pointer",color:G.muted}}>Cancel</button>
+              </div>
+            : <span style={{color:G.text}}>{log.notes}</span>
+          }
+        </div>
+        <div style={{color:G.muted,flexShrink:0,fontSize:10}}>{log.timestamp?new Date(log.timestamp).toLocaleDateString():""}</div>
+        {editingIdx!==i&&<div style={{display:"flex",gap:4,flexShrink:0}}>
+          <button onClick={()=>{setEditingIdx(i);setEditNotes(log.notes||'');}} title="Edit" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>✏️</button>
+          <button onClick={()=>deleteLog(log,i)} title="Delete" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>🗑️</button>
+        </div>}
+      </div>)}
+    </div>
+  </div>;
+}
+
 function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onUpdate,onNewShipment,onClose}) {
   const [modal,setModal]=useState(null);
   const [localLogs,setLocalLogs]=useState(contactLogs||[]);
@@ -531,16 +598,15 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>
         </div>
       </div>
-      {localLogs.length>0&&<div style={{marginTop:16,background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`}}>
-        <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Contact Log</div>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {[...localLogs].reverse().map((log,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12}}>
-            <span style={{background:G.bg,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700,color:G.muted,flexShrink:0,textTransform:"capitalize"}}>{log.type||"note"}</span>
-            <div style={{flex:1,color:G.text}}>{log.notes}</div>
-            <div style={{color:G.muted,flexShrink:0,fontSize:10}}>{log.timestamp?new Date(log.timestamp).toLocaleDateString():""}</div>
-          </div>)}
-        </div>
-      </div>}
+      {localLogs.length>0&&<ContactLogList logs={localLogs} onUpdate={(updatedLog,idx)=>{
+        const updated=[...localLogs];
+        updated[updated.length-1-idx]=updatedLog;
+        setLocalLogs(updated);
+      }} onDelete={(idx)=>{
+        const updated=[...localLogs];
+        updated.splice(updated.length-1-idx,1);
+        setLocalLogs(updated);
+      }}/>}
     <CustomerHistory shipment={shipment} allShipments={allShipments} customers={allCustomers}/>
     {/* Photos */}
     <div style={{marginTop:16,background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`}}>
