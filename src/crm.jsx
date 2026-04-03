@@ -1521,6 +1521,20 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
           {!sel.phone&&<div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>No phone on file</div>}
         </div>
       </div>
+      {sel.photo&&String(sel.photo).indexOf('drive.google.com')!==-1&&(()=>{
+        const url=String(sel.photo);
+        const fileIdMatch=url.match(/\/d\/([^\/]+)\//);
+        const fileId=fileIdMatch?fileIdMatch[1]:null;
+        const thumbUrl=fileId?`https://drive.google.com/thumbnail?id=${fileId}&sz=w300`:null;
+        return <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,marginTop:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Photo</div>
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{display:"block",border:`1px solid ${G.border}`,borderRadius:8,overflow:"hidden",width:160,height:160,background:G.bg}}>
+            {thumbUrl
+              ?<img src={thumbUrl} alt="photo" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+              :<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:G.muted}}>View Photo</div>}
+          </a>
+        </div>;
+      })()}
     </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a lead to view details</div>
