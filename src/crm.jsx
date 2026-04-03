@@ -720,7 +720,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         <Btn v="gold" small onClick={saveBin} disabled={savingBin||binInput===String(selectedShipment.bin_number||"")}>{savingBin?"Saving...":"Save Bin"}</Btn>
         {selectedShipment.bin_number&&<div style={{fontSize:12,color:G.muted}}>Currently: Bin {selectedShipment.bin_number}</div>}
       </div>
-      <div style={{flex:1,overflow:"hidden"}}>
+      <div style={{flex:1,overflow:"auto"}}>
         <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);if(s.shipment_id===selected)setBinInput(String(s.bin_number||""));}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
       </div>
     </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
@@ -810,7 +810,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         <Btn v="gold" small onClick={saveBin} disabled={savingBin||binInput===String(selectedShipment.bin_number||"")}>{savingBin?"Saving...":"Save Bin"}</Btn>
         {selectedShipment.bin_number&&<div style={{fontSize:12,color:G.muted}}>Currently: Bin {selectedShipment.bin_number}</div>}
       </div>
-      <div style={{flex:1,overflow:"hidden"}}>
+      <div style={{flex:1,overflow:"auto"}}>
         <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);if(s.shipment_id===selected)setBinInput(String(s.bin_number||""));}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
       </div>
     </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
