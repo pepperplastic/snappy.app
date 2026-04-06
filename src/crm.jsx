@@ -1270,7 +1270,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
           <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
         </div>
       </div>
-      :<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted,display:isMobile?"none":"flex"}}>
+      :<div style={{flex:1,display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
         <div style={{fontSize:40,opacity:0.3}}>◈</div>
         <div style={{fontSize:14}}>Select a shipment</div>
       </div>
@@ -1562,7 +1562,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
           </a>
         </div>;
       })()}
-    </div></div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted,display:isMobile?"none":"flex"}}>
+    </div></div>:<div style={{flex:1,display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a lead to view details</div>
     </div>}
@@ -1707,18 +1707,17 @@ function UrgentTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
         }
       </div>
     </div>
-    <div style={{flex:1,overflow:"auto",padding:16}}>
-      {selectedShipment
-        ?<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
-          {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-            <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
-          </div>}
-          <div style={{flex:1,overflow:"auto",padding:16}}>
+    {selectedShipment
+      ?<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+        {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+        </div>}
+        <div style={{flex:1,overflow:"auto",padding:16}}>
           <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={onUpdate} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
-        :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:G.muted,fontSize:13}}>Select a shipment to view details</div>
-          </div></div>
-      }
-    </div>
+        </div>
+      </div>
+      :<div style={{display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",height:"100%",color:G.muted,fontSize:13,flex:1}}>Select a shipment to view details</div>
+    }
   </div>;
 }
 
