@@ -1225,8 +1225,12 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
     }
 
-    const fedexCustomers=filtered.filter(s=>s.shipping_type==="label");
-    const uspsCustomers=filtered.filter(s=>s.shipping_type==="usps");
+    // Use selected IDs if any are checked, otherwise use all filtered
+    const batchSource = selectedIds.size > 0
+      ? filtered.filter(s => selectedIds.has(s.shipment_id))
+      : filtered;
+    const fedexCustomers=batchSource.filter(s=>s.shipping_type==="label");
+    const uspsCustomers=batchSource.filter(s=>s.shipping_type==="usps");
     const allLabelCustomers=[...fedexCustomers,...uspsCustomers];
 
     // 1. FedEx return labels CSV
