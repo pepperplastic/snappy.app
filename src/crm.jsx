@@ -2005,7 +2005,9 @@ export default function SnappyGoldCRM() {
   },[]);
 
   async function loadData(force=false){
-    if(!force){const cache=getCache();if(cache){setCustomers(cache.customers||[]);setShipments(cache.shipments||[]);setContactLogs(cache.contactLogs||[]);setLastLoaded(cache._ts);return;}}
+    // Always show cache immediately as placeholder while fetching fresh data
+    const cache=getCache();
+    if(cache){setCustomers(cache.customers||[]);setShipments(cache.shipments||[]);setContactLogs(cache.contactLogs||[]);setLastLoaded(cache._ts);}
     setLoading(true); setError(null);
     try {
       const [cr,sr,lr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipments"}),apiFetch({action:"getContactLog"})]);
