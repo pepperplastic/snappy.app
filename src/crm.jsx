@@ -1180,6 +1180,46 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       return rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
     }
 
+    function shippoCSV(list){
+      // Shippo Orders CSV format (v2 template)
+      // Return label: recipient = customer (ships FROM), order ships TO Snappy Gold
+      const headers=["Order Number","Order Date","Recipient Name","Company","Email","Phone","Street Line 1","Street Number","Street Line 2","City","State/Province","Zip/Postal Code","Country","Item Title","SKU","Quantity","Item Weight","Item Weight Unit","Item Price","Item Currency","Order Weight","Order Weight Unit","Order Amount","Order Currency"];
+      const rows=[headers];
+      const today=new Date().toISOString().slice(0,10);
+      list.forEach((s,i)=>{
+        const c=custById[s.customer_id]||{};
+        const a=parseAddr(c.address);
+        const phone=String(c.phone||"").replace(/\D/g,"");
+        rows.push([
+          s.shipment_id,          // Order Number = shipment ID for easy tracking
+          today,                  // Order Date
+          c.name||"",             // Recipient Name (customer - ships FROM here)
+          "",                     // Company
+          c.email||"",            // Email
+          phone,                  // Phone
+          a.line1,                // Street Line 1
+          "",                     // Street Number
+          "",                     // Street Line 2
+          a.city,                 // City
+          a.state,                // State/Province
+          a.zip,                  // Zip/Postal Code
+          "US",                   // Country
+          s.item||"Gold Jewelry", // Item Title
+          s.shipment_id,          // SKU
+          "1",                    // Quantity
+          "1",                    // Item Weight
+          "lb",                   // Item Weight Unit
+          "0",                    // Item Price
+          "USD",                  // Item Currency
+          "1",                    // Order Weight
+          "lb",                   // Order Weight Unit
+          "0",                    // Order Amount
+          "USD"                   // Order Currency
+        ]);
+      });
+      return rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    }
+
     function downloadCSV(filename,csv){
       const blob=new Blob([csv],{type:"text/csv"});
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
@@ -1194,9 +1234,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       downloadCSV(`${today}_fedex_labels.csv`, fedexCSV(fedexCustomers));
     }
 
-    // 2. Pirateship USPS return labels CSV
+    // 2. Shippo USPS return labels CSV
     if(uspsCustomers.length>0){
-      setTimeout(()=>downloadCSV(`${today}_pirateship_usps_labels.csv`, pirateshipCSV(uspsCustomers)), 500);
+      setTimeout(()=>downloadCSV(`${today}_shippo_usps_labels.csv`, shippoCSV(uspsCustomers)), 500);
     }
 
     // 3. Email copy doc (all label customers)
