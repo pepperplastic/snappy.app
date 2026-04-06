@@ -1,5 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
 // ═══════════════════════════════════════════════════════════
 // SNAPPY GOLD CRM v5
 // Six tabs: Fulfill / Process / Received / Follow Up / Purchased / Customers
