@@ -648,6 +648,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
 
 function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
+  const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
   const [savingBin,setSavingBin]=useState(false);
@@ -679,8 +680,8 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     setSavingBin(false);
   }
 
-  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-    <div style={{width:340,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+  return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
+    <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search received..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
       </div>
@@ -712,7 +713,10 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     </div>
 
     {/* Right pane */}
-    {selectedShipment?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    {selectedShipment?<div style={{flex:1,display:isMobile&&!selected?"none":"flex",flexDirection:"column",overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+      {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+      </div>}
       {/* Bin number bar */}
       <div style={{padding:"12px 20px",borderBottom:`1px solid ${G.border}`,background:"#FFF8EE",display:"flex",alignItems:"center",gap:12}}>
         <div style={{fontSize:13,fontWeight:700,color:G.gold}}>Bin Number</div>
@@ -737,6 +741,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
 function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
+  const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
   const [savingBin,setSavingBin]=useState(false);
@@ -770,8 +775,8 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
   const totalPurchased=filtered.reduce((sum,s)=>sum+(parseFloat(s.purchase_price)||0),0);
 
-  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-    <div style={{width:340,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+  return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
+    <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search purchased..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
       </div>
@@ -803,7 +808,10 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} purchased</div>
     </div>
 
-    {selectedShipment?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    {selectedShipment?<div style={{flex:1,display:isMobile&&!selected?"none":"flex",flexDirection:"column",overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+      {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+      </div>}
       <div style={{padding:"12px 20px",borderBottom:`1px solid ${G.border}`,background:"#FFF8EE",display:"flex",alignItems:"center",gap:12}}>
         <div style={{fontSize:13,fontWeight:700,color:G.gold}}>Bin Number</div>
         <input value={binInput} onChange={e=>setBinInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveBin()} placeholder="Enter bin #" style={{width:100,background:"#fff",border:`2px solid ${G.gold}`,borderRadius:7,padding:"6px 12px",fontSize:18,fontWeight:700,color:G.gold,outline:"none",textAlign:"center"}}/>
@@ -918,6 +926,7 @@ function UploadModal({onProcess, onClose, results, uploading}) {
 
 function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
+  const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkModal,setBulkModal]=useState(false);
@@ -1228,9 +1237,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     setSelectedIds(new Set()); setBulkModal(false); setBulkSaving(false);
   }
 
-  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+  return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
     {/* Left */}
-    <div style={{width:340,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+    <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{flex:1,background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
@@ -1252,7 +1261,20 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} shipments ready</div>
     </div>
     {/* Right */}
-    <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+    {selectedShipment
+      ?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+        {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+        </div>}
+        <div style={{flex:1,overflow:"auto"}}>
+          <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+        </div>
+      </div>
+      :<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted,display:isMobile?"none":"flex"}}>
+        <div style={{fontSize:40,opacity:0.3}}>◈</div>
+        <div style={{fontSize:14}}>Select a shipment</div>
+      </div>
+    }
 
     {/* Upload Ship Reports Modal */}
     {uploadModal&&<UploadModal
@@ -1282,6 +1304,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
 function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
+  const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [stageFilter,setStageFilter]=useState(null);
   const [selectedIds,setSelectedIds]=useState(new Set());
@@ -1317,8 +1340,8 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     setSelectedIds(new Set()); setBulkModal(false); setBulkSaving(false);
   }
 
-  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-    <div style={{width:340,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+  return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
+    <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:8}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -1471,7 +1494,11 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
       <div style={{padding:"6px 12px",borderTop:`1px solid ${G.border}`,fontSize:11,color:G.muted}}>{filtered.length} incomplete leads</div>
     </div>
     {/* Right */}
-    {sel?<div style={{flex:1,overflow:"auto",padding:20}}>
+    {sel?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+      {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+      </div>}
+      <div style={{flex:1,overflow:"auto",padding:20}}>
       <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:20}}>
         <Avatar name={sel.name||sel.email} size={48}/>
         <div>
@@ -1535,7 +1562,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
           </a>
         </div>;
       })()}
-    </div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
+    </div></div>:<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted,display:isMobile?"none":"flex"}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a lead to view details</div>
     </div>}
@@ -1646,14 +1673,15 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
 
 function UrgentTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [selected,setSelected]=useState(null);
+  const isMobile=useIsMobile();
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
   const filtered=shipments.filter(s=>s.is_urgent==="true"||s.is_urgent===true);
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
   const selectedLogs=useMemo(()=>selectedShipment?(logsByCustomer[selectedShipment.customer_id]||[]):[],[selectedShipment,logsByCustomer]);
-  return <div style={{display:"flex",flex:1,overflow:"hidden"}}>
-    <div style={{width:320,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",overflow:"hidden"}}>
+  return <div style={{display:"flex",flex:1,overflow:"hidden",position:"relative"}}>
+    <div style={{width:isMobile?"100%":320,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",overflow:"hidden"}}>
       <div style={{padding:"12px 16px",borderBottom:`1px solid ${G.border}`,fontSize:12,color:G.muted}}>{filtered.length} urgent {filtered.length===1?"shipment":"shipments"}</div>
       <div style={{flex:1,overflow:"auto"}}>
         {filtered.length===0
@@ -1681,8 +1709,14 @@ function UrgentTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     </div>
     <div style={{flex:1,overflow:"auto",padding:16}}>
       {selectedShipment
-        ?<DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={onUpdate} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
+        ?<div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+          {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+            <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+          </div>}
+          <div style={{flex:1,overflow:"auto",padding:16}}>
+          <DetailPane shipment={selectedShipment} customer={selectedCustomer} contactLogs={selectedLogs} allShipments={shipments} allCustomers={customers} onUpdate={onUpdate} onNewShipment={onNewShipment} onClose={()=>setSelected(null)}/>
         :<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:G.muted,fontSize:13}}>Select a shipment to view details</div>
+          </div></div>
       }
     </div>
   </div>;
@@ -1940,6 +1974,7 @@ function AnalyticsTab({shipments, customers}) {
 }
 
 export default function SnappyGoldCRM() {
+  const isMobile=useIsMobile();
   const [unlocked,setUnlocked]=useState(false);
   const [customers,setCustomers]=useState([]);
   const [shipments,setShipments]=useState([]);
@@ -2009,9 +2044,9 @@ export default function SnappyGoldCRM() {
 
   return <div style={{height:"100vh",display:"flex",flexDirection:"column",background:G.bg,fontFamily:"'Georgia','Times New Roman',serif",color:G.text}}>
     {/* Top bar */}
-    <div style={{background:G.dark,borderBottom:`2px solid ${G.gold}44`,padding:"0 20px",display:"flex",alignItems:"center",gap:16,height:52,flexShrink:0}}>
+    <div style={{background:G.dark,borderBottom:`2px solid ${G.gold}44`,padding:"0 12px",display:"flex",alignItems:"center",gap:8,height:48,flexShrink:0}}>
       <div style={{color:G.gold,fontWeight:700,fontSize:16,letterSpacing:"0.08em",flexShrink:0}}>SNAPPY<span style={{color:G.cream}}>.GOLD</span></div>
-      <div style={{color:G.muted,fontSize:11,flexShrink:0}}>CRM v5</div>
+      <div style={{color:G.muted,fontSize:11,flexShrink:0,display:isMobile?"none":"block"}}>CRM v5</div>
       <div style={{flex:1}}/>
       {error&&<div style={{color:G.red,fontSize:11}}>{error}</div>}
       {lastLoaded&&<div style={{color:tsFlash?G.gold:G.muted,fontSize:11,fontWeight:tsFlash?700:400,transition:"color 0.3s, font-weight 0.3s"}}>Loaded {new Date(lastLoaded).toLocaleTimeString()}</div>}
@@ -2019,7 +2054,7 @@ export default function SnappyGoldCRM() {
     </div>
 
     {/* Tab bar */}
-    <div style={{background:"#fff",borderBottom:`1px solid ${G.border}`,padding:"0 16px",display:"flex",gap:0,flexShrink:0}}>
+    <div style={{background:"#fff",borderBottom:`1px solid ${G.border}`,padding:"0 16px",display:"flex",gap:0,flexShrink:0,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
       {TABS.map(t=>{
         const count=t.id==="fulfill"?fulfillCount:t.id==="outbound"?outboundCount:t.id==="received"?receivedCount:t.id==="complete"?completeCount:t.id==="urgent"?urgentCount:t.id==="leads"?followUpCount:t.id==="customers"?customers.length:null;
         const active=tab===t.id;
