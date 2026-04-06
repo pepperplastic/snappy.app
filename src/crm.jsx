@@ -498,7 +498,40 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   }
 
   async function quickStage(stage){
-    try { await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage}}); onUpdate({...shipment,stage}); }
+    try {
+      // Special case: USPS label shipment moving to outbound_complete
+      // Generate Shippo label automatically before changing stage
+      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && shipment.shipping_type==="usps") {
+        if(!customer?.address || !customer?.email) {
+          alert("Cannot generate label: customer is missing address or email.");
+          return;
+        }
+        const confirmed = window.confirm("Generate and email USPS label to " + (customer?.name||"customer") + " at " + customer?.email + "?");
+        if(!confirmed) return;
+        try {
+          const labelResult = await apiPost({
+            action: "generateUSPSLabel",
+            shipment_id: shipment.shipment_id,
+            customer_id: shipment.customer_id,
+            address: customer.address,
+            name: customer.name||"",
+            email: customer.email,
+            phone: customer.phone||"",
+            item: shipment.item||""
+          });
+          if(!labelResult.success) {
+            alert("Label generation failed: " + (labelResult.error||"unknown error"));
+            return;
+          }
+          onUpdate({...shipment, stage:"outbound_complete", return_tracking: labelResult.tracking});
+          return;
+        } catch(e) {
+          alert("Label generation error: " + e.message);
+          return;
+        }
+      }
+      await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage}}); onUpdate({...shipment,stage});
+    }
     catch(e){alert("Failed: "+e.message);}
   }
 
