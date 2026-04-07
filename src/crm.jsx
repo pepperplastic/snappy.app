@@ -1517,6 +1517,7 @@ function ConvertLeadModal({lead, onSave, onClose}) {
 }
 
 function LeadsTab({activeCustomerEmails,onCountChange}) {
+  const isMobile=useIsMobile();
   const [leads,setLeads]=useState([]);
   const [loading,setLoading]=useState(false);
   const [selected,setSelected]=useState(null);
