@@ -501,18 +501,20 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     try {
       // Special case: USPS label shipment moving to outbound_complete
       // Generate Shippo label automatically before changing stage
-      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && shipment.shipping_type==="usps") {
+      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && (shipment.shipping_type==="usps" || shipment.shipping_type==="label")) {
         if(!customer?.address || !customer?.email) {
           alert("Cannot generate label: customer is missing address or email.");
           return;
         }
-        const confirmed = window.confirm("Generate and email USPS label to " + (customer?.name||"customer") + " at " + customer?.email + "?");
+        const carrier = shipment.shipping_type==="label" ? "FedEx" : "USPS";
+        const confirmed = window.confirm("Generate and email " + carrier + " label to " + (customer?.name||"customer") + " at " + customer?.email + "?");
         if(!confirmed) return;
         try {
           const labelResult = await apiPost({
             action: "generateUSPSLabel",
             shipment_id: shipment.shipment_id,
             customer_id: shipment.customer_id,
+            shipping_type: shipment.shipping_type,
             address: customer.address,
             name: customer.name||"",
             email: customer.email,
