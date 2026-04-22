@@ -809,6 +809,7 @@ export default function App() {
   const [directQuote, setDirectQuote] = useState(false)
   const [limitGated, setLimitGated] = useState(false)
   const [legalModal, setLegalModal] = useState(null)
+     const [customerEditsText, setCustomerEditsText] = useState('')
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
@@ -1258,6 +1259,8 @@ export default function App() {
             setLeadData={setLeadData}
             userEdits={userEdits}
             setUserEdits={setUserEdits}
+            customerEditsText={customerEditsText}
+            setCustomerEditsText={setCustomerEditsText}
           />
         )}
         {step === STEPS.LEAD_FORM && (
@@ -2151,7 +2154,7 @@ function EditableDetail({ label, value, onChange, itemType }) {
 // ═══════════════════════════════════════════════
 //  OFFER SCREEN
 // ═══════════════════════════════════════════════
-function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData, userEdits, setUserEdits }) {
+function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry, onReEstimate, isReEstimating, variant, leadData, setLeadData, userEdits, setUserEdits, customerEditsText, setCustomerEditsText }) {
   const [visible, setVisible] = useState(false)
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
@@ -2167,8 +2170,6 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
   const [corrections, setCorrections] = useState(() =>
     (analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {})
   )
-  const [extraNotes, setExtraNotes] = useState('')
-
   // Variant B: email gate state
   const [gateEmail, setGateEmail] = useState('')
   const [gateUnlocked, setGateUnlocked] = useState(false)
@@ -2182,7 +2183,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
   useEffect(() => {
     setCorrections((analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {}))
     setShowDetailsInput(false)
-    setExtraNotes('')
+    setCustomerEditsText('')
     // Scroll to top of offer card after a re-estimate (not initial load)
     if (hasLoadedOnce.current && offerTopRef.current) {
       setIsUpdated(true)
@@ -2200,8 +2201,8 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
       .map(([label, value]) => `${label}: ${value}`)
       .join('\
 ')
-    const full = extraNotes ? `${correctionLines}\
-Additional info: ${extraNotes}` : correctionLines
+    const full = customerEditsText ? `${correctionLines}\
+Additional info: ${customerEditsText}` : correctionLines
     onReEstimate(full)
   }
 
@@ -2283,8 +2284,8 @@ Additional info: ${extraNotes}` : correctionLines
                         .map(([label, value]) => `${label}: ${value}`)
                         .join('\
 ')
-                      const full = extraNotes ? `${correctionLines}\
-Additional info: ${extraNotes}` : correctionLines
+                      const full = customerEditsText ? `${correctionLines}\
+Additional info: ${customerEditsText}` : correctionLines
                       onReEstimate(full)
                     }
                   }}
@@ -2421,16 +2422,16 @@ Additional info: ${extraNotes}` : correctionLines
                 <div style={{ marginTop: 12 }}>
                   <input
                     type="text"
-                    value={extraNotes}
-                    onChange={(e) => setExtraNotes(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && extraNotes.trim()) handleReEstimate() }}
+                    value={customerEditsText}
+                    onChange={(e) => setCustomerEditsText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && customerEditsText.trim()) handleReEstimate() }}
                     placeholder="e.g. It is 18K not 14K, weight is 25g, brand is Cartier..."
                     style={styles.correctionInput}
                     autoFocus
                   />
                 </div>
               )}
-              {showDetailsInput && extraNotes.trim() && (
+              {showDetailsInput && customerEditsText.trim() && (
                 <button
                   onClick={handleReEstimate}
                   disabled={isReEstimating}
