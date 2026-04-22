@@ -1080,6 +1080,7 @@ export default function App() {
       sessionId: getSessionId(),
       image: compressedImage,
       userEdits: userEdits.length > 0 ? userEdits : undefined,
+       customerEditsText: customerEditsText || '',
     }
     fetch('/api/submit-lead', {
       method: 'POST',
