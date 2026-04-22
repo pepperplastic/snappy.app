@@ -215,7 +215,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Shipment · {s.shipment_id}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <Sel label="Stage" value={s.stage} onChange={e=>updS("stage",e.target.value)} options={STAGES.map(v=>({value:v,label:SL[v]||v}))}/>
-            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
+            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
           </div>
           <div style={{marginTop:12}}><Inp label="Item Description" value={s.item} onChange={e=>updS("item",e.target.value)}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
@@ -301,7 +301,7 @@ function AddShipmentModal({customer,onSave,onClose}) {
       <div style={{fontWeight:700,fontSize:16,marginBottom:4,color:G.text}}>New Shipment</div>
       <div style={{fontSize:12,color:G.muted,marginBottom:20}}>{customer?.name||customer?.email}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"Label (email FedEx label)"}]}/>
+        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"FedEx Label (email label)"},{value:"usps",label:"USPS Label (email via Shippo)"}]}/>
         <Inp label="Item Description" value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. 14K Yellow Gold Chain"/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)} placeholder="e.g. $1,200 – $1,800"/>
         <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional"/>
@@ -1500,7 +1500,7 @@ function ConvertLeadModal({lead, onSave, onClose}) {
           <Sel label="Stage" value={stage} onChange={e=>setStage(e.target.value)}
             options={STAGES.filter(s=>s!=="estimate_only").map(v=>({value:v,label:SL[v]||v}))}/>
           <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)}
-            options={[{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
+            options={[{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
         </div>
         <Inp label="Item" value={item} onChange={e=>setItem(e.target.value)}/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)}/>
