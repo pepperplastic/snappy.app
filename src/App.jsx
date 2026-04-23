@@ -2184,7 +2184,7 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
   useEffect(() => {
     setCorrections((analysis.details || []).reduce((acc, d) => ({ ...acc, [d.label]: d.value }), {}))
     setShowDetailsInput(false)
-    setCustomerEditsText('')
+    // setCustomerEditsText('')  // don't clear — we need this on final submit
     // Scroll to top of offer card after a re-estimate (not initial load)
     if (hasLoadedOnce.current && offerTopRef.current) {
       setIsUpdated(true)
