@@ -1040,7 +1040,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           {(()=>{
             const events = [];
             if (shipment.created_at) events.push({label:"Lead intake", ts:shipment.created_at, icon:"📥"});
-            if (shipment.sent_at)    events.push({label:shipment.shipping_type==="kit"?"Kit sent":"Label emailed", ts:shipment.sent_at, icon:"📤"});
+            if (shipment.sent_at)    events.push({label:"Outbound fulfilled", ts:shipment.sent_at, icon:"📤"});
             if (shipment.received_at)events.push({label:"Received", ts:shipment.received_at, icon:"📦"});
             if (shipment.id_captured_at) events.push({label:"ID captured", ts:shipment.id_captured_at, icon:"🪪"});
             // Find most recent contact log
