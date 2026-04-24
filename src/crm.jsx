@@ -346,7 +346,6 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
   const [idType, setIdType] = useState(customer?.id_type || shipment?.id_type || "");
   const [idNumber, setIdNumber] = useState(customer?.id_number || shipment?.id_number || "");
   const [idState, setIdState] = useState(customer?.id_state || shipment?.id_state || "");
-  const [idExpiration, setIdExpiration] = useState(customer?.id_expiration || shipment?.id_expiration || "");
   const [dateBirth, setDateBirth] = useState(customer?.date_birth || shipment?.date_birth || "");
   const [photoData, setPhotoData] = useState(null);
   const [photoName, setPhotoName] = useState("");
@@ -382,10 +381,8 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
           id_type: idType,
           id_number: idNumber,
           id_state: idState,
-          id_expiration: idExpiration,
           date_birth: dateBirth,
           id_photo: photoData || "",
-          id_captured_method: "manual",
           payment_method: paymentMethod,
           payment_info: paymentInfo,
         }
@@ -393,10 +390,8 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
       if (result && result.success !== false) {
         const updates = {
           id_type: idType, id_number: idNumber, id_state: idState,
-          id_expiration: idExpiration, date_birth: dateBirth,
+          date_birth: dateBirth,
           id_photo_url: result.photo_url || shipment.id_photo_url || "",
-          id_captured_at: new Date().toISOString(),
-          id_captured_method: "manual",
           payment_method: paymentMethod, payment_info: paymentInfo,
         };
         onSave(updates);
@@ -428,9 +423,8 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
             <Sel label="ID Type" value={idType} onChange={e=>setIdType(e.target.value)} options={ID_TYPES}/>
             <Inp label="ID Number" value={idNumber} onChange={e=>setIdNumber(e.target.value)} placeholder="e.g. D123-456-78-901-0"/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginTop:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
             <Sel label="Issuing State" value={idState} onChange={e=>setIdState(e.target.value)} options={[{value:"",label:"—"}, ...US_STATES.map(s=>({value:s,label:s}))]}/>
-            <Inp label="ID Expiration" value={idExpiration} onChange={e=>setIdExpiration(e.target.value)} placeholder="MM/DD/YYYY"/>
             <Inp label="Date of Birth" value={dateBirth} onChange={e=>setDateBirth(e.target.value)} placeholder="MM/DD/YYYY"/>
           </div>
           <div style={{marginTop:12}}>
@@ -960,10 +954,8 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
               {hasAnyId && <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {idTypeLabel && <Field label="ID Type" value={idTypeLabel + (shipment.id_state?` (${shipment.id_state})`:"")}/>}
                 {shipment.id_number && <Field label="ID Number" value={mask(shipment.id_number)} mono/>}
-                {shipment.id_expiration && <Field label="ID Expires" value={shipment.id_expiration}/>}
                 {shipment.date_birth && <Field label="DOB" value={shipment.date_birth}/>}
                 {shipment.id_photo_url && <a href={shipment.id_photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:G.blue,textDecoration:"none"}}>📷 ID photo on file</a>}
-                {shipment.id_captured_at && <div style={{fontSize:10,color:G.muted,fontStyle:"italic"}}>Captured {new Date(shipment.id_captured_at).toLocaleDateString()} · {shipment.id_captured_method||"manual"}</div>}
               </div>}
               {hasAnyPay && <div style={{borderTop:hasAnyId?`1px solid ${G.border}`:"none",paddingTop:hasAnyId?10:0,marginTop:hasAnyId?4:0,display:"flex",flexDirection:"column",gap:4}}>
                 {payLabel && <Field label="Payment Method" value={payLabel}/>}
@@ -1022,7 +1014,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {modal==="log"&&<LogModal shipment={shipment} customer={customer} onSave={log=>{setLocalLogs(p=>[...p,log]);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="stage"&&<StageModal shipment={shipment} onSave={stage=>{onUpdate({...shipment,stage});setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="addShipment"&&customer&&<AddShipmentModal customer={customer} onSave={s=>{onNewShipment(s);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="paymentId"&&<PaymentIdModal shipment={shipment} customer={customer} onSave={updates=>{onUpdate({...shipment,...updates}, {...customer, id_type:updates.id_type, id_number:updates.id_number, id_state:updates.id_state, id_expiration:updates.id_expiration, date_birth:updates.date_birth, id_photo_url:updates.id_photo_url});setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="paymentId"&&<PaymentIdModal shipment={shipment} customer={customer} onSave={updates=>{onUpdate({...shipment,...updates}, {...customer, id_type:updates.id_type, id_number:updates.id_number, id_state:updates.id_state, date_birth:updates.date_birth, id_photo_url:updates.id_photo_url});setModal(null);}} onClose={()=>setModal(null)}/>}
   </div>;
 }
 
