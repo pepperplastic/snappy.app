@@ -94,6 +94,76 @@ function daysSince(ts) {
   if (isNaN(d.getTime())) return null;
   return Math.floor((Date.now()-d.getTime())/86400000);
 }
+// Compact relative time: "5m", "3h", "2d", "3w", "5mo"
+function timeAgo(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  const mins = Math.floor((Date.now()-d.getTime())/60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return mins + "m";
+  const hrs = Math.floor(mins/60);
+  if (hrs < 24) return hrs + "h";
+  const days = Math.floor(hrs/24);
+  if (days < 14) return days + "d";
+  const weeks = Math.floor(days/7);
+  if (weeks < 9) return weeks + "w";
+  const months = Math.floor(days/30);
+  return months + "mo";
+}
+// Pretty absolute date: "Apr 22 · 3:14 PM"
+function fmtDateTime(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  const mo = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  const day = d.getDate();
+  let hrs = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2,"0");
+  const ampm = hrs >= 12 ? "PM" : "AM";
+  hrs = hrs % 12 || 12;
+  const yearSuffix = d.getFullYear() !== new Date().getFullYear() ? ", " + d.getFullYear() : "";
+  return `${mo} ${day}${yearSuffix} · ${hrs}:${mins} ${ampm}`;
+}
+// Pick the most relevant date for a shipment based on its stage.
+// Returns { label, ts, age } or null.
+function stageRelevantDate(shipment) {
+  if (!shipment) return null;
+  const s = shipment.stage || "";
+  // In Outbound: show when sent
+  if (s === "outbound_complete" || s === "outbound_sent" || s === "in_transit") {
+    if (shipment.sent_at) return { label: "sent", ts: shipment.sent_at };
+  }
+  // In Received or later: show when received
+  if (s === "received" || s === "offer_made" || s === "purchased" || s === "returned" || s === "complete") {
+    if (shipment.received_at) return { label: "received", ts: shipment.received_at };
+  }
+  // Default: lead intake / ready_to_fulfill — show when created
+  if (shipment.created_at) return { label: "created", ts: shipment.created_at };
+  return null;
+}
+// Determine if a shipment is "stuck" based on days in current stage (returns color or null)
+function stuckColor(shipment, G) {
+  const srd = stageRelevantDate(shipment);
+  if (!srd) return null;
+  const days = daysSince(srd.ts);
+  if (days === null) return null;
+  const s = shipment.stage || "";
+  // Thresholds per stage
+  const thresholds = {
+    ready_to_fulfill:   { yellow: 3,  red: 7 },
+    outbound_complete:  { yellow: 5,  red: 10 },
+    outbound_sent:      { yellow: 5,  red: 10 },
+    in_transit:         { yellow: 7,  red: 14 },
+    received:           { yellow: 2,  red: 5 },
+    offer_made:         { yellow: 3,  red: 7 },
+  };
+  const t = thresholds[s];
+  if (!t) return null;
+  if (days >= t.red) return G.red || "#c03030";
+  if (days >= t.yellow) return "#b8860b"; // amber
+  return null;
+}
 function parseEstHigh(est) {
   if (!est) return 0;
   const nums = String(est).replace(/[$,]/g,"").split(/[–\-]/).map(p=>parseFloat(p.trim())).filter(n=>!isNaN(n));
@@ -504,7 +574,10 @@ function CustomerHistory({shipment,allShipments,allCustomers}) {
 
 function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
   const high=parseEstHigh(shipment.estimate);
-  const ds=daysSince(shipment.created_at);
+  const srd=stageRelevantDate(shipment);
+  const ageStr=srd ? timeAgo(srd.ts) : null;
+  const ageLabel=srd ? srd.label : "";
+  const stuckCol=stuckColor(shipment, G);
   return <div style={{position:"relative"}}>
     <input type="checkbox" checked={checked||false} onChange={e=>{e.stopPropagation();onCheck&&onCheck(e.target.checked);}} style={{position:"absolute",top:14,left:6,zIndex:1,cursor:"pointer"}} onClick={e=>e.stopPropagation()}/>
     <div onClick={onClick} style={{paddingLeft:26,paddingRight:16,paddingTop:12,paddingBottom:12,cursor:"pointer",borderBottom:`1px solid ${G.border}`,background:selected?"#FFF8EE":"#fff",borderLeft:selected?`3px solid ${G.gold}`:"3px solid transparent",transition:"background 0.1s"}} onMouseEnter={e=>{if(!selected)e.currentTarget.style.background="#FDFAF6";}} onMouseLeave={e=>{if(!selected)e.currentTarget.style.background="#fff";}}>
@@ -527,7 +600,7 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
                   {shipment.shipping_type==="usps" ? "USPS Label" : shipment.shipping_type==="label" ? "FedEx Label" : shipment.shipping_type==="kit" ? "Kit" : "Ready to Fulfill"}
                 </span>
               : <Badge stage={shipment.stage} sm/>}
-            {ds!==null&&<span style={{fontSize:10,color:G.muted}}>{ds}d ago</span>}
+            {ageStr&&<span title={fmtDateTime(srd.ts)} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {ageStr} ago</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
           </div>
         </div>
@@ -961,6 +1034,37 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
                 {payLabel && <Field label="Payment Method" value={payLabel}/>}
                 {shipment.payment_info && <Field label="Payment Info" value={shipment.payment_info}/>}
               </div>}
+            </div>;
+          })()}
+          {/* Timeline — shipment + contact history */}
+          {(()=>{
+            const events = [];
+            if (shipment.created_at) events.push({label:"Lead intake", ts:shipment.created_at, icon:"📥"});
+            if (shipment.sent_at)    events.push({label:shipment.shipping_type==="kit"?"Kit sent":"Label emailed", ts:shipment.sent_at, icon:"📤"});
+            if (shipment.received_at)events.push({label:"Received", ts:shipment.received_at, icon:"📦"});
+            if (shipment.id_captured_at) events.push({label:"ID captured", ts:shipment.id_captured_at, icon:"🪪"});
+            // Find most recent contact log
+            const lastLog = (localLogs||[]).length > 0
+              ? [...(localLogs||[])].sort((a,b)=>new Date(b.timestamp||0)-new Date(a.timestamp||0))[0]
+              : null;
+            if (lastLog && lastLog.timestamp) {
+              events.push({label:"Last contact" + (lastLog.type?` · ${lastLog.type}`:""), ts:lastLog.timestamp, icon:"💬"});
+            }
+            if (customer?.created_at) events.push({label:"Customer since", ts:customer.created_at, icon:"👤", muted:true});
+            // Sort chronologically (oldest first) for a natural timeline read
+            events.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+            if (!events.length) return null;
+            return <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>Timeline</div>
+              {events.map((e,i)=>{
+                const age = timeAgo(e.ts);
+                const abs = fmtDateTime(e.ts);
+                return <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,fontSize:12,color:e.muted?G.muted:G.text}}>
+                  <span style={{fontSize:11,opacity:0.8}}>{e.icon}</span>
+                  <span style={{fontWeight:500,flexShrink:0}}>{e.label}</span>
+                  <span style={{color:G.muted,fontSize:11,marginLeft:"auto",textAlign:"right",whiteSpace:"nowrap"}} title={abs}>{abs} · {age} ago</span>
+                </div>;
+              })}
             </div>;
           })()}
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
