@@ -215,7 +215,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Shipment · {s.shipment_id}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <Sel label="Stage" value={s.stage} onChange={e=>updS("stage",e.target.value)} options={STAGES.map(v=>({value:v,label:SL[v]||v}))}/>
-            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
+            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
           </div>
           <div style={{marginTop:12}}><Inp label="Item Description" value={s.item} onChange={e=>updS("item",e.target.value)}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
@@ -301,7 +301,7 @@ function AddShipmentModal({customer,onSave,onClose}) {
       <div style={{fontWeight:700,fontSize:16,marginBottom:4,color:G.text}}>New Shipment</div>
       <div style={{fontSize:12,color:G.muted,marginBottom:20}}>{customer?.name||customer?.email}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"Label (email FedEx label)"}]}/>
+        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"FedEx Label (email label)"},{value:"usps",label:"USPS Label (email via Shippo)"}]}/>
         <Inp label="Item Description" value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. 14K Yellow Gold Chain"/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)} placeholder="e.g. $1,200 – $1,800"/>
         <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional"/>
@@ -309,6 +309,167 @@ function AddShipmentModal({customer,onSave,onClose}) {
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
         <Btn v="ghost" onClick={onClose}>Cancel</Btn>
         <Btn v="gold" onClick={save} disabled={saving}>{saving?"Creating...":"Create Shipment"}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+
+// ══════════════════════════════════════════════════════════
+// PAYMENT & ID CAPTURE MODAL
+// ══════════════════════════════════════════════════════════
+
+const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
+
+const ID_TYPES = [
+  {value:"",label:"—"},
+  {value:"driver_license",label:"Driver's License"},
+  {value:"state_id",label:"State ID"},
+  {value:"passport",label:"Passport"},
+  {value:"military_id",label:"Military ID"},
+  {value:"other",label:"Other"},
+];
+
+const PAYMENT_METHODS = [
+  {value:"",label:"—"},
+  {value:"ach",label:"ACH (bank transfer)"},
+  {value:"paypal",label:"PayPal"},
+  {value:"venmo",label:"Venmo"},
+  {value:"zelle",label:"Zelle"},
+  {value:"check",label:"Check"},
+  {value:"cashapp",label:"CashApp"},
+  {value:"other",label:"Other"},
+];
+
+function PaymentIdModal({shipment, customer, onSave, onClose}) {
+  // Pre-fill from customer (these fields reusable across transactions)
+  const [idType, setIdType] = useState(customer?.id_type || shipment?.id_type || "");
+  const [idNumber, setIdNumber] = useState(customer?.id_number || shipment?.id_number || "");
+  const [idState, setIdState] = useState(customer?.id_state || shipment?.id_state || "");
+  const [idExpiration, setIdExpiration] = useState(customer?.id_expiration || shipment?.id_expiration || "");
+  const [dateBirth, setDateBirth] = useState(customer?.date_birth || shipment?.date_birth || "");
+  const [photoData, setPhotoData] = useState(null);
+  const [photoName, setPhotoName] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(shipment?.payment_method || "");
+  const [paymentInfo, setPaymentInfo] = useState(shipment?.payment_info || "");
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef();
+
+  function handlePhoto(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert("Photo must be under 5MB"); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPhotoData(reader.result);
+      setPhotoName(file.name);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function save() {
+    if (!idType && !idNumber && !dateBirth && !paymentMethod) {
+      alert("Fill at least one field before saving.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await apiPost({
+        action: "capturePaymentId",
+        shipment_id: shipment.shipment_id,
+        customer_id: shipment.customer_id,
+        data: {
+          id_type: idType,
+          id_number: idNumber,
+          id_state: idState,
+          id_expiration: idExpiration,
+          date_birth: dateBirth,
+          id_photo: photoData || "",
+          id_captured_method: "manual",
+          payment_method: paymentMethod,
+          payment_info: paymentInfo,
+        }
+      });
+      if (result && result.success !== false) {
+        const updates = {
+          id_type: idType, id_number: idNumber, id_state: idState,
+          id_expiration: idExpiration, date_birth: dateBirth,
+          id_photo_url: result.photo_url || shipment.id_photo_url || "",
+          id_captured_at: new Date().toISOString(),
+          id_captured_method: "manual",
+          payment_method: paymentMethod, payment_info: paymentInfo,
+        };
+        onSave(updates);
+      } else {
+        alert("Save failed: " + (result?.error || "unknown"));
+      }
+    } catch(e) {
+      alert("Save failed: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(640px,95vw)",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{padding:"20px 24px",borderBottom:`1px solid ${G.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"#fff",zIndex:1}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:16,color:G.text}}>Capture Payment & ID</div>
+          <div style={{fontSize:12,color:G.muted,marginTop:2}}>{customer?.name} · {shipment?.shipment_id}</div>
+        </div>
+        <Btn v="ghost" onClick={onClose} small>✕ Close</Btn>
+      </div>
+
+      <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:20}}>
+
+        {/* ID Section */}
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Identification</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Sel label="ID Type" value={idType} onChange={e=>setIdType(e.target.value)} options={ID_TYPES}/>
+            <Inp label="ID Number" value={idNumber} onChange={e=>setIdNumber(e.target.value)} placeholder="e.g. D123-456-78-901-0"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginTop:12}}>
+            <Sel label="Issuing State" value={idState} onChange={e=>setIdState(e.target.value)} options={[{value:"",label:"—"}, ...US_STATES.map(s=>({value:s,label:s}))]}/>
+            <Inp label="ID Expiration" value={idExpiration} onChange={e=>setIdExpiration(e.target.value)} placeholder="MM/DD/YYYY"/>
+            <Inp label="Date of Birth" value={dateBirth} onChange={e=>setDateBirth(e.target.value)} placeholder="MM/DD/YYYY"/>
+          </div>
+          <div style={{marginTop:12}}>
+            <label style={{color:G.muted,fontSize:11,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>ID Photo (optional)</label>
+            <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{display:"none"}}/>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+              <Btn v="ghost" small onClick={()=>fileRef.current.click()}>{photoName ? "Change photo" : "Upload photo"}</Btn>
+              {photoName && <span style={{fontSize:12,color:G.green}}>✓ {photoName}</span>}
+              {!photoName && shipment?.id_photo_url && <a href={shipment.id_photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:G.blue}}>Existing photo on file</a>}
+            </div>
+          </div>
+        </div>
+
+        {/* Payment Section */}
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Payment</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12}}>
+            <Sel label="Method" value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)} options={PAYMENT_METHODS}/>
+            <Inp label="Payment Info" value={paymentInfo} onChange={e=>setPaymentInfo(e.target.value)}
+              placeholder={
+                paymentMethod==="ach" ? "Routing: 123456789, Account: 987654321" :
+                paymentMethod==="paypal" ? "email@example.com" :
+                paymentMethod==="venmo" ? "@username" :
+                paymentMethod==="zelle" ? "email or phone" :
+                paymentMethod==="check" ? "Mailing address" :
+                paymentMethod==="cashapp" ? "$cashtag" :
+                "Payment details"
+              }/>
+          </div>
+        </div>
+
+        <div style={{background:G.bg,borderRadius:6,padding:"10px 12px",fontSize:11,color:G.muted,lineHeight:1.5}}>
+          <strong style={{color:G.text}}>Note:</strong> ID info is stored on both the customer profile (reusable for future transactions) and a snapshot on this shipment (for the 2-year regulatory record per FL Statute 538).
+        </div>
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn v="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn v="gold" onClick={save} disabled={saving}>{saving?"Saving…":"Save"}</Btn>
+        </div>
       </div>
     </div>
   </div>;
@@ -557,8 +718,8 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     if(!raw) return {items:[], aiRationale:'', photos:[], agent:[], customerMsg:''};
     const out = {items:[], aiRationale:'', photos:[], agent:[], customerMsg:''};
 
-    // Pull out photo URLs first
-    const photoRegex = /\|\s*photo:\s*(https?:\/\/[^\s|]+)/gi;
+    // Pull out photo URLs first (match either " | photo: URL" or bare "photo: URL")
+    const photoRegex = /(?:\|\s*)?photo:\s*(https?:\/\/[^\s|]+)/gi;
     let cleaned = raw;
     let m;
     while((m = photoRegex.exec(raw)) !== null){ out.photos.push(m[1]); }
@@ -777,6 +938,39 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             {shipment.outbound_tracking?<Field label="Outbound" value={shipment.outbound_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No outbound tracking</div>}
             {shipment.return_tracking?<Field label="Return" value={shipment.return_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No return tracking</div>}
           </div>
+          {/* Payment & ID — only shown for offer_made and later stages */}
+          {["offer_made","purchased","returned"].includes(shipment.stage) && (()=>{
+            const hasAnyId = shipment.id_type || shipment.id_number || shipment.date_birth || shipment.id_photo_url;
+            const hasAnyPay = shipment.payment_method || shipment.payment_info;
+            const mask = v => v ? "****" + String(v).slice(-4) : "";
+            const idTypeLabel = {
+              driver_license:"Driver's License", state_id:"State ID", passport:"Passport",
+              military_id:"Military ID", other:"Other"
+            }[shipment.id_type] || shipment.id_type || "";
+            const payLabel = {
+              ach:"ACH", paypal:"PayPal", venmo:"Venmo", zelle:"Zelle",
+              check:"Check", cashapp:"CashApp", other:"Other"
+            }[shipment.payment_method] || shipment.payment_method || "";
+            return <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>💳 Payment & ID</div>
+                <Btn v="gold" small onClick={()=>setModal("paymentId")}>{hasAnyId||hasAnyPay?"Edit":"+ Capture"}</Btn>
+              </div>
+              {!hasAnyId && !hasAnyPay && <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>Not yet captured. Click "+ Capture" after offer accepted.</div>}
+              {hasAnyId && <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {idTypeLabel && <Field label="ID Type" value={idTypeLabel + (shipment.id_state?` (${shipment.id_state})`:"")}/>}
+                {shipment.id_number && <Field label="ID Number" value={mask(shipment.id_number)} mono/>}
+                {shipment.id_expiration && <Field label="ID Expires" value={shipment.id_expiration}/>}
+                {shipment.date_birth && <Field label="DOB" value={shipment.date_birth}/>}
+                {shipment.id_photo_url && <a href={shipment.id_photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:G.blue,textDecoration:"none"}}>📷 ID photo on file</a>}
+                {shipment.id_captured_at && <div style={{fontSize:10,color:G.muted,fontStyle:"italic"}}>Captured {new Date(shipment.id_captured_at).toLocaleDateString()} · {shipment.id_captured_method||"manual"}</div>}
+              </div>}
+              {hasAnyPay && <div style={{borderTop:hasAnyId?`1px solid ${G.border}`:"none",paddingTop:hasAnyId?10:0,marginTop:hasAnyId?4:0,display:"flex",flexDirection:"column",gap:4}}>
+                {payLabel && <Field label="Payment Method" value={payLabel}/>}
+                {shipment.payment_info && <Field label="Payment Info" value={shipment.payment_info}/>}
+              </div>}
+            </div>;
+          })()}
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Customer</div>
             <Field label="ID" value={customer?.customer_id}/>
@@ -828,6 +1022,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {modal==="log"&&<LogModal shipment={shipment} customer={customer} onSave={log=>{setLocalLogs(p=>[...p,log]);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="stage"&&<StageModal shipment={shipment} onSave={stage=>{onUpdate({...shipment,stage});setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="addShipment"&&customer&&<AddShipmentModal customer={customer} onSave={s=>{onNewShipment(s);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="paymentId"&&<PaymentIdModal shipment={shipment} customer={customer} onSave={updates=>{onUpdate({...shipment,...updates}, {...customer, id_type:updates.id_type, id_number:updates.id_number, id_state:updates.id_state, id_expiration:updates.id_expiration, date_birth:updates.date_birth, id_photo_url:updates.id_photo_url});setModal(null);}} onClose={()=>setModal(null)}/>}
   </div>;
 }
 
@@ -1645,7 +1840,7 @@ function ConvertLeadModal({lead, onSave, onClose}) {
           <Sel label="Stage" value={stage} onChange={e=>setStage(e.target.value)}
             options={STAGES.filter(s=>s!=="estimate_only").map(v=>({value:v,label:SL[v]||v}))}/>
           <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)}
-            options={[{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
+            options={[{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
         </div>
         <Inp label="Item" value={item} onChange={e=>setItem(e.target.value)}/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)}/>
