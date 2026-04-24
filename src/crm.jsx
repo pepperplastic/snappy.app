@@ -215,7 +215,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Shipment · {s.shipment_id}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <Sel label="Stage" value={s.stage} onChange={e=>updS("stage",e.target.value)} options={STAGES.map(v=>({value:v,label:SL[v]||v}))}/>
-            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
+            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
           </div>
           <div style={{marginTop:12}}><Inp label="Item Description" value={s.item} onChange={e=>updS("item",e.target.value)}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
@@ -301,7 +301,7 @@ function AddShipmentModal({customer,onSave,onClose}) {
       <div style={{fontWeight:700,fontSize:16,marginBottom:4,color:G.text}}>New Shipment</div>
       <div style={{fontSize:12,color:G.muted,marginBottom:20}}>{customer?.name||customer?.email}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"FedEx Label (email label)"},{value:"usps",label:"USPS Label (email via Shippo)"}]}/>
+        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"Label (email FedEx label)"}]}/>
         <Inp label="Item Description" value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. 14K Yellow Gold Chain"/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)} placeholder="e.g. $1,200 – $1,800"/>
         <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional"/>
@@ -545,35 +545,153 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     </div>;
   }
 
-  function NotesField({value}){
-    if(!value) return null;
-    // Split into lines, separate item lines (start with +) from provenance/customer notes
-    const lines = value.split('\n').filter(l=>l.trim());
-    const itemLines = lines.filter(l=>l.trim().startsWith('+'));
-    const provenanceLines = lines.filter(l=>!l.trim().startsWith('+'));
-    return <div>
-      <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6}}>Notes</div>
-      {itemLines.length>0&&<div style={{marginBottom:provenanceLines.length>0?8:0}}>
-        {itemLines.map((line,i)=>{
-          // Parse: "+ Item Name ($X – $Y)"
-          const match = line.match(/^\+\s*(.+?)\s*(\(\$[\d,\s–$]+\))\s*(\[.*?\])?$/);
-          if(match){
-            return <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"3px 0",borderBottom:`1px solid ${G.border}`}}>
-              <span style={{fontSize:13,color:G.text}}>{match[1]}{match[3]?<span style={{fontSize:11,color:G.muted,marginLeft:4}}>{match[3]}</span>:null}</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#C8953C",marginLeft:8,whiteSpace:"nowrap"}}>{match[2].replace(/[()]/g,'')}</span>
-            </div>;
-          }
-          return <div key={i} style={{fontSize:13,color:G.text,padding:"3px 0",borderBottom:`1px solid ${G.border}`}}>{line.replace(/^\+\s*/,'')}</div>;
-        })}
-      </div>}
-      {provenanceLines.length>0&&<div style={{background:"#FFF8EC",border:"1px solid #F0D080",borderRadius:6,padding:"8px 10px",marginTop:4}}>
-        <div style={{fontSize:10,fontWeight:700,color:"#A07020",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}}>Customer Note</div>
-        {provenanceLines.map((line,i)=>{
-          // Strip "Customer note:" prefix if present
-          const clean = line.replace(/^Customer note:\s*/i,'');
-          return <div key={i} style={{fontSize:13,color:"#5A3E00",lineHeight:1.5}}>{clean}</div>;
-        })}
-      </div>}
+  // ── Parse legacy `notes` field into categorized chunks ──────────
+  // Legacy notes patterns observed:
+  //   "AI rationale text | photo: https://..."
+  //   "Additional items: [2] Item - $X | [3] Item - $Y"
+  //   "+ Item Name ($X – $Y) [metadata]"   (new-style manifest lines)
+  //   "made offer $15 via email"            (bare human notes)
+  //   "Customer note: xyz"                  (prefixed human notes)
+  function parseLegacyNotes(raw){
+    if(!raw) return {};
+    const out = {aiRationale:'', items:[], photos:[], agent:[], customerMsg:''};
+    // Pull out photo URLs first
+    const photoRegex = /\|\s*photo:\s*(https?:\/\/[^\s|]+)/gi;
+    let cleaned = raw;
+    let m;
+    while((m = photoRegex.exec(raw)) !== null){
+      out.photos.push(m[1]);
+    }
+    cleaned = cleaned.replace(photoRegex, '').trim();
+
+    // Split on newlines AND on " | " (legacy separator)
+    const segments = cleaned.split(/\n|(?:\s\|\s)/).map(s=>s.trim()).filter(Boolean);
+
+    for(const seg of segments){
+      // + item line (new-style manifest)
+      if(seg.startsWith('+')){
+        const parsed = seg.replace(/^\+\s*/,'').match(/^(.+?)\s*\(\$?([\d,\s–\-$]+)\)\s*(\[.*?\])?$/);
+        if(parsed){
+          out.items.push({name:parsed[1].trim(), price:'$'+parsed[2].trim(), meta:parsed[3]||''});
+        } else {
+          out.items.push({name:seg.replace(/^\+\s*/,''), price:'', meta:''});
+        }
+        continue;
+      }
+      // "Additional items: [N] Name - $X"
+      const addItemMatch = seg.match(/^(?:Additional items:\s*)?\[(\d+)\]\s*(.+?)\s*-\s*(\$[\d,\s–\-$]+)\s*$/);
+      if(addItemMatch){
+        out.items.push({name:addItemMatch[2].trim(), price:addItemMatch[3].trim(), meta:'#'+addItemMatch[1]});
+        continue;
+      }
+      // "Customer note: xyz"
+      if(/^customer note:/i.test(seg)){
+        out.customerMsg = (out.customerMsg?out.customerMsg+' ':'') + seg.replace(/^customer note:\s*/i,'');
+        continue;
+      }
+      // Heuristic: AI rationale usually starts with "Based on" or contains "Final offer"
+      if(/^based on\b|final offer|secondary market|in-person (verification|authentication)/i.test(seg)){
+        out.aiRationale = (out.aiRationale?out.aiRationale+' ':'') + seg;
+        continue;
+      }
+      // Otherwise — probably agent note
+      out.agent.push(seg);
+    }
+    return out;
+  }
+
+  function NotesBox({title, color, bg, children}){
+    return <div style={{background:bg||"#fff",border:`1px solid ${color}33`,borderRadius:8,padding:"10px 12px",marginTop:8}}>
+      <div style={{fontSize:10,fontWeight:700,color:color,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6}}>{title}</div>
+      <div style={{fontSize:13,color:G.text,lineHeight:1.5}}>{children}</div>
+    </div>;
+  }
+
+  function NotesPanel({shipment}){
+    // Parse legacy notes + user_edits
+    const legacy = parseLegacyNotes(shipment.notes);
+
+    // Gather structured sources with legacy fallback
+    const agentNotes = shipment.agent_notes || legacy.agent.join(' · ');
+    const customerMsg = shipment.customer_message || shipment.customer_edits_text || legacy.customerMsg;
+
+    // customer_edits: prefer new taxonomy field, fall back to legacy user_edits
+    let customerEdits = shipment.customer_edits;
+    if(!customerEdits && shipment.user_edits){
+      customerEdits = shipment.user_edits;
+    }
+
+    const itemManifest = shipment.item_manifest || (legacy.items.length ? legacy.items : null);
+    const aiRationale = shipment.ai_rationale || legacy.aiRationale;
+    const aiEstimate = shipment.ai_estimate_raw;
+
+    const hasAnything = agentNotes || customerMsg || customerEdits || itemManifest || aiRationale || aiEstimate || legacy.photos.length;
+    if(!hasAnything) return null;
+
+    return <div style={{marginTop:4}}>
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Notes & Details</div>
+
+      {/* 1. Agent Notes — human-written, most important */}
+      {agentNotes && <NotesBox title="👤 Agent Notes" color={G.purple} bg="#F8F5FF">
+        <div style={{whiteSpace:"pre-wrap"}}>{agentNotes}</div>
+      </NotesBox>}
+
+      {/* 2. Customer Message */}
+      {customerMsg && <NotesBox title="💬 Customer Message" color="#A07020" bg="#FFF8EC">
+        <div style={{whiteSpace:"pre-wrap"}}>{customerMsg}</div>
+      </NotesBox>}
+
+      {/* 3. Customer Edits */}
+      {customerEdits && <NotesBox title="✏️ Customer Edits" color={G.blue} bg="#EEF4FF">
+        {(() => {
+          // Try to parse "Material: 14K -> 18K; Weight: 20g -> 25g"
+          const edits = String(customerEdits).split(/[;|]/).map(s=>s.trim()).filter(Boolean);
+          return <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {edits.map((e,i)=>{
+              const m = e.match(/^(.+?):\s*(.+?)\s*->\s*(.+)$/);
+              if(m) return <div key={i} style={{fontSize:12}}>
+                <span style={{fontWeight:600,color:G.muted}}>{m[1]}:</span>
+                <span style={{textDecoration:"line-through",color:G.muted,marginLeft:6}}>{m[2]}</span>
+                <span style={{color:G.blue,fontWeight:600,marginLeft:6}}>→ {m[3]}</span>
+              </div>;
+              // Free-text edit
+              if(/^free-text:/i.test(e)) return <div key={i} style={{fontSize:12,fontStyle:"italic"}}>{e.replace(/^free-text:\s*/i,'"') + '"'}</div>;
+              return <div key={i} style={{fontSize:12}}>{e}</div>;
+            })}
+          </div>;
+        })()}
+      </NotesBox>}
+
+      {/* 4. Item Manifest — multi-item shipments */}
+      {itemManifest && Array.isArray(itemManifest) && itemManifest.length > 0 && <NotesBox title={`📦 Item Manifest (${itemManifest.length})`} color={G.teal} bg="#EDF7F6">
+        <div style={{display:"flex",flexDirection:"column",gap:0}}>
+          {itemManifest.map((it,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"5px 0",borderBottom:i<itemManifest.length-1?`1px solid ${G.border}`:"none"}}>
+              <span style={{fontSize:12,color:G.text,flex:1}}>{it.name}{it.meta && <span style={{fontSize:10,color:G.muted,marginLeft:6}}>{it.meta}</span>}</span>
+              {it.price && <span style={{fontSize:12,fontWeight:600,color:G.gold,marginLeft:10,whiteSpace:"nowrap"}}>{it.price}</span>}
+            </div>
+          ))}
+        </div>
+      </NotesBox>}
+
+      {/* 5. AI Rationale */}
+      {aiRationale && <NotesBox title="🤖 AI Rationale" color={G.muted} bg={G.bg}>
+        <div style={{fontStyle:"italic",fontSize:12}}>{aiRationale}</div>
+      </NotesBox>}
+
+      {/* 6. AI Raw Estimate (if different from main estimate) */}
+      {aiEstimate && aiEstimate !== shipment.estimate && <NotesBox title="🤖 AI Original Estimate" color={G.muted} bg={G.bg}>
+        <div style={{fontSize:12,fontFamily:"monospace"}}>{aiEstimate}</div>
+      </NotesBox>}
+
+      {/* 7. Legacy Photo URLs — embedded in old notes (separate from Photos tab) */}
+      {legacy.photos.length > 0 && <NotesBox title={`📷 Legacy Photo Link${legacy.photos.length>1?'s':''}`} color={G.muted} bg={G.bg}>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          {legacy.photos.map((url,i)=>(
+            <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:G.blue,wordBreak:"break-all",textDecoration:"none"}}>{url}</a>
+          ))}
+        </div>
+      </NotesBox>}
     </div>;
   }
 
@@ -624,7 +742,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>}
           <Field label="Shipping Type" value={shipment.shipping_type}/>
           {shipment.bin_number&&<div style={{background:"#FFF8EE",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.gold}44`}}><div style={{fontSize:10,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>Bin Number</div><div style={{fontSize:22,fontWeight:700,color:G.gold}}>{shipment.bin_number}</div></div>}
-          {shipment.notes&&<NotesField value={shipment.notes}/>}
+          <NotesPanel shipment={shipment}/>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
@@ -1500,7 +1618,7 @@ function ConvertLeadModal({lead, onSave, onClose}) {
           <Sel label="Stage" value={stage} onChange={e=>setStage(e.target.value)}
             options={STAGES.filter(s=>s!=="estimate_only").map(v=>({value:v,label:SL[v]||v}))}/>
           <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)}
-            options={[{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
+            options={[{value:"kit",label:"Kit"},{value:"label",label:"Label"}]}/>
         </div>
         <Inp label="Item" value={item} onChange={e=>setItem(e.target.value)}/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)}/>
