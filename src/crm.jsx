@@ -546,146 +546,173 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   }
 
   // ── Parse legacy `notes` field into categorized chunks ──────────
-  // Legacy notes patterns observed:
-  //   "AI rationale text | photo: https://..."
-  //   "Additional items: [2] Item - $X | [3] Item - $Y"
-  //   "+ Item Name ($X – $Y) [metadata]"   (new-style manifest lines)
-  //   "made offer $15 via email"            (bare human notes)
-  //   "Customer note: xyz"                  (prefixed human notes)
+  // Patterns observed:
+  //   New format (multi-item): each item on its own line as:
+  //     "Item Name ($X – $Y) — rationale text..."
+  //   Legacy (single-item): "Based on X... | photo: https://..."
+  //   Legacy (multi-item):  "Additional items: [2] Item - $X | [3] Item - $Y"
+  //   Prefixed:             "Customer note: xyz"
+  //   Bare:                 "made offer $15 via email"
   function parseLegacyNotes(raw){
-    if(!raw) return {};
-    const out = {aiRationale:'', items:[], photos:[], agent:[], customerMsg:''};
+    if(!raw) return {items:[], aiRationale:'', photos:[], agent:[], customerMsg:''};
+    const out = {items:[], aiRationale:'', photos:[], agent:[], customerMsg:''};
+
     // Pull out photo URLs first
     const photoRegex = /\|\s*photo:\s*(https?:\/\/[^\s|]+)/gi;
     let cleaned = raw;
     let m;
-    while((m = photoRegex.exec(raw)) !== null){
-      out.photos.push(m[1]);
-    }
+    while((m = photoRegex.exec(raw)) !== null){ out.photos.push(m[1]); }
     cleaned = cleaned.replace(photoRegex, '').trim();
 
-    // Split on newlines AND on " | " (legacy separator)
-    const segments = cleaned.split(/\n|(?:\s\|\s)/).map(s=>s.trim()).filter(Boolean);
+    // Pattern A: multi-line with "Item Name ($X – $Y) — rationale"
+    // Each line is a self-contained item. Split on newlines first.
+    const lines = cleaned.split(/\n+/).map(l => l.trim()).filter(Boolean);
+    let matchedNewStyle = 0;
+    for(const line of lines){
+      // "Name ($low – $high) — rationale"
+      const mm = line.match(/^(.+?)\s*\(\s*(\$[\d,]+(?:\s*[–\-]\s*\$[\d,]+)?)\s*\)\s*[—\-–]\s*(.+)$/);
+      if(mm){
+        out.items.push({name: mm[1].trim(), price: mm[2].trim(), rationale: mm[3].trim()});
+        matchedNewStyle++;
+        continue;
+      }
+      // Fallback: "Name ($X)" with no rationale
+      const mm2 = line.match(/^(.+?)\s*\(\s*(\$[\d,]+(?:\s*[–\-]\s*\$[\d,]+)?)\s*\)\s*$/);
+      if(mm2){
+        out.items.push({name: mm2[1].trim(), price: mm2[2].trim(), rationale: ''});
+        matchedNewStyle++;
+        continue;
+      }
+    }
 
-    for(const seg of segments){
-      // + item line (new-style manifest)
-      if(seg.startsWith('+')){
-        const parsed = seg.replace(/^\+\s*/,'').match(/^(.+?)\s*\(\$?([\d,\s–\-$]+)\)\s*(\[.*?\])?$/);
-        if(parsed){
-          out.items.push({name:parsed[1].trim(), price:'$'+parsed[2].trim(), meta:parsed[3]||''});
-        } else {
-          out.items.push({name:seg.replace(/^\+\s*/,''), price:'', meta:''});
+    // If we didn't match any new-style, try legacy patterns by splitting on " | "
+    if(matchedNewStyle === 0){
+      const segments = cleaned.split(/\s\|\s/).map(s=>s.trim()).filter(Boolean);
+      for(const seg of segments){
+        // "+ Item Name ($X)"
+        if(seg.startsWith('+')){
+          const plusMatch = seg.replace(/^\+\s*/,'').match(/^(.+?)\s*\(\$?([\d,\s–\-$]+)\)\s*(\[.*?\])?$/);
+          if(plusMatch){
+            out.items.push({name:plusMatch[1].trim(), price:'$'+plusMatch[2].trim(), rationale:'', meta:plusMatch[3]||''});
+          } else {
+            out.items.push({name:seg.replace(/^\+\s*/,''), price:'', rationale:''});
+          }
+          continue;
         }
-        continue;
+        // "Additional items: [N] Name - $X" or just "[N] Name - $X"
+        const addItemMatch = seg.match(/^(?:Additional items:\s*)?\[(\d+)\]\s*(.+?)\s*-\s*(\$[\d,\s–\-$]+)\s*$/);
+        if(addItemMatch){
+          out.items.push({name:addItemMatch[2].trim(), price:addItemMatch[3].trim(), rationale:'', meta:'#'+addItemMatch[1]});
+          continue;
+        }
+        // "Customer note: xyz"
+        if(/^customer note:/i.test(seg)){
+          out.customerMsg = (out.customerMsg?out.customerMsg+' ':'') + seg.replace(/^customer note:\s*/i,'');
+          continue;
+        }
+        // AI rationale heuristic: starts with "Based on" or has telltale phrases
+        if(/^based on\b|final offer|secondary market|in-person (verification|authentication)/i.test(seg)){
+          out.aiRationale = (out.aiRationale?out.aiRationale+' ':'') + seg;
+          continue;
+        }
+        // Unknown → treat as agent note
+        out.agent.push(seg);
       }
-      // "Additional items: [N] Name - $X"
-      const addItemMatch = seg.match(/^(?:Additional items:\s*)?\[(\d+)\]\s*(.+?)\s*-\s*(\$[\d,\s–\-$]+)\s*$/);
-      if(addItemMatch){
-        out.items.push({name:addItemMatch[2].trim(), price:addItemMatch[3].trim(), meta:'#'+addItemMatch[1]});
-        continue;
-      }
-      // "Customer note: xyz"
-      if(/^customer note:/i.test(seg)){
-        out.customerMsg = (out.customerMsg?out.customerMsg+' ':'') + seg.replace(/^customer note:\s*/i,'');
-        continue;
-      }
-      // Heuristic: AI rationale usually starts with "Based on" or contains "Final offer"
-      if(/^based on\b|final offer|secondary market|in-person (verification|authentication)/i.test(seg)){
-        out.aiRationale = (out.aiRationale?out.aiRationale+' ':'') + seg;
-        continue;
-      }
-      // Otherwise — probably agent note
-      out.agent.push(seg);
     }
     return out;
   }
 
-  function NotesBox({title, color, bg, children}){
+  function NotesBox({title, color, bg, children, collapsible=false, defaultOpen=true}){
+    const [open, setOpen] = useState(defaultOpen);
     return <div style={{background:bg||"#fff",border:`1px solid ${color}33`,borderRadius:8,padding:"10px 12px",marginTop:8}}>
-      <div style={{fontSize:10,fontWeight:700,color:color,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:6}}>{title}</div>
-      <div style={{fontSize:13,color:G.text,lineHeight:1.5}}>{children}</div>
+      <div onClick={collapsible ? () => setOpen(v=>!v) : undefined}
+           style={{fontSize:10,fontWeight:700,color:color,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:open?6:0,
+                   cursor:collapsible?"pointer":"default",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>{title}</span>
+        {collapsible && <span style={{fontSize:10,color:color,opacity:0.6}}>{open?"▾":"▸"}</span>}
+      </div>
+      {open && <div style={{fontSize:13,color:G.text,lineHeight:1.5}}>{children}</div>}
     </div>;
   }
 
   function NotesPanel({shipment}){
-    // Parse legacy notes + user_edits
     const legacy = parseLegacyNotes(shipment.notes);
 
-    // Gather structured sources with legacy fallback
-    const agentNotes = shipment.agent_notes || legacy.agent.join(' · ');
+    // Structured sources with legacy fallback
+    const agentNotes = shipment.agent_notes || (legacy.agent.length ? legacy.agent.join(' · ') : '');
     const customerMsg = shipment.customer_message || shipment.customer_edits_text || legacy.customerMsg;
-
-    // customer_edits: prefer new taxonomy field, fall back to legacy user_edits
     let customerEdits = shipment.customer_edits;
-    if(!customerEdits && shipment.user_edits){
-      customerEdits = shipment.user_edits;
-    }
-
-    const itemManifest = shipment.item_manifest || (legacy.items.length ? legacy.items : null);
-    const aiRationale = shipment.ai_rationale || legacy.aiRationale;
+    if(!customerEdits && shipment.user_edits){ customerEdits = shipment.user_edits; }
+    const items = shipment.item_manifest || legacy.items;
+    // Use legacy aiRationale only if there's a single item (or no items) — otherwise per-item rationales live in the manifest
+    const standaloneAiRationale = (!items || items.length <= 1) ? (shipment.ai_rationale || legacy.aiRationale) : '';
     const aiEstimate = shipment.ai_estimate_raw;
 
-    const hasAnything = agentNotes || customerMsg || customerEdits || itemManifest || aiRationale || aiEstimate || legacy.photos.length;
+    const hasAnything = agentNotes || customerMsg || customerEdits || (items && items.length) || standaloneAiRationale || aiEstimate || legacy.photos.length;
     if(!hasAnything) return null;
 
     return <div style={{marginTop:4}}>
       <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Notes & Details</div>
 
-      {/* 1. Agent Notes — human-written, most important */}
+      {/* 1. Agent Notes — most important, human-written */}
       {agentNotes && <NotesBox title="👤 Agent Notes" color={G.purple} bg="#F8F5FF">
         <div style={{whiteSpace:"pre-wrap"}}>{agentNotes}</div>
       </NotesBox>}
 
-      {/* 2. Customer Message */}
+      {/* 2. Customer Message — what they said */}
       {customerMsg && <NotesBox title="💬 Customer Message" color="#A07020" bg="#FFF8EC">
         <div style={{whiteSpace:"pre-wrap"}}>{customerMsg}</div>
       </NotesBox>}
 
-      {/* 3. Customer Edits */}
+      {/* 3. Customer Edits — what they corrected */}
       {customerEdits && <NotesBox title="✏️ Customer Edits" color={G.blue} bg="#EEF4FF">
         {(() => {
-          // Try to parse "Material: 14K -> 18K; Weight: 20g -> 25g"
           const edits = String(customerEdits).split(/[;|]/).map(s=>s.trim()).filter(Boolean);
           return <div style={{display:"flex",flexDirection:"column",gap:4}}>
             {edits.map((e,i)=>{
-              const m = e.match(/^(.+?):\s*(.+?)\s*->\s*(.+)$/);
-              if(m) return <div key={i} style={{fontSize:12}}>
-                <span style={{fontWeight:600,color:G.muted}}>{m[1]}:</span>
-                <span style={{textDecoration:"line-through",color:G.muted,marginLeft:6}}>{m[2]}</span>
-                <span style={{color:G.blue,fontWeight:600,marginLeft:6}}>→ {m[3]}</span>
+              const mm = e.match(/^(.+?):\s*(.+?)\s*->\s*(.+)$/);
+              if(mm) return <div key={i} style={{fontSize:12}}>
+                <span style={{fontWeight:600,color:G.muted}}>{mm[1]}:</span>
+                <span style={{textDecoration:"line-through",color:G.muted,marginLeft:6}}>{mm[2]}</span>
+                <span style={{color:G.blue,fontWeight:600,marginLeft:6}}>→ {mm[3]}</span>
               </div>;
-              // Free-text edit
-              if(/^free-text:/i.test(e)) return <div key={i} style={{fontSize:12,fontStyle:"italic"}}>{e.replace(/^free-text:\s*/i,'"') + '"'}</div>;
+              if(/^free-text:/i.test(e)) return <div key={i} style={{fontSize:12,fontStyle:"italic"}}>"{e.replace(/^free-text:\s*/i,'')}"</div>;
               return <div key={i} style={{fontSize:12}}>{e}</div>;
             })}
           </div>;
         })()}
       </NotesBox>}
 
-      {/* 4. Item Manifest — multi-item shipments */}
-      {itemManifest && Array.isArray(itemManifest) && itemManifest.length > 0 && <NotesBox title={`📦 Item Manifest (${itemManifest.length})`} color={G.teal} bg="#EDF7F6">
-        <div style={{display:"flex",flexDirection:"column",gap:0}}>
-          {itemManifest.map((it,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"5px 0",borderBottom:i<itemManifest.length-1?`1px solid ${G.border}`:"none"}}>
-              <span style={{fontSize:12,color:G.text,flex:1}}>{it.name}{it.meta && <span style={{fontSize:10,color:G.muted,marginLeft:6}}>{it.meta}</span>}</span>
-              {it.price && <span style={{fontSize:12,fontWeight:600,color:G.gold,marginLeft:10,whiteSpace:"nowrap"}}>{it.price}</span>}
+      {/* 4. Item Manifest with per-item rationales (numbered) */}
+      {items && items.length > 0 && <NotesBox title={`📦 Item Manifest (${items.length})`} color={G.teal} bg="#EDF7F6">
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {items.map((it,i)=>(
+            <div key={i} style={{paddingBottom:i<items.length-1?10:0,borderBottom:i<items.length-1?`1px solid ${G.teal}22`:"none"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <span style={{display:"inline-block",background:G.teal,color:"#fff",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,marginRight:6,verticalAlign:"middle"}}>#{i+1}</span>
+                  <span style={{fontSize:13,color:G.text,fontWeight:600}}>{it.name}</span>
+                </div>
+                {it.price && <span style={{fontSize:13,fontWeight:700,color:G.gold,whiteSpace:"nowrap"}}>{it.price}</span>}
+              </div>
+              {it.rationale && <div style={{fontSize:11,color:G.muted,marginTop:4,marginLeft:24,fontStyle:"italic",lineHeight:1.5}}>{it.rationale}</div>}
             </div>
           ))}
         </div>
       </NotesBox>}
 
-      {/* 5. AI Rationale */}
-      {aiRationale && <NotesBox title="🤖 AI Rationale" color={G.muted} bg={G.bg}>
-        <div style={{fontStyle:"italic",fontSize:12}}>{aiRationale}</div>
+      {/* 5. Standalone AI Rationale (only if single-item shipment) — collapsed by default */}
+      {standaloneAiRationale && <NotesBox title="🤖 AI Rationale" color={G.muted} bg={G.bg} collapsible defaultOpen={false}>
+        <div style={{fontStyle:"italic",fontSize:12}}>{standaloneAiRationale}</div>
       </NotesBox>}
 
-      {/* 6. AI Raw Estimate (if different from main estimate) */}
-      {aiEstimate && aiEstimate !== shipment.estimate && <NotesBox title="🤖 AI Original Estimate" color={G.muted} bg={G.bg}>
-        <div style={{fontSize:12,fontFamily:"monospace"}}>{aiEstimate}</div>
+      {/* 6. AI Original Estimate — collapsed by default */}
+      {aiEstimate && aiEstimate !== shipment.estimate && <NotesBox title="🤖 AI Original Estimate" color={G.muted} bg={G.bg} collapsible defaultOpen={false}>
+        <div style={{fontSize:12,fontFamily:"monospace",whiteSpace:"pre-wrap"}}>{aiEstimate}</div>
       </NotesBox>}
 
-      {/* 7. Legacy Photo URLs — embedded in old notes (separate from Photos tab) */}
-      {legacy.photos.length > 0 && <NotesBox title={`📷 Legacy Photo Link${legacy.photos.length>1?'s':''}`} color={G.muted} bg={G.bg}>
+      {/* 7. Legacy Photo URLs — collapsed since main Photos panel below already shows them */}
+      {legacy.photos.length > 0 && <NotesBox title={`📷 Legacy Photo Link${legacy.photos.length>1?'s':''}`} color={G.muted} bg={G.bg} collapsible defaultOpen={false}>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {legacy.photos.map((url,i)=>(
             <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:G.blue,wordBreak:"break-all",textDecoration:"none"}}>{url}</a>
