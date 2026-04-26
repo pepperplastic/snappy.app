@@ -575,6 +575,7 @@ function CustomerHistory({shipment,allShipments,allCustomers}) {
 function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
   const high=parseEstHigh(shipment.estimate);
   const srd=stageRelevantDate(shipment);
+  const absStr=srd ? fmtDateTime(srd.ts) : null;
   const ageStr=srd ? timeAgo(srd.ts) : null;
   const ageLabel=srd ? srd.label : "";
   const stuckCol=stuckColor(shipment, G);
@@ -600,7 +601,7 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
                   {shipment.shipping_type==="usps" ? "USPS Label" : shipment.shipping_type==="label" ? "FedEx Label" : shipment.shipping_type==="kit" ? "Kit" : "Ready to Fulfill"}
                 </span>
               : <Badge stage={shipment.stage} sm/>}
-            {ageStr&&<span title={fmtDateTime(srd.ts)} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {ageStr} ago</span>}
+            {absStr&&<span title={ageStr?`${ageStr} ago`:""} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {absStr}</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
           </div>
         </div>
