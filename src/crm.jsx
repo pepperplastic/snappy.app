@@ -766,11 +766,15 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     catch(e){alert("Failed: "+e.message);}
   }
 
-  function Field({label,value,mono}){
+  function Field({label,value,mono,copy}){
     if(!value) return null;
     return <div>
       <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:2}}>{label}</div>
-      <div style={{fontSize:13,color:G.text,fontFamily:mono?"monospace":"inherit",wordBreak:"break-all"}}>{value}</div>
+      <div
+        style={{fontSize:13,color:G.text,fontFamily:mono?"monospace":"inherit",wordBreak:"break-all",cursor:copy?"pointer":"inherit",userSelect:copy?"all":"inherit"}}
+        title={copy?"Click to copy":undefined}
+        onClick={copy?(()=>{navigator.clipboard?.writeText(String(value));}):undefined}
+      >{value}</div>
     </div>;
   }
 
@@ -987,7 +991,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     <div style={{flex:1,overflow:"auto",padding:20}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
         <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Shipment · {shipment.shipment_id}</div>
+          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Shipment · <span style={{cursor:"pointer",userSelect:"all"}} title="Click to copy" onClick={()=>{navigator.clipboard?.writeText(shipment.shipment_id);}}>{shipment.shipment_id}</span></div>
           <Field label="Item" value={shipment.item}/>
           <Field label="Estimate" value={shipment.estimate}/>
           {shipment.purchase_price&&<div style={{background:"#F0FFF4",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.green}30`}}>
@@ -1070,7 +1074,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           })()}
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Customer</div>
-            <Field label="ID" value={customer?.customer_id}/>
+            <Field label="ID" value={customer?.customer_id} mono copy/>
             <Field label="Email" value={customer?.email||<span style={{color:G.muted,fontStyle:"italic"}}>Not available</span>}/>
             <Field label="Phone" value={customer?.phone?fmtPhone(customer.phone):<span style={{color:G.muted,fontStyle:"italic"}}>Not available</span>}/>
             <Field label="Address" value={customer?.address}/>
