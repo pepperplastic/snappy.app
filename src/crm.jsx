@@ -2277,6 +2277,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
 // ══════════════════════════════════════════════════════════
 
 function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) {
+  const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [selected,setSelected]=useState(null);
   const [selectedShipId,setSelectedShipId]=useState(null);
@@ -2296,9 +2297,9 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
   const selShipment=selectedShipId?selShipments.find(s=>s.shipment_id===selectedShipId):null;
   const selLogs=selected?(logsByCustomer[selected]||[]):[];
 
-  return <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+  return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
     {/* Left: customer list */}
-    <div style={{width:280,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
+    <div style={{width:isMobile?"100%":280,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search customers..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
       </div>
@@ -2325,7 +2326,10 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
     </div>
 
     {/* Middle: shipment list for selected customer */}
-    {selCustomer&&<div style={{width:260,borderRight:`1px solid ${G.border}`,display:"flex",flexDirection:"column",background:G.bg,flexShrink:0}}>
+    {selCustomer&&<div style={{width:isMobile?"100%":260,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selectedShipId?"none":"flex",flexDirection:"column",background:G.bg,flexShrink:0}}>
+      {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={()=>{setSelected(null);setSelectedShipId(null);}} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Customers</button>
+      </div>}
       <div style={{padding:"12px 16px",borderBottom:`1px solid ${G.border}`,background:"#fff"}}>
         <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
           <Avatar name={selCustomer.name} size={36}/>
@@ -2356,13 +2360,18 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
     </div>}
 
     {/* Right: shipment detail */}
-    {selCustomer&&selShipment?<DetailPane shipment={selShipment} customer={selCustomer} contactLogs={selLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={s=>{onNewShipment(s);setSelectedShipId(s.shipment_id);}} onClose={()=>setSelectedShipId(null)}/>
-    :selCustomer?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
+    {selCustomer&&selShipment?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
+      {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={()=>setSelectedShipId(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← {selCustomer.name||"Back"}</button>
+      </div>}
+      <DetailPane shipment={selShipment} customer={selCustomer} contactLogs={selLogs} allShipments={shipments} allCustomers={customers} onUpdate={(s,c)=>{onUpdate(s,c);}} onNewShipment={s=>{onNewShipment(s);setSelectedShipId(s.shipment_id);}} onClose={()=>setSelectedShipId(null)}/>
+    </div>
+    :selCustomer?<div style={{flex:1,display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a shipment to view details</div>
       <Btn v="gold" onClick={()=>{if(selCustomer){const fakeNew={shipment_id:"__new__",customer_id:selCustomer.customer_id};onNewShipment&&onNewShipment(fakeNew);}}}>+ New Shipment</Btn>
     </div>
-    :<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
+    :<div style={{flex:1,display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a customer</div>
     </div>}
