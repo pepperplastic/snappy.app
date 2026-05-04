@@ -621,36 +621,72 @@ function InventoryPhotosPanel({shipment, photos, onPhotoAdded}) {
   async function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError("Photo must be under 10MB");
-      return;
-    }
     setUploadError("");
     setUploading(true);
     try {
-      // Read as base64
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Compress image client-side before upload — phone photos are often 3-8MB raw
+      // which blows past Apps Script base64 limits. Resize to max 1600px and JPEG q=0.85.
+      const base64 = await compressImage(file, 1600, 0.85);
+      const sizeKB = Math.round(base64.length / 1024);
+      console.log("[InventoryPhoto] uploading", file.name, "compressed to", sizeKB + "KB");
+      // Apps Script soft limit is around 10MB total POST body; warn if approaching
+      if (base64.length > 8 * 1024 * 1024) {
+        setUploadError(`Photo too large after compression (${sizeKB}KB). Try a different photo.`);
+        setUploading(false);
+        if (fileRef.current) fileRef.current.value = "";
+        return;
+      }
       const result = await apiPost({
         action: "addInventoryPhoto",
         shipment_id: shipment.shipment_id,
         image: base64,
       });
+      console.log("[InventoryPhoto] result:", result);
       if (result && result.success) {
         if (onPhotoAdded) onPhotoAdded(result);
       } else {
-        setUploadError(result?.error || "Upload failed");
+        setUploadError("Upload failed: " + (result?.error || "no response from server"));
       }
     } catch(err) {
-      setUploadError(err.message || "Upload failed");
+      console.error("[InventoryPhoto] error:", err);
+      setUploadError("Upload failed: " + (err.message || String(err)));
     }
     setUploading(false);
-    // Reset file input so the same file can be re-selected if needed
     if (fileRef.current) fileRef.current.value = "";
+  }
+
+  // Compress image to a max dimension and JPEG quality. Returns base64 data URL.
+  function compressImage(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          // Scale down if either dimension exceeds maxDim
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round(height * (maxDim / width));
+              width = maxDim;
+            } else {
+              width = Math.round(width * (maxDim / height));
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", quality);
+          resolve(dataUrl);
+        };
+        img.onerror = () => reject(new Error("Image load failed"));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error("File read failed"));
+      reader.readAsDataURL(file);
+    });
   }
 
   function getDriveThumb(url) {
