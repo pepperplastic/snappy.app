@@ -1092,7 +1092,9 @@ export default function App() {
   const handleShippingSubmit = (e) => {
     e.preventDefault()
     submitLead()
-    trackMetaEvent('InitiateCheckout', { content_name: 'Shipping Form Submitted' })
+    // CompleteRegistration is THE success event — fired when shipping address is submitted.
+    // This is the moment the lead becomes shippable. Facebook ad set should optimize for this.
+    trackMetaEvent('CompleteRegistration', { content_name: 'Shipping Form Submitted' })
     if (directQuote) {
       setDirectQuote(false) // Reset so photo flow doesn't loop back to "Get a Quote"
       setStep(STEPS.CAPTURE)
@@ -1247,8 +1249,10 @@ export default function App() {
             onDirectSubmit={() => {
               submitLead()
               trackEvent('cta_submit_from_offer')
-              trackMetaEvent('Purchase', { content_name: analysis?.title || 'Unknown Item', value: analysis?.offer_high || 0, currency: 'USD' })
-              trackRedditEvent('Purchase')
+              // Returning user submitting from offer screen — they have email but not address yet.
+              // Fire Lead (mid-funnel signal), NOT Purchase (no purchase has occurred).
+              trackMetaEvent('Lead', { content_name: 'Direct Submit From Offer' })
+              trackRedditEvent('Lead')
               trackGadsConversion(GADS_LEAD_LABEL)
               setStep(STEPS.SUBMITTED)
             }}
@@ -2327,7 +2331,7 @@ Additional info: ${customerEditsText}` : correctionLines
                             setGateUnlocked(true)
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
-                            trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                            trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
                             fetch('/api/submit-lead', {
                               method: 'POST',
@@ -2355,7 +2359,7 @@ Additional info: ${customerEditsText}` : correctionLines
                             setGateUnlocked(true)
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
-                            trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                            trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
                             // Send notification with email
                             fetch('/api/submit-lead', {
@@ -2490,7 +2494,7 @@ Additional info: ${customerEditsText}` : correctionLines
                       setNudgeSubmitted(true)
                       setLeadData(prev => ({ ...prev, email: nudgeEmail }))
                       trackEvent('nudge_email_submitted', { method: 'variant_c' })
-                      trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                      trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
                       fetch('/api/submit-lead', {
                         method: 'POST',
@@ -2519,7 +2523,7 @@ Additional info: ${customerEditsText}` : correctionLines
                       setNudgeSubmitted(true)
                       setLeadData(prev => ({ ...prev, email: nudgeEmail }))
                       trackEvent('nudge_email_submitted', { method: 'variant_c' })
-                      trackMetaEvent('CompleteRegistration', { content_name: 'Email Capture' })
+                      trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
                       // Send notification with email
                       fetch('/api/submit-lead', {
