@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < 768);
@@ -124,6 +124,24 @@ function fmtDateTime(ts) {
   hrs = hrs % 12 || 12;
   const yearSuffix = d.getFullYear() !== new Date().getFullYear() ? ", " + d.getFullYear() : "";
   return `${mo} ${day}${yearSuffix} · ${hrs}:${mins} ${ampm}`;
+}
+// Display the shipment's item, with customer_message as a fallback when item is empty.
+// For direct-quote / limit-gate leads where AI never produced an item name,
+// the customer's typed description lives in customer_message — show that instead
+// of "(no item)". Returns truncated string.
+function displayItem(shipment, max) {
+  if (!shipment) return "(no item)";
+  const item = String(shipment.item || "").trim();
+  if (item) return item;
+  const msg = String(shipment.customer_message || shipment.customer_edits_text || "").trim();
+  if (!msg) return "(no item)";
+  // Trim to first sentence/line, then to max chars
+  let s = msg;
+  const brk = s.search(/[.\n]/);
+  if (brk > 0 && brk < 100) s = s.substring(0, brk);
+  const limit = max || 60;
+  if (s.length > limit) s = s.substring(0, limit - 1) + "…";
+  return s;
 }
 // Pick the most relevant date for a shipment based on its stage.
 // Returns { label, ts, age } or null.
@@ -421,6 +439,11 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
   const [photoName, setPhotoName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(shipment?.payment_method || "");
   const [paymentInfo, setPaymentInfo] = useState(shipment?.payment_info || "");
+  // Sworn statement — required by FL Statute 538.32(2)(c) before payment can be remitted.
+  // Pre-existing state: if either customer or shipment already has it, show as locked.
+  const existingSworn = customer?.sworn_statement_at || shipment?.sworn_statement_at || "";
+  const [swornAge, setSwornAge] = useState(!!existingSworn);
+  const [swornPerjury, setSwornPerjury] = useState(!!existingSworn);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef();
 
@@ -441,6 +464,13 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
       alert("Fill at least one field before saving.");
       return;
     }
+    // Sworn statement is required by FL Statute 538.32(2)(c) before payment can be remitted.
+    // Allow saving without it (operator may capture later) but warn if attempting payment with no attestation.
+    const swornComplete = swornAge && swornPerjury;
+    if (paymentMethod && !swornComplete && !existingSworn) {
+      const ok = confirm("⚠️ Sworn statement not checked. FL Statute 538.32(2)(c) requires the seller's perjury attestation before payment is remitted. Save anyway? (You can capture the attestation later.)");
+      if (!ok) return;
+    }
     setSaving(true);
     try {
       const result = await apiPost({
@@ -455,6 +485,9 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
           id_photo: photoData || "",
           payment_method: paymentMethod,
           payment_info: paymentInfo,
+          // Only send sworn=true if both checkboxes ticked AND not already captured
+          // (server is idempotent — won't overwrite existing sworn_statement_at)
+          sworn_statement: swornComplete && !existingSworn ? true : undefined,
         }
       });
       if (result && result.success !== false) {
@@ -464,6 +497,9 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
           id_photo_url: result.photo_url || shipment.id_photo_url || "",
           payment_method: paymentMethod, payment_info: paymentInfo,
         };
+        if (result.sworn_statement_at) {
+          updates.sworn_statement_at = result.sworn_statement_at;
+        }
         onSave(updates);
       } else {
         alert("Save failed: " + (result?.error || "unknown"));
@@ -530,12 +566,135 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
           <strong style={{color:G.text}}>Note:</strong> ID info is stored on both the customer profile (reusable for future transactions) and a snapshot on this shipment (for the 2-year regulatory record per FL Statute 538).
         </div>
 
+        {/* Sworn Statement — FL Statute 538.32(2)(c) */}
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>Sworn Statement</div>
+          {existingSworn ? (
+            <div style={{background:"#F0F7F0",border:`1px solid #B5D5B5`,borderRadius:6,padding:"10px 12px",fontSize:12,color:"#2F5F2F"}}>
+              ✓ Sworn statement on file (captured {fmtDateTime(existingSworn) || existingSworn})
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <label style={{display:"flex",gap:8,alignItems:"flex-start",cursor:"pointer",fontSize:12,color:G.text,lineHeight:1.5}}>
+                <input type="checkbox" checked={swornAge} onChange={e=>setSwornAge(e.target.checked)} style={{marginTop:2,flexShrink:0}}/>
+                <span>Seller confirms they are <strong>of lawful age</strong> and the <strong>lawful owner</strong> of the goods with absolute authority to sell.</span>
+              </label>
+              <label style={{display:"flex",gap:8,alignItems:"flex-start",cursor:"pointer",fontSize:12,color:G.text,lineHeight:1.5}}>
+                <input type="checkbox" checked={swornPerjury} onChange={e=>setSwornPerjury(e.target.checked)} style={{marginTop:2,flexShrink:0}}/>
+                <span>Seller declares <strong>under penalty of perjury</strong> that the foregoing is true and correct.</span>
+              </label>
+              <div style={{fontSize:10,color:G.muted,marginTop:2,lineHeight:1.4}}>
+                Required by FL Statute 538.32(2)(c) before payment can be remitted. Capture verbally over phone/email/text from the seller, then check both boxes.
+              </div>
+            </div>
+          )}
+        </div>
+
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <Btn v="ghost" onClick={onClose}>Cancel</Btn>
           <Btn v="gold" onClick={save} disabled={saving}>{saving?"Saving…":"Save"}</Btn>
         </div>
       </div>
     </div>
+  </div>;
+}
+
+
+// ══════════════════════════════════════════════════════════
+// INVENTORY PHOTOS PANEL
+// Mobile-camera-first capture of received-item photos.
+// These are the photos that get sent to LeadsOnline as the
+// official "transaction photos" per FL Statute 538.32(4) —
+// NOT the lead-intake customer phone photos.
+// ══════════════════════════════════════════════════════════
+
+function InventoryPhotosPanel({shipment, photos, onPhotoAdded}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileRef = useRef();
+
+  // Filter photos to only inventory ones
+  const inventoryPhotos = (photos || []).filter(p =>
+    String(p.source || "").toLowerCase() === "inventory"
+  );
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError("Photo must be under 10MB");
+      return;
+    }
+    setUploadError("");
+    setUploading(true);
+    try {
+      // Read as base64
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const result = await apiPost({
+        action: "addInventoryPhoto",
+        shipment_id: shipment.shipment_id,
+        image: base64,
+      });
+      if (result && result.success) {
+        if (onPhotoAdded) onPhotoAdded(result);
+      } else {
+        setUploadError(result?.error || "Upload failed");
+      }
+    } catch(err) {
+      setUploadError(err.message || "Upload failed");
+    }
+    setUploading(false);
+    // Reset file input so the same file can be re-selected if needed
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function getDriveThumb(url) {
+    if (!url) return "";
+    const m = String(url).match(/\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w200` : url;
+  }
+
+  return <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>
+        📸 Inventory Photos {inventoryPhotos.length>0 && `(${inventoryPhotos.length})`}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFile}
+        style={{display:"none"}}
+      />
+      <Btn v="gold" small onClick={()=>fileRef.current?.click()} disabled={uploading}>
+        {uploading ? "Uploading…" : "+ Add Photo"}
+      </Btn>
+    </div>
+    {uploadError && <div style={{fontSize:11,color:G.red,background:"#FFF0F0",padding:"6px 8px",borderRadius:4}}>{uploadError}</div>}
+    {inventoryPhotos.length === 0 && !uploading && (
+      <div style={{fontSize:12,color:G.muted,fontStyle:"italic",lineHeight:1.5}}>
+        No inventory photos yet. Take photos of the item(s) as received — these are the official transaction photos for FL Statute 538 compliance and LeadsOnline.
+      </div>
+    )}
+    {inventoryPhotos.length > 0 && (
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {inventoryPhotos.map(p => (
+          <a key={p.photo_id} href={p.drive_url} target="_blank" rel="noopener noreferrer"
+             style={{display:"block",width:84,height:84,borderRadius:6,overflow:"hidden",border:`1px solid ${G.border}`,background:G.bg}}
+             title={`Uploaded ${p.uploaded_at ? fmtDateTime(p.uploaded_at) : ""}`}>
+            <img src={getDriveThumb(p.drive_url)} alt="inventory"
+                 style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+                 onError={e=>{e.target.style.display="none";}}/>
+          </a>
+        ))}
+      </div>
+    )}
   </div>;
 }
 
@@ -556,7 +715,7 @@ function CustomerHistory({shipment,allShipments,allCustomers}) {
         const high=parseEstHigh(s.estimate);
         return <div key={s.shipment_id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"6px 8px",borderRadius:6,background:G.bg}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:600,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
+            <div style={{fontWeight:600,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayItem(s)}</div>
             <div style={{fontSize:10,color:G.muted,marginTop:2}}>{s.shipment_id} · {s.created_at?new Date(s.created_at).toLocaleDateString():""}</div>
           </div>
           {high>0&&<div style={{color:G.gold,fontWeight:700,flexShrink:0}}>{fmt$(high)}</div>}
@@ -589,7 +748,7 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
             <div style={{fontWeight:600,fontSize:13,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{customer?.name||customer?.email||shipment.customer_id}</div>
             {high>0&&<div style={{color:G.gold,fontWeight:700,fontSize:12,flexShrink:0}}>{fmt$(high)}</div>}
           </div>
-          <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{shipment.item||"(no item)"}</div>
+          <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayItem(shipment)}</div>
           <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center",flexWrap:"wrap"}}>
             {shipment.stage==="ready_to_fulfill"
               ? <span style={{
@@ -690,9 +849,9 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   // Sync localLogs when contactLogs prop changes (different customer selected)
   useEffect(()=>{ setLocalLogs(contactLogs||[]); },[contactLogs]);
 
-  useEffect(()=>{
+  // Fetch photos. Extracted as a callback so InventoryPhotosPanel can trigger a refresh after upload.
+  const refetchPhotos = useCallback(()=>{
     if(!shipment) return;
-    setPhotos([]);
     setPhotosLoading(true);
     apiFetch({action:"getPhotos",shipment_id:shipment.shipment_id})
       .then(res=>{
@@ -706,7 +865,12 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         setPhotosLoading(false);
       })
       .catch(()=>setPhotosLoading(false));
-  },[shipment?.shipment_id]);
+  },[shipment?.shipment_id, shipment?.notes]);
+
+  useEffect(()=>{
+    setPhotos([]);
+    refetchPhotos();
+  },[shipment?.shipment_id, refetchPhotos]);
 
   if(!shipment){
     return <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
@@ -1010,6 +1174,14 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             {shipment.outbound_tracking?<Field label="Outbound" value={shipment.outbound_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No outbound tracking</div>}
             {shipment.return_tracking?<Field label="Return" value={shipment.return_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No return tracking</div>}
           </div>
+          {/* Inventory Photos — shown for received and later stages */}
+          {["received","offer_made","purchased","returned","complete"].includes(shipment.stage) && (
+            <InventoryPhotosPanel
+              shipment={shipment}
+              photos={photos}
+              onPhotoAdded={refetchPhotos}
+            />
+          )}
           {/* Payment & ID — only shown for offer_made and later stages */}
           {["offer_made","purchased","returned"].includes(shipment.stage) && (()=>{
             const hasAnyId = shipment.id_type || shipment.id_number || shipment.date_birth || shipment.id_photo_url;
@@ -1123,7 +1295,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {modal==="log"&&<LogModal shipment={shipment} customer={customer} onSave={log=>{setLocalLogs(p=>[...p,log]);setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="stage"&&<StageModal shipment={shipment} onSave={stage=>{onUpdate({...shipment,stage});setModal(null);}} onClose={()=>setModal(null)}/>}
     {modal==="addShipment"&&customer&&<AddShipmentModal customer={customer} onSave={s=>{onNewShipment(s);setModal(null);}} onClose={()=>setModal(null)}/>}
-    {modal==="paymentId"&&<PaymentIdModal shipment={shipment} customer={customer} onSave={updates=>{onUpdate({...shipment,...updates}, {...customer, id_type:updates.id_type, id_number:updates.id_number, id_state:updates.id_state, date_birth:updates.date_birth, id_photo_url:updates.id_photo_url});setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="paymentId"&&<PaymentIdModal shipment={shipment} customer={customer} onSave={updates=>{onUpdate({...shipment,...updates}, {...customer, id_type:updates.id_type, id_number:updates.id_number, id_state:updates.id_state, date_birth:updates.date_birth, id_photo_url:updates.id_photo_url, sworn_statement_at:updates.sworn_statement_at||customer?.sworn_statement_at});setModal(null);}} onClose={()=>setModal(null)}/>}
   </div>;
 }
 
@@ -1184,7 +1356,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
                     <div style={{fontWeight:600,fontSize:13,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||c.email||s.customer_id}</div>
                     {high>0&&<div style={{color:G.gold,fontWeight:700,fontSize:12,flexShrink:0}}>{fmt$(high)}</div>}
                   </div>
-                  <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
+                  <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayItem(s)}</div>
                   <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center"}}>
                     <Badge stage={s.stage} sm/>
                     {s.bin_number&&<span style={{background:"#FFF8EE",color:G.gold,border:`1px solid ${G.gold}44`,borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>Bin {s.bin_number}</span>}
@@ -1279,7 +1451,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
                     <div style={{fontWeight:600,fontSize:13,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name||c.email||s.customer_id}</div>
                     {s.purchase_price&&<div style={{color:G.green,fontWeight:700,fontSize:12,flexShrink:0}}>{fmt$(s.purchase_price)}</div>}
                   </div>
-                  <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"(no item)"}</div>
+                  <div style={{fontSize:11,color:G.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayItem(s)}</div>
                   <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center"}}>
                     <span style={{background:s.stage==="returned"?"#F5F5F5":"#F0FFF4",color:s.stage==="returned"?G.muted:G.green,border:`1px solid ${s.stage==="returned"?G.muted:G.green}30`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>{s.stage==="returned"?"Returned":"Purchased ✓"}</span>
                     {s.bin_number&&<span style={{background:"#FFF8EE",color:G.gold,border:`1px solid ${G.gold}44`,borderRadius:4,padding:"1px 7px",fontSize:11,fontWeight:700}}>Bin {s.bin_number}</span>}
@@ -2172,7 +2344,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
         {selShipments.length===0?<div style={{padding:16,textAlign:"center",color:G.muted,fontSize:12}}>No shipments</div>:
         selShipments.map(s=><div key={s.shipment_id} onClick={()=>setSelectedShipId(s.shipment_id)} style={{background:"#fff",borderRadius:8,padding:"10px 12px",cursor:"pointer",border:`1px solid ${selectedShipId===s.shipment_id?G.gold:G.border}`,boxShadow:selectedShipId===s.shipment_id?"0 0 0 2px "+G.gold+"33":"none"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-            <div style={{fontSize:12,fontWeight:600,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{s.item||"(no item)"}</div>
+            <div style={{fontSize:12,fontWeight:600,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{displayItem(s)}</div>
             {parseEstHigh(s.estimate)>0&&<div style={{fontSize:11,color:G.gold,fontWeight:700,flexShrink:0}}>{fmt$(parseEstHigh(s.estimate))}</div>}
           </div>
           <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
@@ -2225,7 +2397,7 @@ function UrgentTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <div style={{width:32,height:32,borderRadius:"50%",background:G.red,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{(c.name||"?").split(" ").map(w=>w[0]).slice(0,2).join("")}</div>
-                  <div><div style={{fontWeight:600,fontSize:13,color:G.text}}>{c.name||"Unknown"}</div><div style={{fontSize:11,color:G.muted,marginTop:1}}>{s.item||"(no item)"}</div></div>
+                  <div><div style={{fontWeight:600,fontSize:13,color:G.text}}>{c.name||"Unknown"}</div><div style={{fontSize:11,color:G.muted,marginTop:1}}>{displayItem(s)}</div></div>
                 </div>
                 {s.estimate&&<div style={{fontSize:12,fontWeight:700,color:G.gold}}>{s.estimate}</div>}
               </div>
