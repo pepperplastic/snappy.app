@@ -2717,6 +2717,215 @@ function AnalyticsTab({shipments, customers}) {
       </div>
     </div>
 
+    {/* Kit vs Label cohort comparison */}
+    <CohortComparison shipments={shipments} fmt$={fmt$} fmtN={fmtN}/>
+
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// COHORT COMPARISON WIDGET — kit vs label vs usps
+// ══════════════════════════════════════════════════════════
+
+function CohortComparison({shipments, fmt$, fmtN}) {
+  // Default sent date range: 90 days ago → today
+  const [sentFrom, setSentFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate()-90);
+    return d.toISOString().slice(0,10);
+  });
+  const [sentTo, setSentTo] = useState(() => new Date().toISOString().slice(0,10));
+  // Default return date range: same window, but receive_at can be empty (filter will OR-include nulls)
+  const [retFrom, setRetFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate()-90);
+    return d.toISOString().slice(0,10);
+  });
+  const [retTo, setRetTo] = useState(() => new Date().toISOString().slice(0,10));
+  const [retOnly, setRetOnly] = useState(false); // if false, return-date filter is optional (only filters returned items)
+
+  const cohorts = useMemo(() => {
+    const sentFromDate = new Date(sentFrom + "T00:00:00");
+    const sentToDate = new Date(sentTo + "T23:59:59");
+    const retFromDate = new Date(retFrom + "T00:00:00");
+    const retToDate = new Date(retTo + "T23:59:59");
+
+    // A shipment was "sent" when it transitioned to outbound_complete.
+    // We don't store that timestamp specifically, so use created_at as proxy
+    // for fulfilment date (most shipments are fulfilled within hours of being created).
+    function shipmentSentDate(s) {
+      return s.sent_at ? new Date(s.sent_at) : (s.created_at ? new Date(s.created_at) : null);
+    }
+    function shipmentReceivedDate(s) {
+      return s.received_at ? new Date(s.received_at) : null;
+    }
+
+    // Filter shipments by sent date window
+    const inSentWindow = shipments.filter(s => {
+      // Only include shipments that actually got sent (any stage past ready_to_fulfill)
+      const wasSent = ["outbound_complete","received","inspected","offer_made","purchased","returned"].includes(s.stage);
+      if (!wasSent) return false;
+      const d = shipmentSentDate(s);
+      return d && d >= sentFromDate && d <= sentToDate;
+    });
+
+    // Group by shipping_type
+    const groups = {kit: [], label: [], usps: []};
+    inSentWindow.forEach(s => {
+      const type = String(s.shipping_type || "").toLowerCase().trim();
+      if (type === "kit") groups.kit.push(s);
+      else if (type === "label") groups.label.push(s);
+      else if (type === "usps") groups.usps.push(s);
+    });
+
+    // For each group, compute: sent, received-back (within return window if filter active), purchased, totals
+    function compute(group) {
+      const sent = group.length;
+      // Items that came back: received_at within return window
+      // If retOnly is on, MUST have a received_at AND it must be in the window
+      // If retOnly is off, count any item that has reached received-or-beyond stage AND if it has received_at, that date must be in window
+      const cameBack = group.filter(s => {
+        const isReceivedOrBeyond = ["received","inspected","offer_made","purchased","returned"].includes(s.stage);
+        if (!isReceivedOrBeyond) return false;
+        const r = shipmentReceivedDate(s);
+        if (retOnly) {
+          return r && r >= retFromDate && r <= retToDate;
+        } else {
+          // If we have a received_at timestamp, honor the filter; if missing, still count the shipment
+          if (!r) return true;
+          return r >= retFromDate && r <= retToDate;
+        }
+      });
+      const purchased = cameBack.filter(s => s.stage === "purchased");
+      const returned  = cameBack.filter(s => s.stage === "returned");
+      const totalPurchaseValue = purchased.reduce((sum,s) => sum + (parseFloat(s.purchase_price)||0), 0);
+      const totalAppraisedValue = purchased.reduce((sum,s) => sum + (parseFloat(s.appraised_value)||0), 0);
+      const avgPurchase = purchased.length > 0 ? totalPurchaseValue / purchased.length : 0;
+      return {
+        sent, received: cameBack.length, purchased: purchased.length, returned: returned.length,
+        receiveRate: sent > 0 ? (cameBack.length / sent) : 0,
+        purchaseRate: cameBack.length > 0 ? (purchased.length / cameBack.length) : 0,
+        avgPurchase, totalPurchaseValue, totalAppraisedValue,
+      };
+    }
+
+    return {
+      kit: compute(groups.kit),
+      label: compute(groups.label),
+      usps: compute(groups.usps),
+    };
+  }, [shipments, sentFrom, sentTo, retFrom, retTo, retOnly]);
+
+  // Detect interesting findings to surface as a banner
+  const insight = useMemo(() => {
+    const k = cohorts.kit, l = cohorts.label;
+    if (k.sent < 5 || l.sent < 5) return null; // not enough data
+    const rateGap = Math.abs(k.receiveRate - l.receiveRate);
+    if (rateGap < 0.05) {
+      return {type:"warn", text:`⚠️ Receive-back rates are within ${(rateGap*100).toFixed(1)}% of each other (kit ${(k.receiveRate*100).toFixed(1)}% vs label ${(l.receiveRate*100).toFixed(1)}%) — kit is not driving more conversions.`};
+    } else if (k.receiveRate > l.receiveRate + 0.05) {
+      return {type:"good", text:`✓ Kits convert ${((k.receiveRate-l.receiveRate)*100).toFixed(1)}% better than labels (${(k.receiveRate*100).toFixed(1)}% vs ${(l.receiveRate*100).toFixed(1)}%) — kit cost is earning its keep.`};
+    } else {
+      return {type:"surprise", text:`⚠️ Labels convert ${((l.receiveRate-k.receiveRate)*100).toFixed(1)}% better than kits (${(l.receiveRate*100).toFixed(1)}% vs ${(k.receiveRate*100).toFixed(1)}%) — kit is hurting more than helping.`};
+    }
+  }, [cohorts]);
+
+  const Cell = ({val, sub, color}) => <td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:color||G.text, textAlign:"right"}}>
+    <div style={{fontWeight:600}}>{val}</div>
+    {sub && <div style={{fontSize:11, color:G.muted, marginTop:2}}>{sub}</div>}
+  </td>;
+
+  const HeaderCell = ({children}) => <th style={{padding:"10px 12px", textAlign:"right", fontSize:11, color:G.muted, fontWeight:700, letterSpacing:"0.05em", textTransform:"uppercase"}}>{children}</th>;
+
+  return <div>
+    <div style={{fontSize:11,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Kit vs Label Cohort Comparison</div>
+    <div style={{background:"#fff",borderRadius:10,padding:20,border:`1px solid ${G.border}`}}>
+
+      {/* Date filters */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:16,marginBottom:16,alignItems:"flex-end"}}>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:4}}>Sent date</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <input type="date" value={sentFrom} onChange={e=>setSentFrom(e.target.value)} style={{padding:"5px 7px",border:`1px solid ${G.border}`,borderRadius:5,fontSize:12,background:G.bg}}/>
+            <span style={{color:G.muted,fontSize:11}}>to</span>
+            <input type="date" value={sentTo} onChange={e=>setSentTo(e.target.value)} style={{padding:"5px 7px",border:`1px solid ${G.border}`,borderRadius:5,fontSize:12,background:G.bg}}/>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:4}}>Return date</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <input type="date" value={retFrom} onChange={e=>setRetFrom(e.target.value)} style={{padding:"5px 7px",border:`1px solid ${G.border}`,borderRadius:5,fontSize:12,background:G.bg}}/>
+            <span style={{color:G.muted,fontSize:11}}>to</span>
+            <input type="date" value={retTo} onChange={e=>setRetTo(e.target.value)} style={{padding:"5px 7px",border:`1px solid ${G.border}`,borderRadius:5,fontSize:12,background:G.bg}}/>
+          </div>
+        </div>
+        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:G.text,cursor:"pointer"}}>
+          <input type="checkbox" checked={retOnly} onChange={e=>setRetOnly(e.target.checked)} style={{margin:0}}/>
+          Strict return-date filter
+        </label>
+      </div>
+
+      {/* Insight banner */}
+      {insight && <div style={{
+        marginBottom:14, padding:"10px 14px", borderRadius:8, fontSize:13, fontWeight:500,
+        background: insight.type==="warn" ? "#FFF8E6" : insight.type==="good" ? "#F0FFF4" : "#FFF0F0",
+        color:    insight.type==="warn" ? "#8B6F00" : insight.type==="good" ? G.green     : G.red,
+        border:`1px solid ${insight.type==="warn" ? "#FFE082" : insight.type==="good" ? G.green+"30" : G.red+"30"}`
+      }}>{insight.text}</div>}
+
+      {/* Comparison table */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead>
+            <tr style={{background:G.bg}}>
+              <th style={{padding:"10px 12px", textAlign:"left", fontSize:11, color:G.muted, fontWeight:700, letterSpacing:"0.05em", textTransform:"uppercase"}}>Metric</th>
+              <HeaderCell>Kit</HeaderCell>
+              <HeaderCell>Label</HeaderCell>
+              <HeaderCell>USPS</HeaderCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style={{padding:"10px 12px", fontSize:13, color:G.text, fontWeight:500}}>Sent</td>
+              <Cell val={fmtN(cohorts.kit.sent)}/>
+              <Cell val={fmtN(cohorts.label.sent)}/>
+              <Cell val={fmtN(cohorts.usps.sent)}/>
+            </tr>
+            <tr><td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:G.text, fontWeight:500}}>Received back</td>
+              <Cell val={fmtN(cohorts.kit.received)} sub={cohorts.kit.sent>0?(cohorts.kit.receiveRate*100).toFixed(1)+"%":"—"}/>
+              <Cell val={fmtN(cohorts.label.received)} sub={cohorts.label.sent>0?(cohorts.label.receiveRate*100).toFixed(1)+"%":"—"}/>
+              <Cell val={fmtN(cohorts.usps.received)} sub={cohorts.usps.sent>0?(cohorts.usps.receiveRate*100).toFixed(1)+"%":"—"}/>
+            </tr>
+            <tr><td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:G.text, fontWeight:500}}>Purchased</td>
+              <Cell val={fmtN(cohorts.kit.purchased)} sub={cohorts.kit.received>0?(cohorts.kit.purchaseRate*100).toFixed(0)+"% of received":"—"} color={G.green}/>
+              <Cell val={fmtN(cohorts.label.purchased)} sub={cohorts.label.received>0?(cohorts.label.purchaseRate*100).toFixed(0)+"% of received":"—"} color={G.green}/>
+              <Cell val={fmtN(cohorts.usps.purchased)} sub={cohorts.usps.received>0?(cohorts.usps.purchaseRate*100).toFixed(0)+"% of received":"—"} color={G.green}/>
+            </tr>
+            <tr><td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:G.text, fontWeight:500}}>Returned</td>
+              <Cell val={fmtN(cohorts.kit.returned)}/>
+              <Cell val={fmtN(cohorts.label.returned)}/>
+              <Cell val={fmtN(cohorts.usps.returned)}/>
+            </tr>
+            <tr><td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:G.text, fontWeight:500}}>Avg purchase</td>
+              <Cell val={fmt$(cohorts.kit.avgPurchase)}/>
+              <Cell val={fmt$(cohorts.label.avgPurchase)}/>
+              <Cell val={fmt$(cohorts.usps.avgPurchase)}/>
+            </tr>
+            <tr><td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:G.text, fontWeight:500}}>Total $ paid</td>
+              <Cell val={fmt$(cohorts.kit.totalPurchaseValue)}/>
+              <Cell val={fmt$(cohorts.label.totalPurchaseValue)}/>
+              <Cell val={fmt$(cohorts.usps.totalPurchaseValue)}/>
+            </tr>
+            <tr><td style={{padding:"10px 12px", borderTop:`1px solid ${G.border}`, fontSize:13, color:G.text, fontWeight:500}}>Total $ appraised</td>
+              <Cell val={fmt$(cohorts.kit.totalAppraisedValue)} color={G.gold}/>
+              <Cell val={fmt$(cohorts.label.totalAppraisedValue)} color={G.gold}/>
+              <Cell val={fmt$(cohorts.usps.totalAppraisedValue)} color={G.gold}/>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{marginTop:14,fontSize:11,color:G.muted,lineHeight:1.5}}>
+        <strong>How to read this:</strong> "Sent" = shipments fulfilled in the sent-date window. "Received back" = of those, how many came back (received/inspected/offer_made/purchased/returned stages). "Strict return-date filter" requires the received_at timestamp to fall in the return window — useful for measuring return velocity within a defined window. Without it, items missing received_at still count.
+      </div>
+    </div>
   </div>;
 }
 
