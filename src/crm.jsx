@@ -1081,11 +1081,56 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     const standaloneAiRationale = (!items || items.length <= 1) ? (shipment.ai_rationale || legacy.aiRationale) : '';
     const aiEstimate = shipment.ai_estimate_raw;
 
-    const hasAnything = agentNotes || customerMsg || customerEdits || (items && items.length) || standaloneAiRationale || aiEstimate || legacy.photos.length;
+    const hasAttribution = !!(shipment.attribution && (
+      shipment.attribution.utm_source || shipment.attribution.utm_campaign ||
+      shipment.attribution.variant || shipment.attribution.fbclid ||
+      shipment.attribution.gclid || shipment.attribution.lead_source));
+    const hasAnything = agentNotes || customerMsg || customerEdits || (items && items.length) || standaloneAiRationale || aiEstimate || legacy.photos.length || hasAttribution;
     if(!hasAnything) return null;
 
     return <div style={{marginTop:4}}>
       <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Notes & Details</div>
+
+      {/* 0. Attribution — where this lead came from. Essentials visible, full collapsed. */}
+      {shipment.attribution && (() => {
+        const a = shipment.attribution;
+        const hasAny = a.utm_source || a.utm_campaign || a.variant || a.fbclid || a.gclid || a.lead_source;
+        if (!hasAny) return null;
+
+        // Channel: synthesize a friendly label
+        const channel = a.fbclid ? "Facebook" :
+                        a.gclid ? "Google" :
+                        a.utm_source ? a.utm_source :
+                        "Direct";
+
+        return <NotesBox title="🎯 Attribution" color={G.green} bg="#EFF8F0" collapsible defaultOpen={true}>
+          {/* Essentials */}
+          <div style={{display:"flex",flexDirection:"column",gap:3,fontSize:12}}>
+            <div><span style={{color:G.muted,marginRight:6}}>CHANNEL:</span><b>{channel}</b></div>
+            {a.utm_campaign && <div><span style={{color:G.muted,marginRight:6}}>CAMPAIGN:</span><span style={{fontFamily:"monospace"}}>{a.utm_campaign}</span></div>}
+            {a.variant && <div><span style={{color:G.muted,marginRight:6}}>VARIANT:</span><b>{a.variant}</b></div>}
+          </div>
+
+          {/* Full details — collapsed by default */}
+          <details style={{marginTop:8}}>
+            <summary style={{fontSize:11,color:G.muted,cursor:"pointer",userSelect:"none"}}>
+              Full attribution details
+            </summary>
+            <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 10px",fontSize:11,marginTop:6,paddingLeft:8,borderLeft:`2px solid ${G.green}33`}}>
+              {a.utm_source   && <><span style={{color:G.muted}}>utm_source:</span><span style={{fontFamily:"monospace"}}>{a.utm_source}</span></>}
+              {a.utm_medium   && <><span style={{color:G.muted}}>utm_medium:</span><span style={{fontFamily:"monospace"}}>{a.utm_medium}</span></>}
+              {a.utm_campaign && <><span style={{color:G.muted}}>utm_campaign:</span><span style={{fontFamily:"monospace"}}>{a.utm_campaign}</span></>}
+              {a.utm_content  && <><span style={{color:G.muted}}>utm_content:</span><span style={{fontFamily:"monospace"}}>{a.utm_content}</span></>}
+              {a.fbclid       && <><span style={{color:G.muted}}>fbclid:</span><span style={{fontFamily:"monospace",wordBreak:"break-all"}}>{a.fbclid.length>20?a.fbclid.slice(0,20)+"…":a.fbclid}</span></>}
+              {a.gclid        && <><span style={{color:G.muted}}>gclid:</span><span style={{fontFamily:"monospace",wordBreak:"break-all"}}>{a.gclid.length>20?a.gclid.slice(0,20)+"…":a.gclid}</span></>}
+              {a.variant      && <><span style={{color:G.muted}}>variant:</span><span style={{fontFamily:"monospace"}}>{a.variant}</span></>}
+              {a.lead_source  && <><span style={{color:G.muted}}>lead_source:</span><span style={{fontFamily:"monospace"}}>{a.lead_source}</span></>}
+              {a.first_visit  && <><span style={{color:G.muted}}>first_visit:</span><span style={{fontFamily:"monospace"}}>{new Date(a.first_visit).toLocaleString()}</span></>}
+              {a.session_id   && <><span style={{color:G.muted}}>session_id:</span><span style={{fontFamily:"monospace",wordBreak:"break-all"}}>{a.session_id.length>20?a.session_id.slice(0,20)+"…":a.session_id}</span></>}
+            </div>
+          </details>
+        </NotesBox>;
+      })()}
 
       {/* 1. Agent Notes — most important, human-written */}
       {agentNotes && <NotesBox title="👤 Agent Notes" color={G.purple} bg="#F8F5FF">
