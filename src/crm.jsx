@@ -2422,7 +2422,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
         <div style={{display:"flex",gap:6}}>
           {selCustomer.phone&&<><a href={`tel:${selCustomer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞</Btn></a><a href={`sms:${selCustomer.phone}`} style={{textDecoration:"none"}}><Btn v="blue" small>💬</Btn></a></>}
           {selCustomer.email&&<a href={`mailto:${selCustomer.email}`} style={{textDecoration:"none"}}><Btn v="ghost" small>✉</Btn></a>}
-          <Btn v="purple" small onClick={()=>{onNewShipment&&setSelectedShipId("__new__");}}>+ Ship</Btn>
+          <Btn v="purple" small onClick={async()=>{if(!selCustomer||!onNewShipment)return;try{const res=await apiPost({action:"createShipment",data:{customer_id:selCustomer.customer_id,stage:"ready_to_fulfill"}});const shipId=(res&&res.data)||res;if(!shipId||typeof shipId!=="string"){alert("Create shipment returned no ID");return;}const realShip={shipment_id:shipId,customer_id:selCustomer.customer_id,stage:"ready_to_fulfill",created_at:new Date().toISOString()};onNewShipment(realShip);setSelectedShipId(shipId);}catch(e){alert("Failed to create shipment: "+(e.message||e));}}}>+ Ship</Btn>
         </div>
       </div>
       <div style={{flex:1,overflow:"auto",padding:8,display:"flex",flexDirection:"column",gap:6}}>
@@ -2450,7 +2450,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
     :selCustomer?<div style={{flex:1,display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
       <div style={{fontSize:14}}>Select a shipment to view details</div>
-      <Btn v="gold" onClick={()=>{if(selCustomer){const fakeNew={shipment_id:"__new__",customer_id:selCustomer.customer_id};onNewShipment&&onNewShipment(fakeNew);}}}>+ New Shipment</Btn>
+      <Btn v="gold" onClick={async()=>{if(!selCustomer||!onNewShipment)return;try{const res=await apiPost({action:"createShipment",data:{customer_id:selCustomer.customer_id,stage:"ready_to_fulfill"}});const shipId=(res&&res.data)||res;if(!shipId||typeof shipId!=="string"){alert("Create shipment returned no ID");return;}const realShip={shipment_id:shipId,customer_id:selCustomer.customer_id,stage:"ready_to_fulfill",created_at:new Date().toISOString()};onNewShipment(realShip);setSelectedShipId(shipId);}catch(e){alert("Failed to create shipment: "+(e.message||e));}}}>+ New Shipment</Btn>
     </div>
     :<div style={{flex:1,display:isMobile?"none":"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:G.muted}}>
       <div style={{fontSize:40,opacity:0.3}}>◈</div>
