@@ -775,9 +775,35 @@ function CustomerHistory({shipment,allShipments,allCustomers}) {
 // ══════════════════════════════════════════════════════════
 
 function PastShipmentPeek({shipment,onClose}) {
+  const [photos,setPhotos]=useState([]);
+  const [photosLoading,setPhotosLoading]=useState(false);
+
+  useEffect(()=>{
+    if(!shipment?.shipment_id) return;
+    setPhotos([]);
+    setPhotosLoading(true);
+    apiFetch({action:"getPhotos",shipment_id:shipment.shipment_id})
+      .then(res=>{
+        let photoList=Array.isArray(res)?res:[];
+        // Also check notes field for photo URLs (newer shipments before Photos tab backfill)
+        const notesPhotoMatch=String(shipment.notes||'').match(/photo:\s*(https:\/\/drive\.google\.com\/[^\s|]+)/);
+        if(notesPhotoMatch&&!photoList.find(p=>p.drive_url===notesPhotoMatch[1])) {
+          photoList=[...photoList,{drive_url:notesPhotoMatch[1],source:'notes'}];
+        }
+        setPhotos(photoList);
+        setPhotosLoading(false);
+      })
+      .catch(()=>setPhotosLoading(false));
+  },[shipment?.shipment_id,shipment?.notes]);
+
   if(!shipment) return null;
-  const high=parseEstHigh(shipment.estimate);
   const stop=e=>e.stopPropagation();
+  const driveThumb=(url)=>{
+    if(!url) return "";
+    const m=String(url).match(/\/d\/([a-zA-Z0-9_-]+)/);
+    return m?`https://drive.google.com/thumbnail?id=${m[1]}&sz=w300`:url;
+  };
+
   return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={stop} style={{background:"#fff",borderRadius:12,maxWidth:600,width:"100%",maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 50px rgba(0,0,0,0.3)"}}>
       <div style={{padding:"16px 20px",borderBottom:`1px solid ${G.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"#fff",zIndex:1,borderRadius:"12px 12px 0 0"}}>
@@ -825,6 +851,24 @@ function PastShipmentPeek({shipment,onClose}) {
             <span style={{color:G.muted}}>Return: </span>{shipment.return_tracking}
           </div>}
         </div>}
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>Photos {photos.length>0&&`(${photos.length})`}</div>
+          {photosLoading
+            ? <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>Loading photos…</div>
+            : photos.length===0
+              ? <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>No photos on file</div>
+              : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                  {photos.map((p,i)=>{
+                    const thumb=driveThumb(p.drive_url);
+                    return <a key={i} href={p.drive_url} target="_blank" rel="noopener noreferrer"
+                      title={p.source ? `Source: ${p.source}` : "Open in Drive"}
+                      style={{display:"block",width:90,height:90,borderRadius:6,overflow:"hidden",border:`1px solid ${G.border}`,background:G.bg,flexShrink:0}}>
+                      <img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} onError={e=>{e.target.style.display="none";}}/>
+                    </a>;
+                  })}
+                </div>}
+        </div>
 
         {shipment.customer_message&&<div style={{marginBottom:14}}>
           <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Customer Message</div>
