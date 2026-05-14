@@ -131,11 +131,23 @@ function fmtDateTime(ts) {
 // of "(no item)". Returns truncated string.
 function displayItem(shipment, max) {
   if (!shipment) return "(no item)";
+  // 1. If we have a structured item_manifest with names, list them
+  const manifest = Array.isArray(shipment.item_manifest) ? shipment.item_manifest : null;
+  if (manifest && manifest.length > 0) {
+    const names = manifest.map(it => String(it.name || "").trim()).filter(Boolean);
+    if (names.length === 1) return names[0];
+    if (names.length > 1) {
+      const label = `${names.length} items: ${names.join(", ")}`;
+      const limit = max || 80;
+      return label.length > limit ? label.substring(0, limit - 1) + "…" : label;
+    }
+  }
+  // 2. Fall back to top-level item field
   const item = String(shipment.item || "").trim();
   if (item) return item;
+  // 3. Fall back to customer_message (first sentence/line, trimmed)
   const msg = String(shipment.customer_message || shipment.customer_edits_text || "").trim();
   if (!msg) return "(no item)";
-  // Trim to first sentence/line, then to max chars
   let s = msg;
   const brk = s.search(/[.\n]/);
   if (brk > 0 && brk < 100) s = s.substring(0, brk);
