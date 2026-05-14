@@ -740,6 +740,7 @@ function InventoryPhotosPanel({shipment, photos, onPhotoAdded}) {
 // ══════════════════════════════════════════════════════════
 
 function CustomerHistory({shipment,allShipments,allCustomers}) {
+  const [peekShip,setPeekShip]=useState(null);
   if(!shipment||!allShipments) return null;
   const others=allShipments.filter(s=>s.customer_id===shipment.customer_id&&s.shipment_id!==shipment.shipment_id);
   if(others.length===0) return null;
@@ -749,7 +750,12 @@ function CustomerHistory({shipment,allShipments,allCustomers}) {
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {sorted.map(s=>{
         const high=parseEstHigh(s.estimate);
-        return <div key={s.shipment_id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"6px 8px",borderRadius:6,background:G.bg}}>
+        return <div key={s.shipment_id}
+          onClick={()=>setPeekShip(s)}
+          title="Click for details"
+          style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"6px 8px",borderRadius:6,background:G.bg,cursor:"pointer",transition:"background 0.1s"}}
+          onMouseEnter={e=>{e.currentTarget.style.background="#F5EFE3";}}
+          onMouseLeave={e=>{e.currentTarget.style.background=G.bg;}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:600,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayItem(s)}</div>
             <div style={{fontSize:10,color:G.muted,marginTop:2}}>{s.shipment_id} · {s.created_at?new Date(s.created_at).toLocaleDateString():""}</div>
@@ -759,6 +765,86 @@ function CustomerHistory({shipment,allShipments,allCustomers}) {
           {s.purchase_price&&<div style={{color:G.green,fontWeight:700,fontSize:11,flexShrink:0}}>paid {fmt$(s.purchase_price)}</div>}
         </div>;
       })}
+    </div>
+    {peekShip&&<PastShipmentPeek shipment={peekShip} onClose={()=>setPeekShip(null)}/>}
+  </div>;
+}
+
+// ══════════════════════════════════════════════════════════
+// PAST SHIPMENT PEEK MODAL (read-only view from customer history)
+// ══════════════════════════════════════════════════════════
+
+function PastShipmentPeek({shipment,onClose}) {
+  if(!shipment) return null;
+  const high=parseEstHigh(shipment.estimate);
+  const stop=e=>e.stopPropagation();
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={stop} style={{background:"#fff",borderRadius:12,maxWidth:600,width:"100%",maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 50px rgba(0,0,0,0.3)"}}>
+      <div style={{padding:"16px 20px",borderBottom:`1px solid ${G.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"#fff",zIndex:1,borderRadius:"12px 12px 0 0"}}>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.1em",textTransform:"uppercase"}}>Past Shipment · view only</div>
+          <div style={{fontSize:16,fontWeight:700,color:G.text,marginTop:2}}>{shipment.shipment_id}</div>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",fontSize:24,color:G.muted,cursor:"pointer",lineHeight:1,padding:"0 8px"}} title="Close">×</button>
+      </div>
+      <div style={{padding:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+          <Badge stage={shipment.stage}/>
+          {shipment.created_at&&<div style={{fontSize:11,color:G.muted}}>Created {fmtDateTime(shipment.created_at)}</div>}
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Item</div>
+          <div style={{fontSize:14,color:G.text}}>{displayItem(shipment)||"—"}</div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Estimate</div>
+            <div style={{fontSize:14,color:G.gold,fontWeight:700}}>{shipment.estimate||"—"}</div>
+          </div>
+          {shipment.purchase_price&&<div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Paid</div>
+            <div style={{fontSize:14,color:G.green,fontWeight:700}}>{fmt$(shipment.purchase_price)}</div>
+          </div>}
+          {shipment.shipping_type&&<div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Shipping</div>
+            <div style={{fontSize:13,color:G.text}}>{shipment.shipping_type}</div>
+          </div>}
+          {shipment.payment_method&&<div>
+            <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Payment</div>
+            <div style={{fontSize:13,color:G.text}}>{shipment.payment_method}</div>
+          </div>}
+        </div>
+
+        {(shipment.outbound_tracking||shipment.return_tracking)&&<div style={{marginBottom:14,padding:10,background:G.bg,borderRadius:6}}>
+          {shipment.outbound_tracking&&<div style={{fontSize:11,color:G.text,marginBottom:shipment.return_tracking?4:0}}>
+            <span style={{color:G.muted}}>Outbound: </span>{shipment.outbound_tracking}
+          </div>}
+          {shipment.return_tracking&&<div style={{fontSize:11,color:G.text}}>
+            <span style={{color:G.muted}}>Return: </span>{shipment.return_tracking}
+          </div>}
+        </div>}
+
+        {shipment.customer_message&&<div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Customer Message</div>
+          <div style={{fontSize:12,color:G.text,whiteSpace:"pre-wrap",background:G.bg,padding:10,borderRadius:6}}>{shipment.customer_message}</div>
+        </div>}
+
+        {shipment.notes&&<div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Notes</div>
+          <div style={{fontSize:12,color:G.text,whiteSpace:"pre-wrap",background:G.bg,padding:10,borderRadius:6}}>{shipment.notes}</div>
+        </div>}
+
+        {shipment.agent_notes&&<div style={{marginBottom:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Agent Notes</div>
+          <div style={{fontSize:12,color:G.text,whiteSpace:"pre-wrap",background:G.bg,padding:10,borderRadius:6}}>{shipment.agent_notes}</div>
+        </div>}
+
+        <div style={{marginTop:16,padding:10,background:"#FFF8EE",borderRadius:6,fontSize:11,color:G.muted,textAlign:"center"}}>
+          View only — to edit this shipment, search for {shipment.shipment_id} in the customer list
+        </div>
+      </div>
     </div>
   </div>;
 }
