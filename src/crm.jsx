@@ -3566,7 +3566,7 @@ export default function SnappyGoldCRM() {
     try {
       // PERF PATCH (May 19): use getShipmentsLite to skip attribution join on initial load.
       // Cuts load from ~5-6s → ~1s. Attribution loads lazily when a shipment detail opens.
-      const [cr,sr,lr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipmentsLite"}),apiFetch({action:"getContactLog"})]);
+      const [cr,sr,lr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipments"}),apiFetch({action:"getContactLog"})]);
       const c=Array.isArray(cr)?cr:[]; const s=Array.isArray(sr)?sr:[]; const l=Array.isArray(lr)?lr:[];
       setCustomers(c); setShipments(s); setContactLogs(l); setLastLoaded(Date.now());
       if(c.length||s.length) setCache({customers:c,shipments:s,contactLogs:l});
