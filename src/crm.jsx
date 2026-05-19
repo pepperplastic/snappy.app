@@ -539,6 +539,35 @@ function LeadsOnlineSubmitBtn({shipment, ready, missing, onSuccess}) {
 }
 
 
+// ConfirmRow — small "✓ Confirm" UI shown under each ID field after Vision parse.
+// Operator must click confirm on each parsed field before Save will succeed.
+// Catches typos like Becky's DOB by forcing visual review.
+function ConfirmRow({field, parsed, current, confirmed, onConfirm}) {
+  const matches = String(parsed).trim() === String(current).trim();
+  const showConfirmButton = !confirmed;
+  return <div style={{
+    marginTop:4,padding:"4px 8px",fontSize:10,
+    background: confirmed ? "#F0F7F0" : (matches ? "#FFFBEC" : "#FFF0F0"),
+    border:`1px solid ${confirmed ? "#B5D5B5" : (matches ? G.gold : G.red)}40`,
+    borderRadius:4,
+    display:"flex",alignItems:"center",justifyContent:"space-between",gap:6
+  }}>
+    <span style={{color:confirmed?G.green:G.text,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+      {confirmed ? "✓ Confirmed: " : "Parsed: "}<strong>{parsed}</strong>
+      {!matches && !confirmed && <span style={{color:G.red,marginLeft:6}}>(edited)</span>}
+    </span>
+    {showConfirmButton && (
+      <button
+        onClick={onConfirm}
+        style={{
+          padding:"2px 8px",fontSize:10,fontWeight:700,borderRadius:3,
+          border:`1px solid ${G.green}`,background:G.green,color:"#fff",cursor:"pointer",flexShrink:0
+        }}>✓ Confirm</button>
+    )}
+  </div>;
+}
+
+
 function PaymentIdModal({shipment, customer, onSave, onClose}) {
   // Pre-fill from customer (these fields reusable across transactions)
   const [idType, setIdType] = useState(customer?.id_type || shipment?.id_type || "");
@@ -557,6 +586,16 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef();
 
+  // ── OCR / ID parse state ──
+  // parseResult holds the Vision-extracted values + per-field confirmation flags.
+  // Operator must click each field to "confirm" before save — protects against
+  // silent wrong-fills (the bug that caused Becky's DOB typo).
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState("");
+  const [parseResult, setParseResult] = useState(null);  // { id_type, id_number, id_state, date_birth, name, confidence }
+  const [confirmed, setConfirmed] = useState({});         // { id_type: true, id_number: true, ... }
+  const [nameWarning, setNameWarning] = useState("");
+
   function handlePhoto(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -565,13 +604,119 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
     reader.onload = () => {
       setPhotoData(reader.result);
       setPhotoName(file.name);
+      // Clear any prior parse — a new photo means re-parse from scratch
+      setParseResult(null);
+      setConfirmed({});
+      setParseError("");
+      setNameWarning("");
     };
     reader.readAsDataURL(file);
+  }
+
+  // ── Parse ID photo via Claude Vision (proxied through /api/analyze.js) ──
+  async function parseIdPhoto() {
+    if (!photoData) {
+      alert("Upload a photo first.");
+      return;
+    }
+    setParsing(true);
+    setParseError("");
+    setParseResult(null);
+
+    try {
+      const base64 = photoData.split(",")[1];
+      const mediaTypeMatch = photoData.match(/^data:(image\/\w+);base64/);
+      const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : "image/jpeg";
+
+      const prompt = `You are looking at a photo of a US-issued identification document (driver's license, state ID, passport, or military ID). Extract the following fields and respond with a JSON object only — no markdown, no preamble, no backticks.
+
+Fields:
+- "id_type": one of "driver_license", "state_id", "passport", "military_id", or "other"
+- "id_number": the ID number/license number exactly as printed (preserve format including dashes/spaces)
+- "id_state": 2-letter US state code (e.g. "FL", "TX") of the issuing authority, or "" if not applicable
+- "date_birth": date of birth in MM/DD/YYYY format
+- "name": the full name exactly as printed
+- "confidence": integer 0-100 representing your confidence that all fields are correctly extracted
+
+If the image is not a valid ID, blurry, or you cannot extract a field reliably, leave that field as empty string "" and lower the confidence accordingly. Never guess.`;
+
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 500,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 }},
+              { type: "text", text: prompt }
+            ]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const t = await response.text();
+        throw new Error(`Vision API error ${response.status}: ${t.substring(0,200)}`);
+      }
+      const data = await response.json();
+      const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+
+      setParseResult(parsed);
+
+      // Auto-fill any field that's currently empty; never overwrite existing typed values silently
+      // (operator may already have started filling — don't blow away their work)
+      const newConfirmed = {};
+      if (parsed.id_type && !idType)       { setIdType(parsed.id_type); newConfirmed.id_type = false; }
+      if (parsed.id_number && !idNumber)   { setIdNumber(parsed.id_number); newConfirmed.id_number = false; }
+      if (parsed.id_state && !idState)     { setIdState(parsed.id_state); newConfirmed.id_state = false; }
+      if (parsed.date_birth && !dateBirth) { setDateBirth(parsed.date_birth); newConfirmed.date_birth = false; }
+      setConfirmed(newConfirmed);
+
+      // Name cross-check — warn if extracted name doesn't reasonably match customer record
+      if (parsed.name && customer?.name) {
+        const norm = s => String(s).toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g," ").trim();
+        const idName = norm(parsed.name);
+        const custName = norm(customer.name);
+        // Loose match: at least one shared token of length ≥ 3
+        const idTokens = new Set(idName.split(" ").filter(t => t.length >= 3));
+        const custTokens = custName.split(" ").filter(t => t.length >= 3);
+        const sharedToken = custTokens.some(t => idTokens.has(t));
+        if (!sharedToken) {
+          setNameWarning(`Name on ID ("${parsed.name}") doesn't match customer record ("${customer.name}"). Verify this is the right person.`);
+        }
+      }
+    } catch (err) {
+      setParseError(err.message || String(err));
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  // Helper: is every parsed field confirmed? Used to gate the Save button
+  // (Only counts fields the parse actually returned)
+  function allParsedFieldsConfirmed() {
+    if (!parseResult) return true;
+    const need = ["id_type", "id_number", "id_state", "date_birth"]
+      .filter(f => parseResult[f]);
+    return need.every(f => confirmed[f]);
+  }
+
+  function toggleConfirm(field) {
+    setConfirmed(c => ({...c, [field]: !c[field]}));
   }
 
   async function save() {
     if (!idType && !idNumber && !dateBirth && !paymentMethod) {
       alert("Fill at least one field before saving.");
+      return;
+    }
+    // Block save if a parse happened and operator hasn't confirmed each filled field
+    if (parseResult && !allParsedFieldsConfirmed()) {
+      alert("Please review and confirm each ID field that was auto-filled by the photo parser.");
       return;
     }
     // Sworn statement is required by FL Statute 538.32(2)(c) before payment can be remitted.
@@ -636,21 +781,55 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
         <div>
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Identification</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <Sel label="ID Type" value={idType} onChange={e=>setIdType(e.target.value)} options={ID_TYPES}/>
-            <Inp label="ID Number" value={idNumber} onChange={e=>setIdNumber(e.target.value)} placeholder="e.g. D123-456-78-901-0"/>
+            <div>
+              <Sel label="ID Type" value={idType} onChange={e=>{setIdType(e.target.value); if(confirmed.id_type===false) toggleConfirm("id_type");}} options={ID_TYPES}/>
+              {parseResult?.id_type && <ConfirmRow field="id_type" parsed={parseResult.id_type} current={idType} confirmed={confirmed.id_type} onConfirm={()=>toggleConfirm("id_type")}/>}
+            </div>
+            <div>
+              <Inp label="ID Number" value={idNumber} onChange={e=>{setIdNumber(e.target.value); if(confirmed.id_number===false) toggleConfirm("id_number");}} placeholder="e.g. D123-456-78-901-0"/>
+              {parseResult?.id_number && <ConfirmRow field="id_number" parsed={parseResult.id_number} current={idNumber} confirmed={confirmed.id_number} onConfirm={()=>toggleConfirm("id_number")}/>}
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
-            <Sel label="Issuing State" value={idState} onChange={e=>setIdState(e.target.value)} options={[{value:"",label:"—"}, ...US_STATES.map(s=>({value:s,label:s}))]}/>
-            <Inp label="Date of Birth" value={dateBirth} onChange={e=>setDateBirth(e.target.value)} placeholder="MM/DD/YYYY"/>
+            <div>
+              <Sel label="Issuing State" value={idState} onChange={e=>{setIdState(e.target.value); if(confirmed.id_state===false) toggleConfirm("id_state");}} options={[{value:"",label:"—"}, ...US_STATES.map(s=>({value:s,label:s}))]}/>
+              {parseResult?.id_state && <ConfirmRow field="id_state" parsed={parseResult.id_state} current={idState} confirmed={confirmed.id_state} onConfirm={()=>toggleConfirm("id_state")}/>}
+            </div>
+            <div>
+              <Inp label="Date of Birth" value={dateBirth} onChange={e=>{setDateBirth(e.target.value); if(confirmed.date_birth===false) toggleConfirm("date_birth");}} placeholder="MM/DD/YYYY"/>
+              {parseResult?.date_birth && <ConfirmRow field="date_birth" parsed={parseResult.date_birth} current={dateBirth} confirmed={confirmed.date_birth} onConfirm={()=>toggleConfirm("date_birth")}/>}
+            </div>
           </div>
           <div style={{marginTop:12}}>
             <label style={{color:G.muted,fontSize:11,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>ID Photo (optional)</label>
             <input ref={fileRef} type="file" accept="image/*" onChange={handlePhoto} style={{display:"none"}}/>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
               <Btn v="ghost" small onClick={()=>fileRef.current.click()}>{photoName ? "Change photo" : "Upload photo"}</Btn>
+              {photoData && (
+                <Btn v="gold" small onClick={parseIdPhoto} disabled={parsing}>
+                  {parsing ? "Parsing…" : "🔍 Parse ID Photo"}
+                </Btn>
+              )}
               {photoName && <span style={{fontSize:12,color:G.green}}>✓ {photoName}</span>}
               {!photoName && shipment?.id_photo_url && <a href={shipment.id_photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:G.blue}}>Existing photo on file</a>}
             </div>
+            {parseError && (
+              <div style={{marginTop:8,padding:"8px 10px",background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:6,fontSize:11,color:G.red}}>
+                Parse failed: {parseError}
+              </div>
+            )}
+            {parseResult && !parseError && (
+              <div style={{marginTop:8,padding:"8px 10px",background:"#F8F4EC",border:`1px solid ${G.gold}40`,borderRadius:6,fontSize:11,color:G.text,lineHeight:1.5}}>
+                ✨ Auto-filled from photo · confidence {parseResult.confidence || "?"}%
+                {parseResult.name && <> · Name on ID: <strong>{parseResult.name}</strong></>}
+                <div style={{fontSize:10,color:G.muted,marginTop:4}}>Review each field below, then click ✓ to confirm before saving.</div>
+              </div>
+            )}
+            {nameWarning && (
+              <div style={{marginTop:8,padding:"8px 10px",background:"#FFF8E7",border:`1px solid ${G.orange}`,borderRadius:6,fontSize:11,color:G.orange,lineHeight:1.5}}>
+                ⚠ {nameWarning}
+              </div>
+            )}
           </div>
         </div>
 
