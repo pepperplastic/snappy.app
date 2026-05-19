@@ -1389,6 +1389,29 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   const [photos,setPhotos]=useState([]);
   const [photosLoading,setPhotosLoading]=useState(false);
 
+  // PERF PATCH (May 19): attribution is lazy-loaded.
+  // Initial load uses getShipmentsLite (no attribution). When this detail pane opens,
+  // if the shipment came from the lite endpoint (attribution === null), fetch it now.
+  // The fetched attribution gets attached to the shipment object via onUpdate so the
+  // list-level state cache it (no refetch on re-open).
+  useEffect(()=>{
+    if (!shipment) return;
+    if (shipment.attribution !== null) return;  // already loaded (object or undefined)
+    apiFetch({action:"getShipmentAttribution",shipment_id:shipment.shipment_id})
+      .then(attr=>{
+        // attr is the attribution object or null. Either way, mark as loaded by setting
+        // a non-null value (use the object, or set to a marker if null) so we don't refetch.
+        const updated = {...shipment, attribution: attr || {_empty: true}};
+        onUpdate(updated, customer);
+      })
+      .catch(()=>{
+        // On error, mark as loaded-with-nothing so we don't loop retrying
+        const updated = {...shipment, attribution: {_empty: true}};
+        onUpdate(updated, customer);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[shipment?.shipment_id]);
+
   // Sync localLogs when contactLogs prop changes (different customer selected)
   useEffect(()=>{ setLocalLogs(contactLogs||[]); },[contactLogs]);
 
@@ -1588,7 +1611,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     const standaloneAiRationale = (!items || items.length <= 1) ? (shipment.ai_rationale || legacy.aiRationale) : '';
     const aiEstimate = shipment.ai_estimate_raw;
 
-    const hasAttribution = !!(shipment.attribution && (
+    const hasAttribution = !!(shipment.attribution && !shipment.attribution._empty && (
       shipment.attribution.utm_source || shipment.attribution.utm_campaign ||
       shipment.attribution.variant || shipment.attribution.fbclid ||
       shipment.attribution.gclid || shipment.attribution.lead_source));
@@ -3541,7 +3564,9 @@ export default function SnappyGoldCRM() {
     if(cache){setCustomers(cache.customers||[]);setShipments(cache.shipments||[]);setContactLogs(cache.contactLogs||[]);setLastLoaded(cache._ts);}
     setLoading(true); setError(null);
     try {
-      const [cr,sr,lr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipments"}),apiFetch({action:"getContactLog"})]);
+      // PERF PATCH (May 19): use getShipmentsLite to skip attribution join on initial load.
+      // Cuts load from ~5-6s → ~1s. Attribution loads lazily when a shipment detail opens.
+      const [cr,sr,lr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipmentsLite"}),apiFetch({action:"getContactLog"})]);
       const c=Array.isArray(cr)?cr:[]; const s=Array.isArray(sr)?sr:[]; const l=Array.isArray(lr)?lr:[];
       setCustomers(c); setShipments(s); setContactLogs(l); setLastLoaded(Date.now());
       if(c.length||s.length) setCache({customers:c,shipments:s,contactLogs:l});
