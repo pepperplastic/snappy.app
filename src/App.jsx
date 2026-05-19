@@ -5,6 +5,314 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
    Flow: Hero → Capture → Analysis → Offer → Lead Form
    ───────────────────────────────────────────── */
 
+// ═══════════════════════════════════════════════════════════════════
+// SELF-SERVE VERIFY PAGE — snappy.gold/verify?token=XXX
+// Used when operator sends a customer a link to complete verification
+// (ID + payment confirmation + sworn statement) themselves instead of
+// collecting over phone/email. Token issued by Apps Script.
+// ═══════════════════════════════════════════════════════════════════
+
+const VERIFY_BRAND = {
+  gold:   '#C8953C',
+  dark:   '#1A1816',
+  cream:  '#FAF6F0',
+  border: '#E5DCC9',
+  muted:  '#666',
+  light:  '#999',
+  red:    '#C0392B',
+  green:  '#2D7A4F',
+  orange: '#C87C20',
+}
+
+const VERIFY_US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']
+
+const VERIFY_PAYMENT_METHODS = [
+  { value: 'zelle',   label: 'Zelle',   hint: 'Phone number or email' },
+  { value: 'venmo',   label: 'Venmo',   hint: 'Username or phone' },
+  { value: 'paypal',  label: 'PayPal',  hint: 'Email address' },
+  { value: 'check',   label: 'Check',   hint: 'Mailing address' },
+  { value: 'cashapp', label: 'Cash App', hint: '$cashtag' },
+]
+
+function VerifyPage() {
+  const [step, setStep]         = useState('loading')  // loading | form | submitting | success | error
+  const [errorMsg, setErrorMsg] = useState('')
+  const [customer, setCustomer] = useState(null)
+  const [shipment, setShipment] = useState(null)
+  const [token, setToken]       = useState('')
+
+  const [idType, setIdType]               = useState('driver_license')
+  const [idNumber, setIdNumber]           = useState('')
+  const [idState, setIdState]             = useState('FL')
+  const [dateBirth, setDateBirth]         = useState('')
+  const [idPhoto, setIdPhoto]             = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('zelle')
+  const [paymentInfo, setPaymentInfo]     = useState('')
+  const [swornAgreed, setSwornAgreed]     = useState(false)
+  const [submitting, setSubmitting]       = useState(false)
+
+  // On mount: validate token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const t = params.get('token')
+    if (!t) {
+      setErrorMsg('No verification token in the URL. Please use the link from your email.')
+      setStep('error')
+      return
+    }
+    setToken(t)
+
+    fetch('/api/crm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'validateSelfServeToken', token: t }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setCustomer(data.customer)
+          setShipment(data.shipment)
+          if (data.shipment?.payment_method) setPaymentMethod(data.shipment.payment_method)
+          if (data.shipment?.payment_info)   setPaymentInfo(data.shipment.payment_info)
+          if (data.shipment?.id_state)       setIdState(data.shipment.id_state)
+          setStep('form')
+        } else {
+          const e = data.error
+          if (e === 'expired')                setErrorMsg('This verification link has expired. Please contact us for a new one.')
+          else if (e === 'already_submitted') setErrorMsg("You've already completed this verification. Thank you!")
+          else if (e === 'invalid_token')     setErrorMsg('This verification link is invalid. Please check the URL or contact us.')
+          else                                setErrorMsg(data.error || 'Could not load verification details.')
+          setStep('error')
+        }
+      })
+      .catch(() => {
+        setErrorMsg('Network error. Please try again or contact us.')
+        setStep('error')
+      })
+  }, [])
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image too large. Please choose a file under 5 MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (ev) => setIdPhoto(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  const handleSubmit = async () => {
+    if (!idType || !idNumber || !idState || !dateBirth) {
+      alert('Please fill in all ID fields.')
+      return
+    }
+    if (!paymentMethod || !paymentInfo) {
+      alert('Please confirm your payment method and details.')
+      return
+    }
+    if (!swornAgreed) {
+      alert('Please check the sworn statement to continue.')
+      return
+    }
+
+    setSubmitting(true)
+    setStep('submitting')
+
+    try {
+      const res = await fetch('/api/crm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'submitSelfServe',
+          token: token,
+          data: {
+            id_type: idType,
+            id_number: idNumber,
+            id_state: idState,
+            date_birth: dateBirth,
+            id_photo: idPhoto || undefined,
+            payment_method: paymentMethod,
+            payment_info: paymentInfo,
+            sworn_statement: true,
+          },
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setStep('success')
+      } else {
+        setErrorMsg(data.error || 'Submission failed. Please try again.')
+        setStep('error')
+      }
+    } catch {
+      setErrorMsg('Network error during submission. Please try again.')
+      setStep('error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const cardStyle = { background:'#fff', border:`1px solid ${VERIFY_BRAND.border}`, borderRadius:8, padding:24, marginBottom:20 }
+  const sectionHeader = { margin:'0 0 16px', fontSize:13, color:VERIFY_BRAND.dark, fontWeight:700, textTransform:'uppercase', letterSpacing:1 }
+  const inputStyle = { width:'100%', padding:'12px 14px', fontSize:15, border:`1px solid #D5CBB8`, borderRadius:6, fontFamily:'inherit', background:'#fff', boxSizing:'border-box' }
+
+  const Field = ({ label, children }) => (
+    <div style={{ marginBottom:16 }}>
+      <label style={{ display:'block', fontSize:13, color:VERIFY_BRAND.muted, marginBottom:6, fontWeight:500 }}>{label}</label>
+      {children}
+    </div>
+  )
+
+  return (
+    <div style={{ minHeight:'100vh', background:VERIFY_BRAND.cream, fontFamily:'Georgia, serif', color:VERIFY_BRAND.dark }}>
+      <header style={{ background:VERIFY_BRAND.dark, padding:'20px 24px', borderBottom:`3px solid ${VERIFY_BRAND.gold}`, textAlign:'center' }}>
+        <h1 style={{ margin:0, fontSize:28, color:VERIFY_BRAND.gold, fontWeight:500, letterSpacing:'0.08em' }}>
+          SNAPPY<span style={{ color:VERIFY_BRAND.cream }}>.GOLD</span>
+        </h1>
+      </header>
+
+      <main style={{ maxWidth:560, margin:'0 auto', padding:'32px 24px' }}>
+        {step === 'loading' && (
+          <p style={{ textAlign:'center', color:VERIFY_BRAND.muted, marginTop:80 }}>Loading your verification details…</p>
+        )}
+
+        {step === 'submitting' && (
+          <p style={{ textAlign:'center', color:VERIFY_BRAND.muted, marginTop:80 }}>Submitting your information…</p>
+        )}
+
+        {step === 'error' && (
+          <div style={{ ...cardStyle, textAlign:'center' }}>
+            <div style={{ fontSize:48, marginBottom:16 }}>⚠️</div>
+            <h2 style={{ marginTop:0, color:VERIFY_BRAND.dark }}>We hit a snag</h2>
+            <p style={{ color:VERIFY_BRAND.muted, lineHeight:1.6 }}>{errorMsg}</p>
+            <p style={{ marginTop:24, fontSize:14 }}>
+              Questions? Email <a href="mailto:hello@snappy.gold" style={{ color:VERIFY_BRAND.gold }}>hello@snappy.gold</a> or call <a href="tel:8666130704" style={{ color:VERIFY_BRAND.gold }}>(866) 613-0704</a>.
+            </p>
+          </div>
+        )}
+
+        {step === 'success' && (
+          <div style={{ ...cardStyle, textAlign:'center', padding:40 }}>
+            <div style={{ fontSize:56, marginBottom:16 }}>✓</div>
+            <h2 style={{ marginTop:0, color:VERIFY_BRAND.green }}>You're all set!</h2>
+            <p style={{ color:VERIFY_BRAND.muted, lineHeight:1.7 }}>
+              Your verification is complete. We'll process your payment of{' '}
+              <strong style={{ color:VERIFY_BRAND.dark }}>
+                {shipment?.purchase_price ? '$' + shipment.purchase_price : 'your offer'}
+              </strong>{' '}
+              shortly and send a confirmation when it goes out.
+            </p>
+            <p style={{ marginTop:32, fontSize:13, color:VERIFY_BRAND.light }}>You can close this window.</p>
+          </div>
+        )}
+
+        {step === 'form' && customer && shipment && (
+          <>
+            <div style={{ marginBottom:24 }}>
+              <h2 style={{ fontSize:22, margin:'0 0 8px', color:VERIFY_BRAND.dark }}>Hi {customer.name?.split(' ')[0] || 'there'},</h2>
+              <p style={{ fontSize:15, lineHeight:1.6, color:VERIFY_BRAND.muted, margin:0 }}>
+                You're a few details away from finalizing your transaction. Florida law requires us to verify your identity before purchasing precious metals.
+              </p>
+            </div>
+
+            {shipment.purchase_price && (
+              <div style={{ background:'#fff', border:`2px solid ${VERIFY_BRAND.gold}`, borderRadius:8, padding:'20px 24px', textAlign:'center', marginBottom:28 }}>
+                <div style={{ fontSize:12, color:VERIFY_BRAND.muted, textTransform:'uppercase', letterSpacing:1, marginBottom:6 }}>Your Offer</div>
+                <div style={{ fontSize:32, fontWeight:600, color:VERIFY_BRAND.dark }}>${shipment.purchase_price}</div>
+                {shipment.item && <div style={{ fontSize:14, color:VERIFY_BRAND.muted, marginTop:8 }}>for {shipment.item}</div>}
+              </div>
+            )}
+
+            <div style={cardStyle}>
+              <h3 style={sectionHeader}>1. Your ID Information</h3>
+              <Field label="ID Type">
+                <select value={idType} onChange={e => setIdType(e.target.value)} style={inputStyle}>
+                  <option value="driver_license">Driver's License</option>
+                  <option value="state_id">State ID</option>
+                  <option value="passport">Passport</option>
+                  <option value="military_id">Military ID</option>
+                </select>
+              </Field>
+              <Field label="ID Number">
+                <input type="text" value={idNumber} onChange={e => setIdNumber(e.target.value)} style={inputStyle} placeholder="As shown on your ID" autoComplete="off" />
+              </Field>
+              <Field label="Issuing State">
+                <select value={idState} onChange={e => setIdState(e.target.value)} style={inputStyle}>
+                  {VERIFY_US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
+              <Field label="Date of Birth">
+                <input type="date" value={dateBirth} onChange={e => setDateBirth(e.target.value)} style={inputStyle} />
+              </Field>
+              <Field label="ID Photo (optional but speeds processing)">
+                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ ...inputStyle, padding:8 }} />
+                {idPhoto && (
+                  <div style={{ marginTop:12 }}>
+                    <img src={idPhoto} alt="ID preview" style={{ maxWidth:'100%', maxHeight:200, borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}` }} />
+                    <button type="button" onClick={() => setIdPhoto('')} style={{ background:'none', border:'none', color:VERIFY_BRAND.red, fontSize:13, cursor:'pointer', marginTop:8, padding:0 }}>Remove photo</button>
+                  </div>
+                )}
+              </Field>
+            </div>
+
+            <div style={cardStyle}>
+              <h3 style={sectionHeader}>2. Payment Method</h3>
+              {(shipment.payment_method || shipment.payment_info) && (
+                <p style={{ fontSize:13, color:VERIFY_BRAND.muted, marginTop:-8, marginBottom:16, fontStyle:'italic' }}>
+                  We have your payment info on file — please confirm or update below.
+                </p>
+              )}
+              <Field label="How would you like to be paid?">
+                <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} style={inputStyle}>
+                  {VERIFY_PAYMENT_METHODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </Field>
+              <Field label={VERIFY_PAYMENT_METHODS.find(p => p.value === paymentMethod)?.hint || 'Payment details'}>
+                <input type="text" value={paymentInfo} onChange={e => setPaymentInfo(e.target.value)} style={inputStyle} placeholder="Required" />
+              </Field>
+            </div>
+
+            <div style={{ ...cardStyle, background:'#FFFCF5', border:`2px solid ${VERIFY_BRAND.gold}` }}>
+              <h3 style={sectionHeader}>3. Sworn Statement</h3>
+              <div style={{ fontSize:13, lineHeight:1.7, color:VERIFY_BRAND.dark, background:'#fff', padding:16, borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}`, marginBottom:16 }}>
+                Pursuant to Florida Statute §538.32(2)(c), I attest under penalty of perjury that:
+                <ul style={{ paddingLeft:20, margin:'10px 0' }}>
+                  <li>I am the lawful owner of the items being sold to Snappy Gold (DW5 LLC) and have full right to sell them.</li>
+                  <li>The items are not stolen, encumbered, or subject to any lien.</li>
+                  <li>The identification information I am providing is true and accurate.</li>
+                  <li>I am at least 18 years of age.</li>
+                </ul>
+                I understand that providing false information may subject me to criminal penalties under Florida law.
+              </div>
+              <label style={{ display:'flex', alignItems:'flex-start', gap:12, cursor:'pointer', fontSize:15, lineHeight:1.5 }}>
+                <input type="checkbox" checked={swornAgreed} onChange={e => setSwornAgreed(e.target.checked)} style={{ marginTop:4, width:20, height:20, accentColor:VERIFY_BRAND.gold, flexShrink:0 }} />
+                <span><strong>I agree</strong> to the sworn statement above.</span>
+              </label>
+            </div>
+
+            <button onClick={handleSubmit} disabled={submitting} style={{
+              width:'100%',
+              background: submitting ? VERIFY_BRAND.light : VERIFY_BRAND.gold,
+              color:'#fff', border:'none', padding:18, fontSize:17, fontWeight:600,
+              borderRadius:8, cursor: submitting ? 'not-allowed' : 'pointer',
+              letterSpacing:'0.04em', fontFamily:'Helvetica, Arial, sans-serif', marginTop:8,
+            }}>
+              {submitting ? 'Submitting…' : 'Complete Verification →'}
+            </button>
+
+            <p style={{ fontSize:12, color:VERIFY_BRAND.light, textAlign:'center', marginTop:24, lineHeight:1.5 }}>
+              Snappy Gold · DW5 LLC · 1686 S Federal Hwy #318, Delray Beach, FL 33483<br/>
+              Questions? <a href="mailto:hello@snappy.gold" style={{ color:VERIFY_BRAND.gold }}>hello@snappy.gold</a> · <a href="tel:8666130704" style={{ color:VERIFY_BRAND.gold }}>(866) 613-0704</a>
+            </p>
+          </>
+        )}
+      </main>
+    </div>
+  )
+}
+
 const STEPS = {
   HERO: 'hero',
   CAPTURE: 'capture',
@@ -793,6 +1101,14 @@ const ArrowIcon = ({ size = 18 }) => (
 //  MAIN APP
 // ═══════════════════════════════════════════════
 export default function App() {
+  // ── ROUTE: /verify — self-serve customer verification page ──
+  // Pathname check happens before any hooks. Stable across renders (only
+  // changes via full page navigation), so React's rules of hooks are not
+  // violated. The verify page is fully independent of the main quote flow.
+  if (typeof window !== 'undefined' && window.location.pathname === '/verify') {
+    return <VerifyPage />
+  }
+
   const [step, setStep] = useState(STEPS.HERO)
   const [imageData, setImageData] = useState(null)
   const [analysis, setAnalysis] = useState(null)
