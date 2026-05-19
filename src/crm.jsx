@@ -709,6 +709,67 @@ If the image is not a valid ID, blurry, or you cannot extract a field reliably, 
     setConfirmed(c => ({...c, [field]: !c[field]}));
   }
 
+  // ── Send self-serve link (operator sends customer a link to fill out themselves) ──
+  // Lifesaver when:
+  //   - Quo blocks SMS-based ID collection
+  //   - Customer prefers to enter info themselves
+  //   - Operator doesn't have all the info on hand right now
+  const [sendingLink, setSendingLink] = useState(false)
+  const [sendLinkResult, setSendLinkResult] = useState(null)  // { ok, message, url }
+
+  async function sendSelfServeLink() {
+    const promptAmount = window.prompt(
+      "What's the offer amount for this customer?\n\n" +
+      "Examples: 250.00 or $250.00 or 250\n\n" +
+      "Leave blank to send a generic verification email without an offer figure.",
+      shipment?.purchase_price ? String(shipment.purchase_price) : ""
+    )
+    if (promptAmount === null) return  // user hit Cancel
+
+    // Normalize the offer amount to a clean string like "$250.00"
+    let offerAmount = ""
+    if (promptAmount.trim()) {
+      const numeric = parseFloat(String(promptAmount).replace(/[^0-9.]/g, ""))
+      if (!isNaN(numeric) && numeric > 0) {
+        offerAmount = "$" + numeric.toFixed(2)
+      } else {
+        alert("Couldn't parse that as a dollar amount. Try '250' or '250.00'.")
+        return
+      }
+    }
+
+    if (!confirm(
+      "Send self-serve link to:\n\n" +
+      customer?.name + " <" + customer?.email + ">\n\n" +
+      (offerAmount ? "Offer: " + offerAmount + "\n\n" : "(no offer amount in email)\n\n") +
+      "They'll get an email with a link to enter their ID, payment info, and sworn statement."
+    )) return
+
+    setSendingLink(true)
+    setSendLinkResult(null)
+    try {
+      const result = await apiPost({
+        action: "generateSelfServeToken",
+        shipment_id: shipment.shipment_id,
+        customer_id: shipment.customer_id,
+        offer_amount: offerAmount,
+        send_email: true,
+      })
+      if (result && result.success) {
+        setSendLinkResult({
+          ok: true,
+          message: "Email sent to " + customer?.email,
+          url: result.url,
+        })
+      } else {
+        setSendLinkResult({ ok: false, message: result?.error || "Unknown error" })
+      }
+    } catch (e) {
+      setSendLinkResult({ ok: false, message: e.message })
+    }
+    setSendingLink(false)
+  }
+
   async function save() {
     if (!idType && !idNumber && !dateBirth && !paymentMethod) {
       alert("Fill at least one field before saving.");
@@ -879,10 +940,37 @@ If the image is not a valid ID, blurry, or you cannot extract a field reliably, 
           )}
         </div>
 
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          <Btn v="ghost" onClick={onClose}>Cancel</Btn>
-          <Btn v="gold" onClick={save} disabled={saving}>{saving?"Saving…":"Save"}</Btn>
+        <div style={{display:"flex",gap:10,justifyContent:"space-between",alignItems:"center",flexWrap:"wrap"}}>
+          <Btn v="ghost" small onClick={sendSelfServeLink} disabled={sendingLink||!customer?.email}>
+            {sendingLink ? "Sending…" : "✉️ Send link instead"}
+          </Btn>
+          <div style={{display:"flex",gap:10}}>
+            <Btn v="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn v="gold" onClick={save} disabled={saving}>{saving?"Saving…":"Save"}</Btn>
+          </div>
         </div>
+
+        {sendLinkResult && (
+          <div style={{
+            padding:"10px 12px",
+            background: sendLinkResult.ok ? "#F0FFF4" : "#FFF0F0",
+            border:`1px solid ${sendLinkResult.ok ? G.green : G.red}40`,
+            borderRadius:6,
+            fontSize:12,
+            color: sendLinkResult.ok ? G.green : G.red,
+            display:"flex",flexDirection:"column",gap:6,
+          }}>
+            <div style={{fontWeight:600}}>
+              {sendLinkResult.ok ? "✓ " : "⚠ "}{sendLinkResult.message}
+            </div>
+            {sendLinkResult.url && (
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <code style={{fontSize:10,background:"#fff",padding:"2px 6px",borderRadius:3,border:`1px solid ${G.border}`,wordBreak:"break-all",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{sendLinkResult.url}</code>
+                <button onClick={()=>{navigator.clipboard.writeText(sendLinkResult.url); alert("Copied!");}} style={{padding:"4px 8px",fontSize:10,fontWeight:700,border:`1px solid ${G.green}`,background:"#fff",color:G.green,borderRadius:4,cursor:"pointer",flexShrink:0}}>Copy</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   </div>;
