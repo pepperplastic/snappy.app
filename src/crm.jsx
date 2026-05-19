@@ -441,6 +441,104 @@ const PAYMENT_METHODS = [
   {value:"other",label:"Other"},
 ];
 
+// ─── LeadsOnline submission button ──────────────────────────────
+// Validates readiness, posts to handlePushToLeadsOnline action, surfaces result inline.
+function LeadsOnlineSubmitBtn({shipment, ready, missing, onSuccess}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { ok, message, ticket }
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await apiPost({
+        action: "pushToLeadsOnline",
+        shipment_id: shipment.shipment_id
+      });
+      if (res && res.success) {
+        setResult({ok:true, message:res.message || `Submitted as ${res.ticket_number}`, ticket:res.ticket_number, sandbox:res.sandbox, photoError:res.photo_error});
+        if (onSuccess) onSuccess(res);
+      } else {
+        const msg = res && (res.message || res.error) ? (res.message || res.error) : "Unknown error";
+        setResult({ok:false, message:msg});
+      }
+    } catch (err) {
+      setResult({ok:false, message:String(err)});
+    } finally {
+      setBusy(false);
+      setConfirmOpen(false);
+    }
+  }
+
+  if (!ready) {
+    return <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <button disabled style={{
+          flex:1,padding:"10px 14px",fontSize:13,fontWeight:700,borderRadius:6,
+          border:`1px solid ${G.border}`,background:"#F5F2EC",color:G.muted,cursor:"not-allowed",
+          letterSpacing:"0.04em",textTransform:"uppercase"
+        }}>📤 Push to LeadsOnline</button>
+      </div>
+      <div style={{fontSize:11,color:G.muted,lineHeight:1.5}}>
+        <strong style={{color:G.orange}}>Cannot submit yet — missing:</strong> {missing.join(", ")}
+      </div>
+    </div>;
+  }
+
+  return <div style={{display:"flex",flexDirection:"column",gap:6}}>
+    {!confirmOpen && !result && (
+      <button
+        onClick={()=>setConfirmOpen(true)}
+        disabled={busy}
+        style={{
+          padding:"10px 14px",fontSize:13,fontWeight:700,borderRadius:6,
+          border:`1px solid ${G.gold}`,background:G.gold,color:"#fff",cursor:"pointer",
+          letterSpacing:"0.04em",textTransform:"uppercase"
+        }}>📤 Push to LeadsOnline</button>
+    )}
+
+    {confirmOpen && !busy && !result && (
+      <div style={{background:"#FFF9EE",border:`1px solid ${G.gold}`,borderRadius:8,padding:12,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{fontSize:12,color:G.text,lineHeight:1.5}}>
+          Submit ticket <strong>SG-{String(shipment.shipment_id).replace(/^SHP-/,"")}</strong> to LeadsOnline?
+          <br/>
+          <span style={{color:G.muted,fontSize:11}}>This will push the transaction record + inventory photos. Cannot be undone (LeadsOnline rejects duplicate tickets).</span>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn v="gold" small onClick={submit}>Yes, submit</Btn>
+          <Btn v="ghost" small onClick={()=>setConfirmOpen(false)}>Cancel</Btn>
+        </div>
+      </div>
+    )}
+
+    {busy && (
+      <div style={{fontSize:12,color:G.muted,fontStyle:"italic",padding:"8px 0"}}>
+        Submitting to LeadsOnline…
+      </div>
+    )}
+
+    {result && (
+      <div style={{
+        background:result.ok?"#F0FFF4":"#FFF0F0",
+        border:`1px solid ${result.ok?G.green:G.red}40`,
+        borderRadius:8,padding:10,display:"flex",flexDirection:"column",gap:4
+      }}>
+        <div style={{fontSize:12,fontWeight:700,color:result.ok?G.green:G.red}}>
+          {result.ok ? "✓ " : "⚠ "}{result.message}
+        </div>
+        {result.ok && result.sandbox === true && (
+          <div style={{fontSize:10,color:G.orange,fontStyle:"italic"}}>⚠ Submitted to SANDBOX, not production. Flip LO_USE_SANDBOX in leadsonline.gs when ready.</div>
+        )}
+        {result.ok && result.photoError && (
+          <div style={{fontSize:10,color:G.orange}}>Photo upload failed — retry separately. Error: {result.photoError}</div>
+        )}
+      </div>
+    )}
+  </div>;
+}
+
+
 function PaymentIdModal({shipment, customer, onSave, onClose}) {
   // Pre-fill from customer (these fields reusable across transactions)
   const [idType, setIdType] = useState(customer?.id_type || shipment?.id_type || "");
@@ -1418,6 +1516,18 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
               ach:"ACH", paypal:"PayPal", venmo:"Venmo", zelle:"Zelle",
               check:"Check", cashapp:"CashApp", other:"Other"
             }[shipment.payment_method] || shipment.payment_method || "";
+
+            // ── LeadsOnline submit readiness check ──
+            const loSubmitted = !!shipment.leadsonline_submitted_at;
+            const loMissing = [];
+            if (shipment.stage !== "purchased") loMissing.push("stage must be purchased");
+            if (!shipment.purchase_price) loMissing.push("purchase price");
+            if (!shipment.id_type)        loMissing.push("ID type");
+            if (!shipment.id_number)      loMissing.push("ID number");
+            if (!shipment.date_birth)     loMissing.push("DOB");
+            if (!shipment.sworn_statement_at) loMissing.push("sworn statement");
+            const loReady = loMissing.length === 0;
+
             return <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>💳 Payment & ID</div>
@@ -1434,6 +1544,26 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
                 {payLabel && <Field label="Payment Method" value={payLabel}/>}
                 {shipment.payment_info && <Field label="Payment Info" value={shipment.payment_info}/>}
               </div>}
+
+              {/* ── LeadsOnline submission block ── */}
+              <div style={{borderTop:`1px solid ${G.border}`,paddingTop:10,marginTop:4,display:"flex",flexDirection:"column",gap:8}}>
+                {loSubmitted ? (
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                    <div style={{fontSize:12,color:G.green,fontWeight:600}}>
+                      ✓ Submitted to LeadsOnline · {fmtDateTime(shipment.leadsonline_submitted_at) || shipment.leadsonline_submitted_at}
+                    </div>
+                  </div>
+                ) : (
+                  <LeadsOnlineSubmitBtn
+                    shipment={shipment}
+                    ready={loReady}
+                    missing={loMissing}
+                    onSuccess={(result)=>{
+                      onSave && onSave({leadsonline_submitted_at:result.submitted_at});
+                    }}
+                  />
+                )}
+              </div>
             </div>;
           })()}
           {/* Timeline — shipment + contact history */}
