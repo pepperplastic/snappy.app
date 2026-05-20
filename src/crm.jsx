@@ -1606,7 +1606,36 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     const customerMsg = shipment.customer_message || shipment.customer_edits_text || legacy.customerMsg;
     let customerEdits = shipment.customer_edits;
     if(!customerEdits && shipment.user_edits){ customerEdits = shipment.user_edits; }
-    const items = shipment.item_manifest || legacy.items;
+    // MAY 20 PATCH: When manifest comes from legacy notes parsing, the top-level
+    // `item` field (first item from the original lead) is missing — only appended
+    // items in `notes` get parsed. Prepend the top-level item so all items show.
+    //
+    // Tina Merrick (SHP-680) example:
+    //   item column: "14K Yellow Gold Openwork Band Ring" ($180-$360)   ← was missing from manifest
+    //   notes:       "+ 14K Yellow Gold Ring with Decorative Design ($480-$770)"  ← only this showed
+    let items = shipment.item_manifest || legacy.items;
+    if (!shipment.item_manifest && shipment.item && items && items.length > 0) {
+      // Only prepend if the top-level item isn't already in the parsed list (dedup by name)
+      const itemName = String(shipment.item).trim();
+      const itemTokens = itemName.split(/\s*\+\s*/).map(t => t.trim().toLowerCase()).filter(Boolean);
+      const parsedNames = new Set(items.map(it => String(it.name || '').toLowerCase().trim()));
+      // Build the top-level item entry from the shipment row
+      const topItems = itemTokens
+        .filter(t => !parsedNames.has(t))
+        .map(t => ({
+          name: t.replace(/\b\w/g, c => c.toUpperCase()),  // re-capitalize first letters
+          price: shipment.estimate || '',
+          rationale: shipment.ai_rationale || ''
+        }));
+      if (topItems.length) items = [...topItems, ...items];
+    } else if (!shipment.item_manifest && shipment.item && (!items || items.length === 0)) {
+      // No appended items at all — just show the single top-level item
+      items = [{
+        name: shipment.item,
+        price: shipment.estimate || '',
+        rationale: shipment.ai_rationale || ''
+      }];
+    }
     // Use legacy aiRationale only if there's a single item (or no items) — otherwise per-item rationales live in the manifest
     const standaloneAiRationale = (!items || items.length <= 1) ? (shipment.ai_rationale || legacy.aiRationale) : '';
     const aiEstimate = shipment.ai_estimate_raw;
