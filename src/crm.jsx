@@ -1531,18 +1531,22 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     // Each line is a self-contained item. Split on newlines first.
     const lines = cleaned.split(/\n+/).map(l => l.trim()).filter(Boolean);
     let matchedNewStyle = 0;
+    // MAY 21 PATCH: helper to clean leading "+ " from item names. Appended items
+    // in notes are stored as "+ Name ($X)..." and the regex's greedy .+? captures
+    // the "+ " prefix. Strip it so names compare cleanly against the top-level item.
+    const cleanItemName = n => String(n || '').replace(/^\s*\+\s*/, '').trim();
     for(const line of lines){
       // "Name ($low – $high) — rationale"
       const mm = line.match(/^(.+?)\s*\(\s*(\$[\d,]+(?:\s*[–\-]\s*\$[\d,]+)?)\s*\)\s*[—\-–]\s*(.+)$/);
       if(mm){
-        out.items.push({name: mm[1].trim(), price: mm[2].trim(), rationale: mm[3].trim()});
+        out.items.push({name: cleanItemName(mm[1]), price: mm[2].trim(), rationale: mm[3].trim()});
         matchedNewStyle++;
         continue;
       }
       // Fallback: "Name ($X)" with no rationale
       const mm2 = line.match(/^(.+?)\s*\(\s*(\$[\d,]+(?:\s*[–\-]\s*\$[\d,]+)?)\s*\)\s*$/);
       if(mm2){
-        out.items.push({name: mm2[1].trim(), price: mm2[2].trim(), rationale: ''});
+        out.items.push({name: cleanItemName(mm2[1]), price: mm2[2].trim(), rationale: ''});
         matchedNewStyle++;
         continue;
       }
