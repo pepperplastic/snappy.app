@@ -755,11 +755,28 @@ If the image is not a valid ID, blurry, or you cannot extract a field reliably, 
       }
     }
 
+    // MAY 22 PATCH: collect a short description that appears under the offer
+    // amount on the verify page. Lets DW contextualize a low offer ("mostly
+    // nickel") or confirm a high one ("for your 14K gold necklace").
+    // Skipped if no offer amount was entered.
+    let offerDescription = ""
+    if (offerAmount) {
+      const promptDesc = window.prompt(
+        "Add a short description that appears under the offer.\n\n" +
+        "Examples: 'ring, made mostly of nickel' / 'for your 14K gold necklace' / '2 items as inspected'\n\n" +
+        "Leave blank for no description.",
+        shipment?.item ? "for " + shipment.item : ""
+      )
+      if (promptDesc === null) return  // user hit Cancel on description
+      offerDescription = promptDesc.trim()
+    }
+
     if (!confirm(
       "Send self-serve link to:\n\n" +
       customer?.name + " <" + customer?.email + ">\n\n" +
-      (offerAmount ? "Offer: " + offerAmount + "\n\n" : "(no offer amount in email)\n\n") +
-      "They'll get an email with a link to enter their ID, payment info, and sworn statement."
+      (offerAmount ? "Offer: " + offerAmount + "\n" : "(no offer amount in email)\n") +
+      (offerDescription ? "Description: " + offerDescription + "\n\n" : "\n") +
+      "They'll get an email with a link to enter their ID, payment info, and personal statement."
     )) return
 
     setSendingLink(true)
@@ -770,6 +787,7 @@ If the image is not a valid ID, blurry, or you cannot extract a field reliably, 
         shipment_id: shipment.shipment_id,
         customer_id: shipment.customer_id,
         offer_amount: offerAmount,
+        offer_description: offerDescription,
         send_email: true,
       })
       if (result && result.success) {

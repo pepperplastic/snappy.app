@@ -39,6 +39,12 @@ function VerifyPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [customer, setCustomer] = useState(null)
   const [shipment, setShipment] = useState(null)
+  // MAY 22 PATCH: capture per-token offer amount + description so the verify
+  // page can display them in the offer banner. The shipment.purchase_price
+  // is also available, but the token-specific values reflect exactly what was
+  // entered in the CRM at the moment the link was generated.
+  const [offerAmount, setOfferAmount] = useState('')
+  const [offerDescription, setOfferDescription] = useState('')
   const [token, setToken]       = useState('')
 
   const [idType, setIdType]               = useState('driver_license')
@@ -72,6 +78,8 @@ function VerifyPage() {
         if (data.success) {
           setCustomer(data.customer)
           setShipment(data.shipment)
+          if (data.offer_amount)      setOfferAmount(data.offer_amount)
+          if (data.offer_description) setOfferDescription(data.offer_description)
           if (data.shipment?.payment_method) setPaymentMethod(data.shipment.payment_method)
           if (data.shipment?.payment_info)   setPaymentInfo(data.shipment.payment_info)
           if (data.shipment?.id_state)       setIdState(data.shipment.id_state)
@@ -113,7 +121,7 @@ function VerifyPage() {
       return
     }
     if (!swornAgreed) {
-      alert('Please check the sworn statement to continue.')
+      alert('Please check the personal statement to continue.')
       return
     }
 
@@ -217,16 +225,22 @@ function VerifyPage() {
               </p>
             </div>
 
-            {shipment.purchase_price && (
+            {(offerAmount || shipment.purchase_price) && (
               <div style={{ background:'#fff', border:`2px solid ${VERIFY_BRAND.gold}`, borderRadius:8, padding:'20px 24px', textAlign:'center', marginBottom:28 }}>
                 <div style={{ fontSize:12, color:VERIFY_BRAND.muted, textTransform:'uppercase', letterSpacing:1, marginBottom:6 }}>Your Offer</div>
-                <div style={{ fontSize:32, fontWeight:600, color:VERIFY_BRAND.dark }}>${shipment.purchase_price}</div>
-                {shipment.item && <div style={{ fontSize:14, color:VERIFY_BRAND.muted, marginTop:8 }}>for {shipment.item}</div>}
+                <div style={{ fontSize:32, fontWeight:600, color:VERIFY_BRAND.dark }}>{offerAmount || ('$' + shipment.purchase_price)}</div>
+                {offerDescription
+                  ? <div style={{ fontSize:14, color:VERIFY_BRAND.muted, marginTop:8 }}>{offerDescription}</div>
+                  : (shipment.item && <div style={{ fontSize:14, color:VERIFY_BRAND.muted, marginTop:8 }}>for {shipment.item}</div>)
+                }
               </div>
             )}
 
             <div style={cardStyle}>
               <h3 style={sectionHeader}>1. Your ID Information</h3>
+              <p style={{ fontSize:13, color:VERIFY_BRAND.muted, marginTop:-8, marginBottom:16, fontStyle:'italic' }}>
+                You can either upload a photo of your ID below, or fill in the fields manually. Either works.
+              </p>
               <Field label="ID Type">
                 <select value={idType} onChange={e => setIdType(e.target.value)} style={inputStyle}>
                   <option value="driver_license">Driver's License</option>
@@ -275,20 +289,24 @@ function VerifyPage() {
             </div>
 
             <div style={{ ...cardStyle, background:'#FFFCF5', border:`2px solid ${VERIFY_BRAND.gold}` }}>
-              <h3 style={sectionHeader}>3. Sworn Statement</h3>
-              <div style={{ fontSize:13, lineHeight:1.7, color:VERIFY_BRAND.dark, background:'#fff', padding:16, borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}`, marginBottom:16 }}>
-                Pursuant to Florida Statute §538.32(2)(c), I attest under penalty of perjury that:
-                <ul style={{ paddingLeft:20, margin:'10px 0' }}>
-                  <li>I am the lawful owner of the items being sold to Snappy Gold (DW5 LLC) and have full right to sell them.</li>
-                  <li>The items are not stolen, encumbered, or subject to any lien.</li>
-                  <li>The identification information I am providing is true and accurate.</li>
+              <h3 style={sectionHeader}>3. Personal Statement</h3>
+              <div style={{ fontSize:14, lineHeight:1.7, color:VERIFY_BRAND.dark, background:'#fff', padding:16, borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}`, marginBottom:12 }}>
+                I confirm that:
+                <ul style={{ paddingLeft:20, margin:'10px 0 0' }}>
                   <li>I am at least 18 years of age.</li>
+                  <li>I am the lawful owner of the items being sold to Snappy Gold.</li>
+                  <li>The identification information I am providing is true and accurate.</li>
                 </ul>
-                I understand that providing false information may subject me to criminal penalties under Florida law.
               </div>
+              <details style={{ fontSize:12, color:VERIFY_BRAND.muted, marginBottom:16, lineHeight:1.6 }}>
+                <summary style={{ cursor:'pointer', userSelect:'none' }}>Legal acknowledgment (required by Florida law)</summary>
+                <div style={{ marginTop:8, padding:12, background:'#fff', borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}` }}>
+                  Pursuant to Florida Statute §538.32(2)(c), I attest under penalty of perjury that the items are not stolen, encumbered, or subject to any lien, and that I have full right to sell them. I understand that providing false information may subject me to criminal penalties under Florida law.
+                </div>
+              </details>
               <label style={{ display:'flex', alignItems:'flex-start', gap:12, cursor:'pointer', fontSize:15, lineHeight:1.5 }}>
                 <input type="checkbox" checked={swornAgreed} onChange={e => setSwornAgreed(e.target.checked)} style={{ marginTop:4, width:20, height:20, accentColor:VERIFY_BRAND.gold, flexShrink:0 }} />
-                <span><strong>I agree</strong> to the sworn statement above.</span>
+                <span><strong>I agree</strong> to the statement above.</span>
               </label>
             </div>
 
