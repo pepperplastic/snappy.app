@@ -238,9 +238,29 @@ function VerifyPage() {
 
             <div style={cardStyle}>
               <h3 style={sectionHeader}>1. Your ID Information</h3>
-              <p style={{ fontSize:13, color:VERIFY_BRAND.muted, marginTop:-8, marginBottom:16, fontStyle:'italic' }}>
-                You can either upload a photo of your ID below, or fill in the fields manually. Either works.
-              </p>
+
+              {/* Option A: Photo upload (faster path) */}
+              <div style={{ background:'#FFFCF5', border:`1px solid ${VERIFY_BRAND.gold}`, borderRadius:6, padding:'14px 16px', marginBottom:14 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:VERIFY_BRAND.dark, marginBottom:4, textTransform:'uppercase', letterSpacing:0.5 }}>Option A — Upload a photo (fastest)</div>
+                <div style={{ fontSize:13, color:VERIFY_BRAND.muted, marginBottom:10, lineHeight:1.5 }}>Snap a photo of your driver's license or ID. We'll read the details automatically.</div>
+                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ ...inputStyle, padding:8, background:'#fff' }} />
+                {idPhoto && (
+                  <div style={{ marginTop:12 }}>
+                    <img src={idPhoto} alt="ID preview" style={{ maxWidth:'100%', maxHeight:200, borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}` }} />
+                    <button type="button" onClick={() => setIdPhoto('')} style={{ background:'none', border:'none', color:VERIFY_BRAND.red, fontSize:13, cursor:'pointer', marginTop:8, padding:0 }}>Remove photo</button>
+                  </div>
+                )}
+              </div>
+
+              {/* OR divider */}
+              <div style={{ display:'flex', alignItems:'center', gap:12, margin:'18px 0 14px' }}>
+                <div style={{ flex:1, height:1, background:VERIFY_BRAND.border }}></div>
+                <div style={{ fontSize:12, color:VERIFY_BRAND.muted, fontWeight:600, letterSpacing:1 }}>OR</div>
+                <div style={{ flex:1, height:1, background:VERIFY_BRAND.border }}></div>
+              </div>
+
+              {/* Option B: Manual entry */}
+              <div style={{ fontSize:13, fontWeight:600, color:VERIFY_BRAND.dark, marginBottom:12, textTransform:'uppercase', letterSpacing:0.5 }}>Option B — Fill in manually</div>
               <Field label="ID Type">
                 <select value={idType} onChange={e => setIdType(e.target.value)} style={inputStyle}>
                   <option value="driver_license">Driver's License</option>
@@ -259,15 +279,6 @@ function VerifyPage() {
               </Field>
               <Field label="Date of Birth">
                 <input type="date" value={dateBirth} onChange={e => setDateBirth(e.target.value)} style={inputStyle} />
-              </Field>
-              <Field label="ID Photo (optional but speeds processing)">
-                <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} style={{ ...inputStyle, padding:8 }} />
-                {idPhoto && (
-                  <div style={{ marginTop:12 }}>
-                    <img src={idPhoto} alt="ID preview" style={{ maxWidth:'100%', maxHeight:200, borderRadius:6, border:`1px solid ${VERIFY_BRAND.border}` }} />
-                    <button type="button" onClick={() => setIdPhoto('')} style={{ background:'none', border:'none', color:VERIFY_BRAND.red, fontSize:13, cursor:'pointer', marginTop:8, padding:0 }}>Remove photo</button>
-                  </div>
-                )}
               </Field>
             </div>
 
