@@ -237,6 +237,23 @@ function Avatar({name,size=36}) {
   return <div style={{width:size,height:size,borderRadius:"50%",background:bg,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.36,fontWeight:700,flexShrink:0,fontFamily:"'Georgia',serif"}}>{initials(name)}</div>;
 }
 
+// MAY 22 PATCH: communication URL helpers
+//   - smsHref: Quo deep link (openphone:// scheme works on Mac with Quo desktop app
+//     installed, iOS with Quo app installed, and Android with Quo app installed).
+//     Strips phone to digits. Falls back gracefully if no app installed (browser
+//     will simply not handle the protocol).
+//   - emailHref: Zoho web compose URL with To address pre-filled. Works in any
+//     browser on any platform without touching OS defaults.
+function smsHref(phone) {
+  if (!phone) return '#';
+  const digits = String(phone).replace(/\D/g, '');
+  return `openphone://message?number=${digits}`;
+}
+function emailHref(email) {
+  if (!email) return '#';
+  return `https://mail.zoho.com/zm/#mail/compose?to=${encodeURIComponent(email)}`;
+}
+
 function Btn({children,onClick,v="ghost",disabled,small,style:st={}}) {
   const base={border:"none",borderRadius:6,cursor:disabled?"not-allowed":"pointer",fontWeight:600,fontSize:small?11:12,padding:small?"4px 10px":"6px 14px",opacity:disabled?0.45:1,transition:"all 0.12s",display:"inline-flex",alignItems:"center",gap:5,whiteSpace:"nowrap"};
   const vars={gold:{background:G.gold,color:"#fff"},danger:{background:"#FFF0F0",color:G.red,border:`1px solid ${G.red}30`},ghost:{background:"#F0EAE0",color:G.text,border:`1px solid ${G.border}`},green:{background:"#F0FFF4",color:G.green,border:`1px solid ${G.green}30`},blue:{background:"#EEF4FF",color:G.blue,border:`1px solid ${G.blue}30`},purple:{background:"#F5F0FF",color:G.purple,border:`1px solid ${G.purple}30`},dark:{background:G.dark,color:G.cream},orange:{background:"#FFF3E0",color:G.orange,border:`1px solid ${G.orange}30`}};
@@ -1777,8 +1794,8 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
-          {customer?.phone&&<><a href={`tel:${customer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞 Call</Btn></a><a href={`sms:${customer.phone}`} style={{textDecoration:"none"}}><Btn v="blue" small>💬 Text</Btn></a></>}
-          {customer?.email&&<a href={`mailto:${customer.email}`} style={{textDecoration:"none"}}><Btn v="ghost" small>✉ Email</Btn></a>}
+          {customer?.phone&&<><a href={`tel:${customer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞 Call</Btn></a><a href={smsHref(customer.phone)} style={{textDecoration:"none"}}><Btn v="blue" small>💬 Text</Btn></a></>}
+          {customer?.email&&<a href={emailHref(customer.email)} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none"}}><Btn v="ghost" small>✉ Email</Btn></a>}
           <Btn v={shipment?.is_urgent==="true"||shipment?.is_urgent===true?"red":"outline"} small onClick={async()=>{const nv=shipment?.is_urgent==="true"||shipment?.is_urgent===true?"false":"true";await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{is_urgent:nv}});onUpdate({...shipment,is_urgent:nv});}}>{shipment?.is_urgent==="true"||shipment?.is_urgent===true?"🚨 Urgent":"⚐ Mark Urgent"}</Btn>
           <Btn v="ghost" small onClick={onClose}>✕</Btn>
         </div>
@@ -2886,8 +2903,8 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
-        {sel.phone&&<><a href={`tel:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="green">📞 Call</Btn></a><a href={`sms:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="blue">💬 Text</Btn></a></>}
-        {sel.email&&<a href={`mailto:${sel.email}`} style={{textDecoration:"none"}}><Btn v="ghost">✉ Email</Btn></a>}
+        {sel.phone&&<><a href={`tel:${sel.phone}`} style={{textDecoration:"none"}}><Btn v="green">📞 Call</Btn></a><a href={smsHref(sel.phone)} style={{textDecoration:"none"}}><Btn v="blue">💬 Text</Btn></a></>}
+        {sel.email&&<a href={emailHref(sel.email)} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none"}}><Btn v="ghost">✉ Email</Btn></a>}
         <Btn v="purple" onClick={()=>setConvertModal(true)}>+ Shipment</Btn>
         <Btn v="danger" onClick={()=>{
           const email=String(sel.email||"").toLowerCase();
@@ -3015,8 +3032,8 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
           </div>
         </div>
         <div style={{display:"flex",gap:6}}>
-          {selCustomer.phone&&<><a href={`tel:${selCustomer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞</Btn></a><a href={`sms:${selCustomer.phone}`} style={{textDecoration:"none"}}><Btn v="blue" small>💬</Btn></a></>}
-          {selCustomer.email&&<a href={`mailto:${selCustomer.email}`} style={{textDecoration:"none"}}><Btn v="ghost" small>✉</Btn></a>}
+          {selCustomer.phone&&<><a href={`tel:${selCustomer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞</Btn></a><a href={smsHref(selCustomer.phone)} style={{textDecoration:"none"}}><Btn v="blue" small>💬</Btn></a></>}
+          {selCustomer.email&&<a href={emailHref(selCustomer.email)} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none"}}><Btn v="ghost" small>✉</Btn></a>}
           <Btn v="purple" small onClick={async()=>{if(!selCustomer||!onNewShipment)return;try{const res=await apiPost({action:"createShipment",data:{customer_id:selCustomer.customer_id,stage:"ready_to_fulfill"}});const shipId=(res&&res.data)||res;if(!shipId||typeof shipId!=="string"){alert("Create shipment returned no ID");return;}const realShip={shipment_id:shipId,customer_id:selCustomer.customer_id,stage:"ready_to_fulfill",created_at:new Date().toISOString()};onNewShipment(realShip);setSelectedShipId(shipId);}catch(e){alert("Failed to create shipment: "+(e.message||e));}}}>+ Ship</Btn>
         </div>
       </div>
