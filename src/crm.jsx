@@ -1418,11 +1418,140 @@ function ContactLogList({logs, onUpdate, onDelete}) {
   </div>;
 }
 
+// MAY 27: Workflow nudge modals — fired by DetailPane on stage transitions.
+// Modeled after LogModal for consistency.
+
+function ReceivedPhotoPromptModal({shipment, onPhotoAdded, onSkip}) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef();
+
+  // Reuse the same compress + upload pattern as InventoryPhotosPanel.
+  function compressImage(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+            else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = reject;
+        img.src = reader.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setError(""); setUploading(true);
+    try {
+      const base64 = await compressImage(file, 1600, 0.85);
+      const result = await apiPost({
+        action: "addInventoryPhoto",
+        shipment_id: shipment.shipment_id,
+        image: base64,
+      });
+      if (result && result.success) {
+        onPhotoAdded(result);
+      } else {
+        setError("Upload failed: " + (result?.error || "no response"));
+      }
+    } catch (err) {
+      setError("Upload failed: " + (err.message || String(err)));
+    }
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onSkip()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(460px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontSize:22,marginBottom:6}}>📸</div>
+      <div style={{fontWeight:700,fontSize:17,marginBottom:6,color:G.text}}>Add an inventory photo?</div>
+      <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:18}}>
+        Take a photo of {shipment.item ? <strong>{shipment.item}</strong> : "the item"} as received. Required for FL 538 compliance and LeadsOnline.
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} disabled={uploading} style={{display:"none"}} id="received-photo-input" />
+      <label htmlFor="received-photo-input" style={{display:"block",background:G.gold,color:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",fontWeight:700,fontSize:14,cursor:uploading?"wait":"pointer",letterSpacing:"0.04em"}}>
+        {uploading ? "Uploading…" : "📷 Take or upload photo"}
+      </label>
+      {error && <div style={{color:G.red,fontSize:12,marginTop:10}}>{error}</div>}
+      <div style={{textAlign:"center",marginTop:14}}>
+        <button onClick={onSkip} disabled={uploading} style={{background:"none",border:"none",color:G.muted,fontSize:13,cursor:uploading?"wait":"pointer",textDecoration:"underline"}}>Skip for now</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    if (!notes.trim()) { onSkip(); return; }
+    setError(""); setSaving(true);
+    try {
+      const result = await apiPost({
+        action: "addContactLog",
+        data: { customer_id: shipment.customer_id, type: "note", notes: "Inspection: " + notes.trim() }
+      });
+      if (result && result.success) {
+        onSaved({ type:"note", notes:"Inspection: "+notes.trim(), timestamp:new Date().toISOString() });
+      } else {
+        setError("Save failed: " + (result?.error || "no response"));
+      }
+    } catch (err) {
+      setError("Save failed: " + (err.message || String(err)));
+    }
+    setSaving(false);
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onSkip()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(500px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontSize:22,marginBottom:6}}>🔍</div>
+      <div style={{fontWeight:700,fontSize:17,marginBottom:6,color:G.text}}>Log inspection notes</div>
+      <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
+        What did you find? Weight, purity test results, condition, anything unexpected.
+      </div>
+      <textarea
+        value={notes}
+        onChange={e=>setNotes(e.target.value)}
+        placeholder="e.g. 14K confirmed via acid + XRF. 8.2g. Light wear, one missing stone. Clean otherwise."
+        rows={5}
+        autoFocus
+        style={{width:"100%",padding:10,fontSize:14,fontFamily:"inherit",border:`1px solid ${G.border}`,borderRadius:8,resize:"vertical",boxSizing:"border-box"}}
+      />
+      {error && <div style={{color:G.red,fontSize:12,marginTop:8}}>{error}</div>}
+      <div style={{display:"flex",gap:10,marginTop:16,alignItems:"center"}}>
+        <Btn v="green" onClick={save} disabled={saving || !notes.trim()}>{saving ? "Saving…" : "Save note"}</Btn>
+        <button onClick={onSkip} disabled={saving} style={{background:"none",border:"none",color:G.muted,fontSize:13,cursor:saving?"wait":"pointer",textDecoration:"underline",marginLeft:"auto"}}>Skip for now</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onUpdate,onNewShipment,onClose}) {
   const [modal,setModal]=useState(null);
   const [localLogs,setLocalLogs]=useState(contactLogs||[]);
   const [photos,setPhotos]=useState([]);
   const [photosLoading,setPhotosLoading]=useState(false);
+  // MAY 27 PATCH: workflow nudge prompts triggered by stage transitions.
+  // These set on stage→received (photo) and stage→inspected (notes), and
+  // can be dismissed with one click. Compliance-critical (FL 538.32 inventory
+  // photos must be captured post-receipt).
+  const [showReceivedPhotoPrompt, setShowReceivedPhotoPrompt] = useState(false);
+  const [showInspectedNotesPrompt, setShowInspectedNotesPrompt] = useState(false);
 
   // PERF PATCH (May 19): attribution is lazy-loaded.
   // Initial load uses getShipmentsLite (no attribution). When this detail pane opens,
@@ -1527,6 +1656,10 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         }
       }
       await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage}}); onUpdate({...shipment,stage});
+      // MAY 27 PATCH: post-transition nudges. Fire AFTER the update succeeds
+      // so the prompt only shows for real transitions, not error states.
+      if (stage === "received") setShowReceivedPhotoPrompt(true);
+      if (stage === "inspected") setShowInspectedNotesPrompt(true);
     }
     catch(e){alert("Failed: "+e.message);}
   }
@@ -1801,6 +1934,33 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   const actions=getActions();
 
   return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    {/* MAY 27: post-stage-transition workflow nudges */}
+    {showReceivedPhotoPrompt && (
+      <ReceivedPhotoPromptModal
+        shipment={shipment}
+        onPhotoAdded={()=>{ setShowReceivedPhotoPrompt(false); refetchPhotos(); }}
+        onSkip={()=>setShowReceivedPhotoPrompt(false)}
+      />
+    )}
+    {showInspectedNotesPrompt && (
+      <InspectedNotesPromptModal
+        shipment={shipment}
+        onSaved={(newLog)=>{
+          setShowInspectedNotesPrompt(false);
+          if (newLog) setLocalLogs(prev=>[newLog,...prev]);
+        }}
+        onSkip={()=>setShowInspectedNotesPrompt(false)}
+      />
+    )}
+    {/* MAY 27: Push-to-LeadsOnline nudge banner. Visible only when shipment is
+        purchased and not yet submitted. Quick path to the existing button below. */}
+    {shipment?.stage === "purchased" && !shipment?.leadsonline_submitted_at && (
+      <div style={{padding:"10px 20px",background:"#FFF4E0",borderBottom:`1px solid ${G.gold}33`,display:"flex",alignItems:"center",gap:10,fontSize:13}}>
+        <span style={{fontSize:18}}>📤</span>
+        <span style={{color:G.text,flex:1}}><strong>Reminder:</strong> push this transaction to LeadsOnline for FL 538 compliance.</span>
+        <span style={{color:G.muted,fontSize:11}}>(button in right panel)</span>
+      </div>
+    )}
     {/* Header */}
     <div style={{padding:"16px 20px",borderBottom:`1px solid ${G.border}`,background:"#fff"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1852,6 +2012,17 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Tracking</div>
             {shipment.outbound_tracking?<Field label="Outbound" value={shipment.outbound_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No outbound tracking</div>}
             {shipment.return_tracking?<Field label="Return" value={shipment.return_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No return tracking</div>}
+            {shipment.outbound_tracking && shipment.easypost_shipment_id && (
+              <Btn v="ghost" small onClick={async()=>{
+                if(!confirm("Resend the label email + SMS to " + (customer?.name||"customer") + " at " + customer?.email + "?\n\nThis fetches the existing label from EasyPost — no new postage charge.")) return;
+                try {
+                  const res = await apiPost({action:"resendLabelEmail",shipment_id:shipment.shipment_id});
+                  alert(res.success ? "✅ Resent: " + res.message : "❌ Failed: " + (res.error||"unknown error"));
+                } catch(e) {
+                  alert("❌ Error: " + e.message);
+                }
+              }}>📧 Resend label email + SMS</Btn>
+            )}
           </div>
           {/* Inventory Photos — shown for received and later stages */}
           {["received","offer_made","purchased","returned","complete"].includes(shipment.stage) && (
