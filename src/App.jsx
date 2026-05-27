@@ -2528,6 +2528,23 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
   const [nudgeDismissed, setNudgeDismissed] = useState(false)
   const [nudgeEmail, setNudgeEmail] = useState('')
   const [nudgeSubmitted, setNudgeSubmitted] = useState(false)
+
+  // Live gold spot price for trust-anchoring on the offer screen
+  const [spotPrice, setSpotPrice] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchMetalPrices()
+      .then((p) => {
+        if (cancelled) return
+        // Only display when we have live data, not fallback
+        if (p && p.source && p.source !== 'fallback' && p.gold_oz) {
+          setSpotPrice({ gold_oz: p.gold_oz, fetchedAt: Date.now() })
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
   const hasLoadedOnce = useRef(false)
   useEffect(() => {
@@ -2644,6 +2661,23 @@ Additional info: ${customerEditsText}` : correctionLines
             </div>
 
             <div ref={offerRangeRef} style={styles.offerRange}>
+              {/* Live gold spot price — only shown when fetched live (not fallback) */}
+              {spotPrice && analysis.item_type !== 'other' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 8, fontSize: 11, color: '#8A7A5A',
+                  marginBottom: 14, paddingBottom: 12,
+                  borderBottom: '1px solid rgba(200,149,60,0.15)',
+                  letterSpacing: '0.02em',
+                }}>
+                  <span style={{
+                    display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                    background: '#3FA66B', boxShadow: '0 0 0 3px rgba(63,166,107,0.15)',
+                  }} />
+                  <span>Gold spot: <strong style={{ color: '#5A4A2E', fontWeight: 600 }}>${spotPrice.gold_oz.toLocaleString()}/oz</strong></span>
+                  <span style={{ opacity: 0.5 }}>· live</span>
+                </div>
+              )}
               {/* VARIANT B: Gated — blur estimate until email entered */}
               {variant === 'B' && !gateUnlocked ? (
                 <div style={{ position: 'relative' }}>
