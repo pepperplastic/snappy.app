@@ -2931,6 +2931,10 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
   const update = (field) => (e) =>
     setLeadData((prev) => ({ ...prev, [field]: e.target.value }))
 
+  const [showTcpaInfo, setShowTcpaInfo] = useState(false)
+
+  const tcpaText = 'By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg & data rates may apply. Reply STOP to unsubscribe.'
+
   return (
     <section style={styles.centeredSection}>
       <h2 style={styles.sectionTitle}>{directQuote ? 'Get a Quote' : 'Almost there!'}</h2>
@@ -2992,7 +2996,23 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
           />
         </div>
         <div style={styles.formGroup}>
-          <label style={styles.formLabel}>Phone (optional)</label>
+          <label style={{ ...styles.formLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>Phone (optional)</span>
+            <button
+              type="button"
+              aria-label="About text messages"
+              onClick={() => setShowTcpaInfo((v) => !v)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, padding: 0, borderRadius: '50%',
+                border: '1px solid #C8953C', background: 'transparent',
+                color: '#C8953C', fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', lineHeight: 1,
+              }}
+            >
+              i
+            </button>
+          </label>
           <input
             type="tel"
             value={leadData.phone}
@@ -3000,7 +3020,15 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
             placeholder="(555) 555-1234"
             style={styles.formInput}
           />
-          <p style={{ fontSize: '11px', color: '#888', marginTop: '6px', lineHeight: '1.4' }}>By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg & data rates may apply. Reply STOP to unsubscribe.</p>
+          {showTcpaInfo && (
+            <p style={{
+              fontSize: 12, color: '#555', marginTop: 8, padding: '10px 12px',
+              background: '#FAF6F0', border: '1px solid #E5DCC9', borderRadius: 8,
+              lineHeight: 1.45,
+            }}>
+              {tcpaText}
+            </p>
+          )}
         </div>
         {!directQuote && (
           <div style={styles.formGroup}>
@@ -3021,6 +3049,11 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
         <p style={styles.formDisclaimer}>
           No cost, no commitment. {directQuote ? 'We\'ll respond within a few hours.' : 'If you don\'t like our offer, we ship your item back free.'}
         </p>
+        {leadData.phone && leadData.phone.trim().length > 0 && (
+          <p style={{ fontSize: 10, color: '#999', marginTop: 8, textAlign: 'center', lineHeight: 1.4, padding: '0 8px' }}>
+            {tcpaText}
+          </p>
+        )}
       </form>
     </section>
   )
