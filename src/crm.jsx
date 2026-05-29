@@ -1264,14 +1264,22 @@ function PastShipmentPeek({shipment,onClose}) {
           </div>}
         </div>}
 
+        {(() => {
+          // MAY 29 PATCH: bottom Photos panel shows ONLY non-inventory photos.
+          // Inventory photos render in InventoryPhotosPanel above. Without this
+          // filter, an inventory upload appeared in both places.
+          const customerPhotos = (photos || []).filter(p =>
+            String(p.source || "").toLowerCase() !== "inventory"
+          );
+          return (
         <div style={{marginBottom:14}}>
-          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>Photos {photos.length>0&&`(${photos.length})`}</div>
+          <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>Customer Photos {customerPhotos.length>0&&`(${customerPhotos.length})`}</div>
           {photosLoading
             ? <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>Loading photos…</div>
-            : photos.length===0
-              ? <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>No photos on file</div>
+            : customerPhotos.length===0
+              ? <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>No customer photos on file</div>
               : <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                  {photos.map((p,i)=>{
+                  {customerPhotos.map((p,i)=>{
                     const thumb=driveThumb(p.drive_url);
                     return <a key={i} href={p.drive_url} target="_blank" rel="noopener noreferrer"
                       title={p.source ? `Source: ${p.source}` : "Open in Drive"}
@@ -1281,6 +1289,8 @@ function PastShipmentPeek({shipment,onClose}) {
                   })}
                 </div>}
         </div>
+          );
+        })()}
 
         {shipment.customer_message&&<div style={{marginBottom:14}}>
           <div style={{fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Customer Message</div>
@@ -1502,11 +1512,14 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
     if (!notes.trim()) { onSkip(); return; }
     setError(""); setSaving(true);
     try {
+      // addContactLog returns the new logId string on success, or a wrapped
+      // error object on failure. Treat any truthy non-error response as success.
       const result = await apiPost({
         action: "addContactLog",
         data: { customer_id: shipment.customer_id, type: "note", notes: "Inspection: " + notes.trim() }
       });
-      if (result && result.success) {
+      const isError = result && typeof result === "object" && result.error;
+      if (!isError && result) {
         onSaved({ type:"note", notes:"Inspection: "+notes.trim(), timestamp:new Date().toISOString() });
       } else {
         setError("Save failed: " + (result?.error || "no response"));
@@ -1541,6 +1554,59 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
   </div>;
 }
 
+function BinNumberPromptModal({shipment, onSaved, onSkip}) {
+  const [binNumber, setBinNumber] = useState(shipment.bin_number || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    const value = String(binNumber).trim();
+    if (!value) { onSkip(); return; }
+    setError(""); setSaving(true);
+    try {
+      const result = await apiPost({
+        action: "updateShipment",
+        shipment_id: shipment.shipment_id,
+        updates: { bin_number: value }
+      });
+      const isError = result && typeof result === "object" && result.error;
+      if (!isError) {
+        onSaved(value);
+      } else {
+        setError("Save failed: " + (result?.error || "no response"));
+      }
+    } catch (err) {
+      setError("Save failed: " + (err.message || String(err)));
+    }
+    setSaving(false);
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onSkip()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(420px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontSize:22,marginBottom:6}}>📦</div>
+      <div style={{fontWeight:700,fontSize:17,marginBottom:6,color:G.text}}>What bin?</div>
+      <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
+        Assign this shipment to a physical storage bin for inspection.
+      </div>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={binNumber}
+        onChange={e=>setBinNumber(e.target.value)}
+        placeholder="e.g. 66"
+        autoFocus
+        onKeyDown={e=>{ if(e.key==="Enter") save(); }}
+        style={{width:"100%",padding:"12px",fontSize:18,fontFamily:"inherit",border:`1px solid ${G.border}`,borderRadius:8,boxSizing:"border-box",textAlign:"center"}}
+      />
+      {error && <div style={{color:G.red,fontSize:12,marginTop:8}}>{error}</div>}
+      <div style={{display:"flex",gap:10,marginTop:16,alignItems:"center"}}>
+        <Btn v="green" onClick={save} disabled={saving || !String(binNumber).trim()}>{saving ? "Saving…" : "Save bin"}</Btn>
+        <button onClick={onSkip} disabled={saving} style={{background:"none",border:"none",color:G.muted,fontSize:13,cursor:saving?"wait":"pointer",textDecoration:"underline",marginLeft:"auto"}}>Skip for now</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onUpdate,onNewShipment,onClose}) {
   const [modal,setModal]=useState(null);
   const [localLogs,setLocalLogs]=useState(contactLogs||[]);
@@ -1551,6 +1617,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   // can be dismissed with one click. Compliance-critical (FL 538.32 inventory
   // photos must be captured post-receipt).
   const [showReceivedPhotoPrompt, setShowReceivedPhotoPrompt] = useState(false);
+  const [showBinNumberPrompt, setShowBinNumberPrompt] = useState(false);
   const [showInspectedNotesPrompt, setShowInspectedNotesPrompt] = useState(false);
 
   // PERF PATCH (May 19): attribution is lazy-loaded.
@@ -1938,8 +2005,18 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {showReceivedPhotoPrompt && (
       <ReceivedPhotoPromptModal
         shipment={shipment}
-        onPhotoAdded={()=>{ setShowReceivedPhotoPrompt(false); refetchPhotos(); }}
-        onSkip={()=>setShowReceivedPhotoPrompt(false)}
+        onPhotoAdded={()=>{ setShowReceivedPhotoPrompt(false); refetchPhotos(); setShowBinNumberPrompt(true); }}
+        onSkip={()=>{ setShowReceivedPhotoPrompt(false); setShowBinNumberPrompt(true); }}
+      />
+    )}
+    {showBinNumberPrompt && (
+      <BinNumberPromptModal
+        shipment={shipment}
+        onSaved={(binNumber)=>{
+          setShowBinNumberPrompt(false);
+          onUpdate({...shipment, bin_number: binNumber});
+        }}
+        onSkip={()=>setShowBinNumberPrompt(false)}
       />
     )}
     {showInspectedNotesPrompt && (
