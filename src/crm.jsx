@@ -3518,6 +3518,7 @@ function SalesTab({shipments, customers}) {
              <th style={{textAlign:"left",padding:"10px 12px"}}>Date</th>
              <th style={{textAlign:"left",padding:"10px 12px"}}>Buyer</th>
              <th style={{textAlign:"left",padding:"10px 12px"}}>Items</th>
+             <th style={{textAlign:"left",padding:"10px 12px"}}>Payment</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Cost</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Sold For</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Profit</th>
@@ -3535,6 +3536,7 @@ function SalesTab({shipments, customers}) {
                  <div>{s.items.length} item{s.items.length!==1?"s":""}{s.customerNames?` · from ${s.customerNames}`:""}</div>
                  <div style={{fontSize:11,marginTop:2}}>{s.ids.join(", ")}</div>
                </td>
+               <td style={{padding:"10px 12px",fontSize:12,color:G.muted,textTransform:"capitalize"}}>{sale.payment_method ? sale.payment_method.replace(/_/g," ") : "—"}</td>
                <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}}>${s.totalCost.toFixed(2)}</td>
                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>${(parseFloat(sale.amount)||0).toFixed(2)}</td>
                <td style={{padding:"10px 12px",textAlign:"right",color:s.profit>=0?G.green:G.red,fontWeight:600}}>${s.profit.toFixed(2)}</td>
@@ -3561,6 +3563,7 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   const isEdit = !!sale;
   const [buyerName, setBuyerName] = useState(sale?.buyer_name || "");
   const [amount, setAmount] = useState(sale?.amount || "");
+  const [paymentMethod, setPaymentMethod] = useState(sale?.payment_method || "");
   const [saleDate, setSaleDate] = useState(sale?.sale_date || new Date().toISOString().slice(0,10));
   const [notes, setNotes] = useState(sale?.notes || "");
   const [selectedShipIds, setSelectedShipIds] = useState(initialShipmentIds || []);
@@ -3597,8 +3600,8 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
     try {
       const action = isEdit ? "updateSale" : "addSale";
       const payload = isEdit
-        ? {action,sale_id:sale.sale_id,updates:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}}
-        : {action,data:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}};
+        ? {action,sale_id:sale.sale_id,updates:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}}
+        : {action,data:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}};
       const r = await apiPost(payload);
       if (r?.success) onSave(); else alert("Save failed: "+(r?.error||"unknown"));
     } catch(e) { alert("Save failed: "+(e.message||e)); }
@@ -3624,6 +3627,19 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
         <div>
           <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Sale amount ($)</label>
           <input type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="535.00" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Payment method</label>
+          <select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box",background:"#fff"}}>
+            <option value="">— select —</option>
+            <option value="cash">Cash</option>
+            <option value="check">Check</option>
+            <option value="zelle">Zelle</option>
+            <option value="venmo">Venmo</option>
+            <option value="ach">ACH / Wire</option>
+            <option value="credit_card">Credit card</option>
+            <option value="other">Other</option>
+          </select>
         </div>
         <div>
           <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Sale date</label>
