@@ -251,6 +251,14 @@ function Avatar({name,size=36}) {
 // prior day in Eastern, e.g. 1971-07-03T04:00:00Z → "1971-07-02" in EDT).
 function fmtDob(s) {
   if (!s) return '';
+  // JUN 1 PATCH v2: handle Date instances (server may serialize Date cells
+  // to JSON differently — covered defensively).
+  if (s instanceof Date) {
+    if (isNaN(s.getTime())) return '';
+    const mm = String(s.getMonth() + 1).padStart(2, '0');
+    const dd = String(s.getDate()).padStart(2, '0');
+    return `${mm}/${dd}/${s.getFullYear()}`;
+  }
   const str = String(s).trim();
   // ISO with optional time: extract YYYY-MM-DD literally
   const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -258,6 +266,13 @@ function fmtDob(s) {
   // Already MM/DD/YYYY
   const us = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (us) return `${us[1].padStart(2,'0')}/${us[2].padStart(2,'0')}/${us[3]}`;
+  // JS Date.toString format: "Sat Jul 03 1971 00:00:00 GMT-0400 (...)"
+  const monthMap = { Jan:'01', Feb:'02', Mar:'03', Apr:'04', May:'05', Jun:'06',
+                     Jul:'07', Aug:'08', Sep:'09', Oct:'10', Nov:'11', Dec:'12' };
+  const jsDate = str.match(/^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})/);
+  if (jsDate && monthMap[jsDate[1]]) {
+    return `${monthMap[jsDate[1]]}/${jsDate[2].padStart(2,'0')}/${jsDate[3]}`;
+  }
   return str;
 }
 
