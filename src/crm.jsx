@@ -244,6 +244,23 @@ function Avatar({name,size=36}) {
 //     will simply not handle the protocol).
 //   - emailHref: Zoho web compose URL with To address pre-filled. Works in any
 //     browser on any platform without touching OS defaults.
+// JUN 1 PATCH: format DOB for display. Many records have full ISO timestamps
+// like "1971-07-03T04:00:00.000Z" from the ID-photo OCR Vision call. We
+// extract just the date part. Critical: parse the ISO date manually rather
+// than via new Date() to avoid timezone shifts (Z time at 04:00 reads as the
+// prior day in Eastern, e.g. 1971-07-03T04:00:00Z → "1971-07-02" in EDT).
+function fmtDob(s) {
+  if (!s) return '';
+  const str = String(s).trim();
+  // ISO with optional time: extract YYYY-MM-DD literally
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;  // → MM/DD/YYYY
+  // Already MM/DD/YYYY
+  const us = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return `${us[1].padStart(2,'0')}/${us[2].padStart(2,'0')}/${us[3]}`;
+  return str;
+}
+
 function smsHref(phone) {
   if (!phone) return '#';
   const digits = String(phone).replace(/\D/g, '');
@@ -2029,6 +2046,18 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         onSkip={()=>setShowInspectedNotesPrompt(false)}
       />
     )}
+    {/* MAY 31: Self-serve form submission banner. Visible after customer
+        completes the verification form, until shipment is marked purchased. */}
+    {shipment?.self_serve_submitted_at && !["purchased","returned","complete"].includes(shipment?.stage) && (
+      <div style={{padding:"12px 20px",background:"#E8F5E9",borderBottom:`2px solid #2E7D32`,display:"flex",alignItems:"center",gap:10,fontSize:13}}>
+        <span style={{fontSize:18}}>✅</span>
+        <span style={{color:G.text,flex:1}}>
+          <strong>Self-serve form submitted</strong>
+          {shipment.self_serve_submitted_at ? ` · ${new Date(shipment.self_serve_submitted_at).toLocaleString()}` : ""}
+          {" · "}Payment + ID + statement on file. Ready to push to LeadsOnline and send payment.
+        </span>
+      </div>
+    )}
     {/* MAY 27: Push-to-LeadsOnline nudge banner. Visible only when shipment is
         purchased and not yet submitted. Quick path to the existing button below. */}
     {shipment?.stage === "purchased" && !shipment?.leadsonline_submitted_at && (
@@ -2102,7 +2131,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             )}
           </div>
           {/* Inventory Photos — shown for received and later stages */}
-          {["received","offer_made","purchased","returned","complete"].includes(shipment.stage) && (
+          {["received","inspected","offer_made","purchased","returned","complete"].includes(shipment.stage) && (
             <InventoryPhotosPanel
               shipment={shipment}
               photos={photos}
@@ -2143,7 +2172,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
               {hasAnyId && <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {idTypeLabel && <Field label="ID Type" value={idTypeLabel + (shipment.id_state?` (${shipment.id_state})`:"")}/>}
                 {shipment.id_number && <Field label="ID Number" value={mask(shipment.id_number)} mono/>}
-                {shipment.date_birth && <Field label="DOB" value={shipment.date_birth}/>}
+                {shipment.date_birth && <Field label="DOB" value={fmtDob(shipment.date_birth)}/>}
                 {shipment.id_photo_url && <a href={shipment.id_photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:G.blue,textDecoration:"none"}}>📷 ID photo on file</a>}
               </div>}
               {hasAnyPay && <div style={{borderTop:hasAnyId?`1px solid ${G.border}`:"none",paddingTop:hasAnyId?10:0,marginTop:hasAnyId?4:0,display:"flex",flexDirection:"column",gap:4}}>
