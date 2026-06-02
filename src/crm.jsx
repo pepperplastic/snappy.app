@@ -3449,6 +3449,224 @@ function saveAnalyticsSettings(s) {
   try { localStorage.setItem(ANALYTICS_STORAGE_KEY, JSON.stringify(s)); } catch {}
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  SalesTab — JUN 2
+//  List of sales (resale to dealers/buyers like Barry's Pawn). Supports
+//  add/edit/delete. Each sale references one or more shipments (bundle).
+// ═══════════════════════════════════════════════════════════════════
+function SalesTab({shipments, customers}) {
+  const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingSale, setEditingSale] = useState(null);
+
+  async function loadSales() {
+    setLoading(true);
+    try {
+      const r = await apiFetch({action:"getSales"});
+      setSales(r?.sales || []);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }
+  useEffect(() => { loadSales(); }, []);
+
+  const shipById = useMemo(() => {
+    const m = {}; shipments.forEach(s => m[s.shipment_id] = s); return m;
+  }, [shipments]);
+  const custById = useMemo(() => {
+    const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
+  }, [customers]);
+
+  function summarizeSale(sale) {
+    const ids = String(sale.shipment_ids || "").split(",").map(s => s.trim()).filter(Boolean);
+    const ships = ids.map(id => shipById[id]).filter(Boolean);
+    const totalCost = ships.reduce((sum, s) => sum + (parseFloat(s.purchase_price) || 0), 0);
+    const profit = (parseFloat(sale.amount) || 0) - totalCost;
+    const margin = totalCost > 0 ? (profit / totalCost) * 100 : null;
+    const customerNames = [...new Set(ships.map(s => custById[s.customer_id]?.name).filter(Boolean))].join(", ");
+    const items = ships.map(s => s.item || s.shipment_id).filter(Boolean);
+    return { ids, ships, totalCost, profit, margin, customerNames, items };
+  }
+
+  const totalRevenue = sales.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  const totalProfit = sales.reduce((sum, s) => sum + summarizeSale(s).profit, 0);
+
+  return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:24,background:G.bg}}>
+    {showAdd && <SaleModal shipments={shipments} customers={customers} onSave={()=>{setShowAdd(false);loadSales();}} onCancel={()=>setShowAdd(false)} initialShipmentIds={[]}/>}
+    {editingSale && <SaleModal shipments={shipments} customers={customers} sale={editingSale} onSave={()=>{setEditingSale(null);loadSales();}} onCancel={()=>setEditingSale(null)} initialShipmentIds={String(editingSale.shipment_ids||"").split(",").map(x=>x.trim()).filter(Boolean)}/>}
+
+    <div style={{display:"flex",alignItems:"center",marginBottom:20,gap:14}}>
+      <h2 style={{margin:0,fontSize:22,color:G.text}}>Sales</h2>
+      <div style={{flex:1}}/>
+      <div style={{fontSize:13,color:G.muted}}>
+        Total revenue: <strong style={{color:G.text}}>${totalRevenue.toFixed(2)}</strong>
+        {" · "}Total profit: <strong style={{color:totalProfit>=0?G.green:G.red}}>${totalProfit.toFixed(2)}</strong>
+      </div>
+      <Btn v="gold" onClick={()=>setShowAdd(true)}>+ Add Sale</Btn>
+    </div>
+
+    {loading ? <div style={{color:G.muted}}>Loading…</div> :
+     sales.length === 0 ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
+       <div style={{fontSize:32,marginBottom:12}}>💰</div>
+       <div style={{fontSize:14}}>No sales recorded yet.</div>
+       <div style={{fontSize:12,marginTop:6}}>Click "+ Add Sale" to record your first sale.</div>
+     </div> :
+     <div style={{flex:1,overflow:"auto"}}>
+       <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:10,overflow:"hidden",border:`1px solid ${G.border}`}}>
+         <thead>
+           <tr style={{background:"#1A1816",color:G.gold,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase"}}>
+             <th style={{textAlign:"left",padding:"10px 12px"}}>Date</th>
+             <th style={{textAlign:"left",padding:"10px 12px"}}>Buyer</th>
+             <th style={{textAlign:"left",padding:"10px 12px"}}>Items</th>
+             <th style={{textAlign:"right",padding:"10px 12px"}}>Cost</th>
+             <th style={{textAlign:"right",padding:"10px 12px"}}>Sold For</th>
+             <th style={{textAlign:"right",padding:"10px 12px"}}>Profit</th>
+             <th style={{textAlign:"right",padding:"10px 12px"}}>Margin</th>
+             <th style={{padding:"10px 12px"}}/>
+           </tr>
+         </thead>
+         <tbody>
+           {sales.slice().sort((a,b)=>new Date(b.sale_date||b.created_at)-new Date(a.sale_date||a.created_at)).map(sale => {
+             const s = summarizeSale(sale);
+             return <tr key={sale.sale_id} style={{borderBottom:`1px solid ${G.border}`,fontSize:13}}>
+               <td style={{padding:"10px 12px",color:G.muted}}>{sale.sale_date || (sale.created_at && new Date(sale.created_at).toLocaleDateString())}</td>
+               <td style={{padding:"10px 12px",fontWeight:600}}>{sale.buyer_name}</td>
+               <td style={{padding:"10px 12px",fontSize:12,color:G.muted,maxWidth:300}}>
+                 <div>{s.items.length} item{s.items.length!==1?"s":""}{s.customerNames?` · from ${s.customerNames}`:""}</div>
+                 <div style={{fontSize:11,marginTop:2}}>{s.ids.join(", ")}</div>
+               </td>
+               <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}}>${s.totalCost.toFixed(2)}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>${(parseFloat(sale.amount)||0).toFixed(2)}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",color:s.profit>=0?G.green:G.red,fontWeight:600}}>${s.profit.toFixed(2)}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:G.muted}}>{s.margin!==null?s.margin.toFixed(0)+"%":"—"}</td>
+               <td style={{padding:"10px 12px",textAlign:"right"}}>
+                 <Btn v="ghost" small onClick={()=>setEditingSale(sale)}>Edit</Btn>
+                 <Btn v="ghost" small onClick={async()=>{
+                   if(!confirm("Delete this sale?")) return;
+                   const r = await apiPost({action:"deleteSale",sale_id:sale.sale_id});
+                   if(r?.success) loadSales(); else alert("Delete failed: "+(r?.error||"unknown"));
+                 }}>Delete</Btn>
+               </td>
+             </tr>;
+           })}
+         </tbody>
+       </table>
+     </div>
+    }
+  </div>;
+}
+
+// SaleModal — add or edit a sale
+function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmentIds}) {
+  const isEdit = !!sale;
+  const [buyerName, setBuyerName] = useState(sale?.buyer_name || "");
+  const [amount, setAmount] = useState(sale?.amount || "");
+  const [saleDate, setSaleDate] = useState(sale?.sale_date || new Date().toISOString().slice(0,10));
+  const [notes, setNotes] = useState(sale?.notes || "");
+  const [selectedShipIds, setSelectedShipIds] = useState(initialShipmentIds || []);
+  const [shipFilter, setShipFilter] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const custById = useMemo(() => {
+    const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
+  }, [customers]);
+
+  // Eligible shipments: stage="purchased" (we own them, available to resell)
+  const eligible = useMemo(() => {
+    const eligibleStages = ["purchased"];
+    return shipments
+      .filter(s => eligibleStages.includes(s.stage) || selectedShipIds.includes(s.shipment_id))
+      .map(s => ({
+        ...s,
+        customerName: custById[s.customer_id]?.name || "",
+        searchKey: `${s.shipment_id} ${s.item||""} ${custById[s.customer_id]?.name||""}`.toLowerCase(),
+      }))
+      .filter(s => !shipFilter || s.searchKey.includes(shipFilter.toLowerCase()))
+      .sort((a,b) => new Date(b.purchased_at||b.created_at) - new Date(a.purchased_at||a.created_at));
+  }, [shipments, custById, shipFilter, selectedShipIds]);
+
+  function toggleShipment(shipId) {
+    setSelectedShipIds(prev => prev.includes(shipId) ? prev.filter(x=>x!==shipId) : [...prev, shipId]);
+  }
+
+  async function save() {
+    if (!buyerName.trim()) { alert("Buyer name required"); return; }
+    if (!amount || isNaN(parseFloat(amount))) { alert("Amount must be a number"); return; }
+    if (selectedShipIds.length === 0) { alert("Select at least one shipment"); return; }
+    setSaving(true);
+    try {
+      const action = isEdit ? "updateSale" : "addSale";
+      const payload = isEdit
+        ? {action,sale_id:sale.sale_id,updates:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}}
+        : {action,data:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}};
+      const r = await apiPost(payload);
+      if (r?.success) onSave(); else alert("Save failed: "+(r?.error||"unknown"));
+    } catch(e) { alert("Save failed: "+(e.message||e)); }
+    setSaving(false);
+  }
+
+  const totalCost = selectedShipIds.reduce((sum, id) => {
+    const s = shipments.find(x => x.shipment_id === id);
+    return sum + (parseFloat(s?.purchase_price) || 0);
+  }, 0);
+  const profit = (parseFloat(amount) || 0) - totalCost;
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&onCancel()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(700px,95vw)",maxHeight:"90vh",overflow:"auto",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <h2 style={{margin:"0 0 6px",fontSize:18,color:G.text}}>{isEdit ? "Edit Sale" : "Record New Sale"}</h2>
+      <div style={{fontSize:13,color:G.muted,marginBottom:18}}>Track what you sold, to whom, for how much.</div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <div>
+          <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Buyer name</label>
+          <input value={buyerName} onChange={e=>setBuyerName(e.target.value)} placeholder="e.g. Barry's Pawn" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Sale amount ($)</label>
+          <input type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="535.00" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Sale date</label>
+          <input type="date" value={saleDate} onChange={e=>setSaleDate(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+        </div>
+      </div>
+
+      <div style={{marginBottom:14}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Notes</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything worth remembering — payment terms, condition adjustments, etc." rows={2} style={{width:"100%",padding:10,fontSize:14,fontFamily:"inherit",border:`1px solid ${G.border}`,borderRadius:6,resize:"vertical",boxSizing:"border-box"}}/>
+      </div>
+
+      <div style={{marginBottom:14}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+          Shipments sold ({selectedShipIds.length} selected{selectedShipIds.length>0 && `, cost basis $${totalCost.toFixed(2)}, profit $${profit.toFixed(2)}`})
+        </label>
+        <input value={shipFilter} onChange={e=>setShipFilter(e.target.value)} placeholder="Filter by name, item, or shipment ID…" style={{width:"100%",padding:"8px 12px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box",marginBottom:8}}/>
+        <div style={{border:`1px solid ${G.border}`,borderRadius:6,maxHeight:260,overflow:"auto"}}>
+          {eligible.length === 0 ? <div style={{padding:14,color:G.muted,fontSize:13}}>No purchased shipments match.</div> :
+            eligible.map(s => {
+              const sel = selectedShipIds.includes(s.shipment_id);
+              return <div key={s.shipment_id} onClick={()=>toggleShipment(s.shipment_id)} style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,cursor:"pointer",background:sel?"#FFF8E1":"#fff",display:"flex",alignItems:"center",gap:10}}>
+                <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
+                <div style={{flex:1,fontSize:13}}>
+                  <div style={{fontWeight:600}}>{s.shipment_id} · {s.customerName}</div>
+                  <div style={{fontSize:12,color:G.muted}}>{s.item || "(no item)"}</div>
+                </div>
+                <div style={{fontSize:12,color:G.muted,textAlign:"right"}}>
+                  <div>Cost: ${parseFloat(s.purchase_price||0).toFixed(2)}</div>
+                </div>
+              </div>;
+            })}
+        </div>
+      </div>
+
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn v="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
+        <Btn v="gold" onClick={save} disabled={saving}>{saving ? "Saving…" : (isEdit ? "Save changes" : "Record sale")}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
 function AnalyticsTab({shipments, customers}) {
   const today = new Date();
   const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate()-30);
@@ -3958,7 +4176,7 @@ export default function SnappyGoldCRM() {
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"customers",label:"Customers",color:G.blue},{id:"analytics",label:"Analytics",color:G.gold}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"analytics",label:"Analytics",color:G.gold}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -4001,6 +4219,7 @@ export default function SnappyGoldCRM() {
       {tab==="urgent"   &&<UrgentTab    shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="leads"    &&<LeadsTab     activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="sales"    &&<SalesTab     shipments={shipments} customers={customers}/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
     </div>
   </div>;
