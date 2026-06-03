@@ -40,8 +40,9 @@ const G = {
 // ── Stages ────────────────────────────────────────────────
 const STAGES = [
   "estimate_only", "ready_to_fulfill", "outbound_complete",
-  "received", "inspected", "offer_made",
-  "purchased", "returned", "dead"
+  "received", "inspected", "pending_response",
+  "pending_payment", "pending_leadsonline", "complete",
+  "returned", "dead"
 ];
 
 const SL = {
@@ -50,10 +51,13 @@ const SL = {
   outbound_complete: "Outbound Complete",
   received:          "Received",
   inspected:         "Inspected",
-  offer_made:        "Offer Made",
-  accepted:          "Accepted",
-  rejected:          "Rejected",
-  purchased: "Purchased ✓", returned: "Returned",
+  pending_response:  "Pending Response",
+  pending_payment:   "Pending Payment",
+  pending_leadsonline: "Pending LeadsOnline",
+  complete:          "Complete ✓",
+  purchased:         "Purchased ✓",   // legacy — kept so any stray old value still renders
+  offer_made:        "Offer Made",     // legacy
+  returned:          "Returned",
   return_complete:   "Returned",
   dead:              "Dead",
 };
@@ -64,11 +68,12 @@ const SC = {
   outbound_complete: "#2E7D32",
   received:          "#00695C",
   inspected:         "#00838F",
-  offer_made:        "#F57F17",
-  accepted:          "#2E7D32",
-  rejected:          "#B71C1C",
-  
-  purchased:         "#1B5E20",
+  pending_response:  "#F57F17",   // amber — awaiting customer
+  pending_payment:   "#C62828",   // red — money owed, hard to miss
+  pending_leadsonline: "#AD1457", // magenta — compliance owed, hard to miss
+  complete:          "#1B5E20",   // deep green — done
+  purchased:         "#1B5E20",   // legacy
+  offer_made:        "#F57F17",   // legacy
   returned:          "#546E7A",
   return_complete:   "#546E7A",
   dead:              "#9E9E9E",
@@ -76,8 +81,10 @@ const SC = {
 
 const FULFILL_STAGES   = ["ready_to_fulfill"];
 const OUTBOUND_STAGES  = ["outbound_complete"];
-const RECEIVED_STAGES  = ["received","inspected","offer_made"];
-const COMPLETE_STAGES  = ["purchased","returned"];
+// "In Progress" collapses all post-receipt work stages into one queue,
+// with stage badges + per-stage counts doing the visual sorting.
+const RECEIVED_STAGES  = ["received","inspected","pending_response","pending_payment","pending_leadsonline"];
+const COMPLETE_STAGES  = ["complete","returned","purchased"];  // purchased kept for legacy safety
 
 // ── Helpers ───────────────────────────────────────────────
 function fmt$(n) { return n ? "$" + Number(n).toLocaleString() : "—"; }
@@ -165,7 +172,9 @@ function stageRelevantDate(shipment) {
     if (shipment.sent_at) return { label: "sent", ts: shipment.sent_at };
   }
   // In Received or later: show when received
-  if (s === "received" || s === "offer_made" || s === "purchased" || s === "returned" || s === "complete") {
+  if (s === "received" || s === "inspected" || s === "pending_response" ||
+      s === "pending_payment" || s === "pending_leadsonline" || s === "complete" ||
+      s === "returned" || s === "offer_made" || s === "purchased") {
     if (shipment.received_at) return { label: "received", ts: shipment.received_at };
   }
   // Default: lead intake / ready_to_fulfill — show when created
@@ -186,7 +195,10 @@ function stuckColor(shipment, G) {
     outbound_sent:      { yellow: 5,  red: 10 },
     in_transit:         { yellow: 7,  red: 14 },
     received:           { yellow: 2,  red: 5 },
-    offer_made:         { yellow: 3,  red: 7 },
+    inspected:          { yellow: 1,  red: 3 },   // priced item should get an offer fast
+    pending_response:   { yellow: 2,  red: 3 },   // follow-up nudge at 2–3 days
+    pending_payment:    { yellow: 1,  red: 2 },   // owe them money — pay fast
+    pending_leadsonline:{ yellow: 1,  red: 2 },   // compliance owed — report fast
   };
   const t = thresholds[s];
   if (!t) return null;
@@ -1731,8 +1743,10 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       case "ready_to_fulfill": return [{label:"→ Outbound Complete",v:"green",stage:"outbound_complete"},{label:"Log Contact",v:"blue",action:"log"}];
       case "outbound_complete": return [{label:"→ Received",v:"green",stage:"received"},{label:"Log Contact",v:"blue",action:"log"}];
       case "received": return [{label:"→ Inspected",v:"green",stage:"inspected"}];
-      case "inspected": return [{label:"→ Offer Made",v:"orange",stage:"offer_made"}];
-      case "offer_made": return [{label:"→ Purchased",v:"green",stage:"purchased"},{label:"→ Returned",v:"outline",stage:"returned"}];
+      case "inspected": return [{label:"📤 Generate Offer",v:"orange",stage:"pending_response"}];
+      case "pending_response": return [{label:"Log Contact / Follow Up",v:"blue",action:"log"},{label:"✓ Accepted → Pending Payment",v:"green",stage:"pending_payment"},{label:"✗ Declined → Returned",v:"outline",stage:"returned"}];
+      case "pending_payment": return [{label:"💵 Mark Paid → Pending LeadsOnline",v:"green",stage:"pending_leadsonline"}];
+      case "pending_leadsonline": return [{label:"📋 Push handled in panel below",v:"blue",action:"log"}];
       default: return [];
     }
   }
@@ -1771,6 +1785,21 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           alert("Label generation error: " + e.message);
           return;
         }
+      }
+      // GATE: Inspected → Pending Response requires an offer price set.
+      // (Offer-price prompt modal is the next build step; for now, block + tell.)
+      if (stage === "pending_response" && shipment.stage === "inspected") {
+        if (!shipment.offer_price && shipment.offer_price !== 0) {
+          alert("Set an offer price first (Edit → Offer Price) before generating the offer.");
+          return;
+        }
+      }
+      // STAMP: Pending Payment → Pending LeadsOnline records when payment was sent.
+      if (stage === "pending_leadsonline" && shipment.stage === "pending_payment") {
+        const stamp = new Date().toISOString();
+        await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage, paid_at: stamp}});
+        onUpdate({...shipment, stage, paid_at: stamp});
+        return;
       }
       await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage}}); onUpdate({...shipment,stage});
       // MAY 27 PATCH: post-transition nudges. Fire AFTER the update succeeds
@@ -2012,6 +2041,32 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       {/* 4. Item Manifest with per-item rationales (numbered) */}
       {items && items.length > 0 && <NotesBox title={`📦 Item Manifest (${items.length})`} color={G.teal} bg="#EDF7F6">
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {/* JUN 3: mismatch flag. Customers often send more items than were
+              captured at intake; extras exist only as photos with no manifest
+              line — and the un-manifested item is frequently the valuable one
+              (e.g. a gold chain alongside a worthless lab diamond). Since all
+              customer comms read from the manifest, an unlisted item is never
+              referenced. Flag when non-ID photo count exceeds manifest count so
+              you inspect before fulfilling. Over-prompting (multiple angles of
+              one item) is harmless; missing an item is not. */}
+          {(() => {
+            const itemPhotoCount = (photos || []).filter(p => {
+              const src = String(p.source || "").toLowerCase();
+              return src !== "id" && src !== "customerid" && src !== "id_photo";
+            }).length;
+            if (itemPhotoCount > items.length) {
+              return (
+                <div style={{
+                  background:"#FFF8EC", border:`1px solid ${G.orange}55`, borderRadius:6,
+                  padding:"8px 10px", fontSize:11.5, color:G.text, lineHeight:1.45
+                }}>
+                  <strong style={{color:G.orange}}>⚠ {itemPhotoCount} photos · {items.length} manifest item{items.length===1?"":"s"}.</strong>{" "}
+                  Customer may have sent items not on the manifest. Check the photos — any unlisted item won't be referenced in their offer/payment messages.
+                </div>
+              );
+            }
+            return null;
+          })()}
           {items.map((it,i)=>(
             <div key={i} style={{paddingBottom:i<items.length-1?10:0,borderBottom:i<items.length-1?`1px solid ${G.teal}22`:"none"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
@@ -2081,7 +2136,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     )}
     {/* MAY 31: Self-serve form submission banner. Visible after customer
         completes the verification form, until shipment is marked purchased. */}
-    {shipment?.self_serve_submitted_at && !["purchased","returned","complete"].includes(shipment?.stage) && (
+    {shipment?.self_serve_submitted_at && !["pending_payment","pending_leadsonline","complete","returned","purchased"].includes(shipment?.stage) && (
       <div style={{padding:"12px 20px",background:"#E8F5E9",borderBottom:`2px solid #2E7D32`,display:"flex",alignItems:"center",gap:10,fontSize:13}}>
         <span style={{fontSize:18}}>✅</span>
         <span style={{color:G.text,flex:1}}>
@@ -2093,7 +2148,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     )}
     {/* MAY 27: Push-to-LeadsOnline nudge banner. Visible only when shipment is
         purchased and not yet submitted. Quick path to the existing button below. */}
-    {shipment?.stage === "purchased" && !shipment?.leadsonline_submitted_at && (
+    {shipment?.stage === "pending_leadsonline" && !shipment?.leadsonline_submitted_at && (
       <div style={{padding:"10px 20px",background:"#FFF4E0",borderBottom:`1px solid ${G.gold}33`,display:"flex",alignItems:"center",gap:10,fontSize:13}}>
         <span style={{fontSize:18}}>📤</span>
         <span style={{color:G.text,flex:1}}><strong>Reminder:</strong> push this transaction to LeadsOnline for FL 538 compliance.</span>
@@ -2164,7 +2219,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             )}
           </div>
           {/* Inventory Photos — shown for received and later stages */}
-          {["received","inspected","offer_made","purchased","returned","complete"].includes(shipment.stage) && (
+          {["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"].includes(shipment.stage) && (
             <InventoryPhotosPanel
               shipment={shipment}
               photos={photos}
@@ -2172,7 +2227,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             />
           )}
           {/* Payment & ID — only shown for offer_made and later stages */}
-          {["offer_made","purchased","returned"].includes(shipment.stage) && (()=>{
+          {["pending_response","pending_payment","pending_leadsonline","complete","returned"].includes(shipment.stage) && (()=>{
             const hasAnyId = shipment.id_type || shipment.id_number || shipment.date_birth || shipment.id_photo_url;
             const hasAnyPay = shipment.payment_method || shipment.payment_info;
             const mask = v => v ? "****" + String(v).slice(-4) : "";
@@ -2186,9 +2241,11 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             }[shipment.payment_method] || shipment.payment_method || "";
 
             // ── LeadsOnline submit readiness check ──
+            // After the Jun 3 redesign, the LO-report step is the pending_leadsonline
+            // stage (paid, awaiting report) — and complete (already reported).
             const loSubmitted = !!shipment.leadsonline_submitted_at;
             const loMissing = [];
-            if (shipment.stage !== "purchased") loMissing.push("stage must be purchased");
+            if (shipment.stage !== "pending_leadsonline" && shipment.stage !== "complete") loMissing.push("stage must be Pending LeadsOnline");
             if (!shipment.purchase_price) loMissing.push("purchase price");
             if (!shipment.id_type)        loMissing.push("ID type");
             if (!shipment.id_number)      loMissing.push("ID number");
@@ -3327,7 +3384,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
       <div style={{flex:1,overflow:"auto"}}>
         {filtered.map(c=>{
           const ships=shipsByCustomer[c.customer_id]||[];
-          const activeShip=ships.find(s=>["ready_to_fulfill","outbound_complete","received","inspected","offer_made","accepted"].includes(s.stage));
+          const activeShip=ships.find(s=>["ready_to_fulfill","outbound_complete","received","inspected","pending_response","pending_payment","pending_leadsonline"].includes(s.stage));
           return <div key={c.customer_id} onClick={()=>{setSelected(c.customer_id);setSelectedShipId(null);}} style={{padding:"10px 14px",cursor:"pointer",borderBottom:`1px solid ${G.border}`,background:selected===c.customer_id?"#FFF8EE":"#fff",borderLeft:selected===c.customer_id?`3px solid ${G.gold}`:"3px solid transparent"}} onMouseEnter={e=>{if(selected!==c.customer_id)e.currentTarget.style.background="#FDFAF6";}} onMouseLeave={e=>{if(selected!==c.customer_id)e.currentTarget.style.background="#fff";}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <Avatar name={c.name||c.email} size={30}/>
@@ -3592,9 +3649,9 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
     const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
   }, [customers]);
 
-  // Eligible shipments: stage="purchased" (we own them, available to resell)
+  // Eligible shipments: we own the item once paid (pending_leadsonline) or done (complete)
   const eligible = useMemo(() => {
-    const eligibleStages = ["purchased"];
+    const eligibleStages = ["complete","pending_leadsonline"];
     return shipments
       .filter(s => eligibleStages.includes(s.stage) || selectedShipIds.includes(s.shipment_id))
       .map(s => ({
@@ -3741,9 +3798,9 @@ function AnalyticsTab({shipments, customers}) {
 
   // Compute metrics
   const metrics = useMemo(() => {
-    const purchased  = filtered.filter(s => s.stage === "purchased");
+    const purchased  = filtered.filter(s => ["complete","pending_leadsonline","pending_payment"].includes(s.stage));
     const returned   = filtered.filter(s => s.stage === "returned");
-    const received   = filtered.filter(s => ["received","inspected","offer_made"].includes(s.stage));
+    const received   = filtered.filter(s => ["received","inspected","pending_response"].includes(s.stage));
     const outbound   = filtered.filter(s => s.stage === "outbound_complete");
     const kits       = filtered.filter(s => s.stage === "outbound_complete" && s.shipping_type === "kit");
 
@@ -3807,7 +3864,7 @@ function AnalyticsTab({shipments, customers}) {
     {key:"outbound_complete", label:"Outbound"},
     {key:"received", label:"Received"},
     {key:"inspected", label:"Inspected"},
-    {key:"offer_made", label:"Offer Made"},
+    {key:"complete", label:"Complete"},
     {key:"purchased", label:"Purchased"},
     {key:"returned", label:"Returned"},
     {key:"dead", label:"Dead"},
@@ -3980,7 +4037,7 @@ function CohortComparison({shipments, fmt$, fmtN}) {
     // Filter shipments by sent date window
     const inSentWindow = shipments.filter(s => {
       // Only include shipments that actually got sent (any stage past ready_to_fulfill)
-      const wasSent = ["outbound_complete","received","inspected","offer_made","purchased","returned"].includes(s.stage);
+      const wasSent = ["outbound_complete","received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"].includes(s.stage);
       if (!wasSent) return false;
       const d = shipmentSentDate(s);
       return d && d >= sentFromDate && d <= sentToDate;
@@ -4002,7 +4059,7 @@ function CohortComparison({shipments, fmt$, fmtN}) {
       // If retOnly is on, MUST have a received_at AND it must be in the window
       // If retOnly is off, count any item that has reached received-or-beyond stage AND if it has received_at, that date must be in window
       const cameBack = group.filter(s => {
-        const isReceivedOrBeyond = ["received","inspected","offer_made","purchased","returned"].includes(s.stage);
+        const isReceivedOrBeyond = ["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"].includes(s.stage);
         if (!isReceivedOrBeyond) return false;
         const r = shipmentReceivedDate(s);
         if (retOnly) {
@@ -4013,7 +4070,7 @@ function CohortComparison({shipments, fmt$, fmtN}) {
           return r >= retFromDate && r <= retToDate;
         }
       });
-      const purchased = cameBack.filter(s => s.stage === "purchased");
+      const purchased = cameBack.filter(s => ["complete","pending_leadsonline","pending_payment"].includes(s.stage));
       const returned  = cameBack.filter(s => s.stage === "returned");
       const totalPurchaseValue = purchased.reduce((sum,s) => sum + (parseFloat(s.purchase_price)||0), 0);
       const totalAppraisedValue = purchased.reduce((sum,s) => sum + (parseFloat(s.appraised_value)||0), 0);
@@ -4191,7 +4248,7 @@ export default function SnappyGoldCRM() {
   // Active customer emails (those with non-estimate_only shipments)
   const activeCustomerEmails=useMemo(()=>{
     const emails=new Set();
-    const active=shipments.filter(s=>["ready_to_fulfill","outbound_complete","received","inspected","offer_made","accepted"].includes(s.stage));
+    const active=shipments.filter(s=>["ready_to_fulfill","outbound_complete","received","inspected","pending_response","pending_payment","pending_leadsonline"].includes(s.stage));
     const custById={};customers.forEach(c=>{custById[c.customer_id]=c;});
     active.forEach(s=>{const c=custById[s.customer_id];if(c&&c.email)emails.add(String(c.email).toLowerCase());});
     return emails;
