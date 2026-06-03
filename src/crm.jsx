@@ -622,7 +622,12 @@ function PaymentIdModal({shipment, customer, onSave, onClose}) {
   const [idType, setIdType] = useState(customer?.id_type || shipment?.id_type || "");
   const [idNumber, setIdNumber] = useState(customer?.id_number || shipment?.id_number || "");
   const [idState, setIdState] = useState(customer?.id_state || shipment?.id_state || "");
-  const [dateBirth, setDateBirth] = useState(customer?.date_birth || shipment?.date_birth || "");
+  // JUN 3 PATCH: init via fmtDob. Stored date_birth can be a full ISO
+  // timestamp ("1981-03-30T05:00:00.000Z") from OCR/Sheets date coercion;
+  // feeding that raw into the field showed the ugly ISO string and broke
+  // LeadsOnline submit. fmtDob → "MM/DD/YYYY" (matches the field placeholder);
+  // backend _normalizeDob accepts MM/DD/YYYY and stores YYYY-MM-DD.
+  const [dateBirth, setDateBirth] = useState(fmtDob(customer?.date_birth || shipment?.date_birth || ""));
   const [photoData, setPhotoData] = useState(null);
   const [photoName, setPhotoName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState(shipment?.payment_method || "");
