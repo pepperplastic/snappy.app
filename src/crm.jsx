@@ -508,12 +508,19 @@ function LeadsOnlineSubmitBtn({shipment, ready, missing, onSuccess}) {
       if (res && res.success) {
         setResult({ok:true, message:res.message || `Submitted as ${res.ticket_number}`, ticket:res.ticket_number, sandbox:res.sandbox, photoError:res.photo_error});
         if (onSuccess) onSuccess(res);
+      } else if (res && (res.message || res.error)) {
+        // Backend responded with a real, structured failure — show it verbatim.
+        setResult({ok:false, message:(res.message || res.error)});
       } else {
-        const msg = res && (res.message || res.error) ? (res.message || res.error) : "Unknown error";
-        setResult({ok:false, message:msg});
+        // Got a response but it's empty/unparseable — backend MAY have submitted.
+        setResult({ok:false, unconfirmed:true,
+          message:"Couldn't confirm result. The ticket MAY have submitted — verify in LeadsOnline before retrying (a resubmit will be rejected as a duplicate)."});
       }
     } catch (err) {
-      setResult({ok:false, message:String(err)});
+      // Network/timeout/JSON-parse error. The POST often completes server-side
+      // anyway (esp. during slow photo uploads), so do NOT call this a failure.
+      setResult({ok:false, unconfirmed:true,
+        message:"Connection error: " + String(err && err.message || err) + ". The ticket MAY have submitted — verify in LeadsOnline before retrying (a resubmit will be rejected as a duplicate)."});
     } finally {
       setBusy(false);
       setConfirmOpen(false);
@@ -567,14 +574,19 @@ function LeadsOnlineSubmitBtn({shipment, ready, missing, onSuccess}) {
       </div>
     )}
 
-    {result && (
+    {result && (() => {
+      // Three states: ok (green), unconfirmed (amber — may have submitted), failed (red)
+      const tone = result.ok ? G.green : (result.unconfirmed ? G.orange : G.red);
+      const bg = result.ok ? "#F0FFF4" : (result.unconfirmed ? "#FFF8EC" : "#FFF0F0");
+      const icon = result.ok ? "✓ " : (result.unconfirmed ? "❓ " : "⚠ ");
+      return (
       <div style={{
-        background:result.ok?"#F0FFF4":"#FFF0F0",
-        border:`1px solid ${result.ok?G.green:G.red}40`,
+        background:bg,
+        border:`1px solid ${tone}40`,
         borderRadius:8,padding:10,display:"flex",flexDirection:"column",gap:4
       }}>
-        <div style={{fontSize:12,fontWeight:700,color:result.ok?G.green:G.red}}>
-          {result.ok ? "✓ " : "⚠ "}{result.message}
+        <div style={{fontSize:12,fontWeight:700,color:tone}}>
+          {icon}{result.message}
         </div>
         {result.ok && result.sandbox === true && (
           <div style={{fontSize:10,color:G.orange,fontStyle:"italic"}}>⚠ Submitted to SANDBOX, not production. Flip LO_USE_SANDBOX in leadsonline.gs when ready.</div>
@@ -583,7 +595,8 @@ function LeadsOnlineSubmitBtn({shipment, ready, missing, onSuccess}) {
           <div style={{fontSize:10,color:G.orange}}>Photo upload failed — retry separately. Error: {result.photoError}</div>
         )}
       </div>
-    )}
+      );
+    })()}
   </div>;
 }
 
