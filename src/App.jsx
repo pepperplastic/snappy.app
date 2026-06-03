@@ -1881,15 +1881,23 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is my jewelry safe during shipping?",
-    a: "All shipments use FedEx with full tracking from the moment you drop it off to the moment it arrives at our door. FedEx's loss rate is under 0.1% — fewer than 1 in 1,000 packages go missing. Each package is also insured for $100 in case of loss; if you'd like to increase that coverage, just contact us by phone or email before you ship and we'll work something out. In the unlikely event something goes wrong in transit, we'll work with you to resolve it."
+    a: "Every shipment is fully tracked from the moment you drop it off to the moment it arrives at our door — we use USPS or FedEx depending on your label. Both carriers have loss rates well under 1%. Each package is also insured for $100 in case of loss; if you'd like to increase that coverage, just contact us by phone or email before you ship and we'll work something out. In the unlikely event something goes wrong in transit, we'll work with you to resolve it."
+  },
+  {
+    q: "How do I actually send my items in?",
+    a: <>It takes about five minutes. We email you a prepaid label — print it, tape it to any box or padded envelope, and drop it at a USPS or FedEx location (or hand it to your mail carrier). <strong>No printer? No problem!</strong> Your label email includes a QR code you can show at the counter, and the clerk prints it for you, free. Postage is already paid, so there's nothing to buy and nothing to pay.</>
   },
   {
     q: "How is this different from a pawn shop or local jeweler?",
-    a: "Pawn shops typically offer 20-40 cents on the dollar and rely on you not knowing the value of what you have. We operate nationally by mail — no expensive Main Street storefront with expensive rent to cover — which means higher volume and lower cost of operating for us. That lets us be more generous with payouts than a local shop ever could be. We use live market prices, show you our math, and make competitive offers. No pressure, no haggling, no awkward in-person negotiation."
+    a: "Some pawn shops offer 20-40 cents on the dollar and rely on you not knowing the value of what you have. We operate nationally by mail — no expensive Main Street storefront with expensive rent to cover — which means higher volume and lower cost of operating for us. That lets us be more generous with payouts than a local shop ever could be. We use live market prices, show you our math, and make competitive offers. No pressure, no haggling, no awkward in-person negotiation."
   },
   {
     q: "Is there a minimum value you'll buy?",
     a: "We don't have a hard minimum, but items under $50 in melt value generally aren't worth the shipping for either party. If your estimate comes back very low, we'll let you know upfront so you can make an informed decision."
+  },
+  {
+    q: "How do I know this is legitimate?",
+    a: "We're a registered precious metals dealer in the State of Florida, operating in full compliance with Florida's secondhand dealer laws (Chapter 538). Every transaction is logged and reported to law enforcement as required by law, and we hold purchased items for the state-mandated period. We pay promptly, ship everything back free if you decline, and you're welcome to call or text us at (866) 613-0704 before you send anything in — a real person will answer your questions."
   },
 ];
 
