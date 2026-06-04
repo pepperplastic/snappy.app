@@ -2388,8 +2388,19 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
   const [savingBin,setSavingBin]=useState(false);
+  const [binLookup,setBinLookup]=useState("");
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
+
+  // Reverse bin lookup: which shipment is physically in a given bin?
+  // (One shipment per bin.) Searches ALL shipments, not just received,
+  // so you can locate whatever is occupying a bin during intake.
+  const binMatch=useMemo(()=>{
+    const q=String(binLookup).trim();
+    if(!q) return null;
+    const hits=shipments.filter(s=>String(s.bin_number||"").trim()===q);
+    return {q,hits};
+  },[binLookup,shipments]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
 
   const filtered=useMemo(()=>{
@@ -2420,6 +2431,24 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search received..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+        <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,fontWeight:700,color:G.gold,whiteSpace:"nowrap"}}>Bin lookup</span>
+          <input value={binLookup} onChange={e=>setBinLookup(e.target.value)} placeholder="What's in bin #?" style={{width:120,boxSizing:"border-box",background:"#FFF8EE",border:`1px solid ${G.gold}66`,borderRadius:7,padding:"5px 10px",fontSize:12,fontWeight:700,color:G.gold,outline:"none"}}/>
+          {binLookup&&<button onClick={()=>setBinLookup("")} style={{background:"none",border:"none",color:G.muted,fontSize:12,cursor:"pointer",padding:0}}>clear</button>}
+        </div>
+        {binMatch&&(binMatch.hits.length===0
+          ? <div style={{marginTop:6,fontSize:12,color:G.muted}}>Bin {binMatch.q} is <strong>empty</strong> — nothing assigned to it.</div>
+          : binMatch.hits.map(s=>{
+              const c=custById[s.customer_id]||{};
+              return <div key={s.shipment_id} onClick={()=>setSelected(s.shipment_id)} style={{marginTop:6,padding:"7px 10px",background:"#FFF8EE",border:`1px solid ${G.gold}66`,borderRadius:7,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:700,color:G.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Bin {binMatch.q}: {c.name||s.customer_id}</div>
+                  <div style={{fontSize:11,color:G.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.shipment_id} · {displayItem(s)}</div>
+                </div>
+                <span style={{fontSize:11,fontWeight:700,color:G.gold,whiteSpace:"nowrap"}}>Open →</span>
+              </div>;
+            })
+        )}
       </div>
       <div style={{flex:1,overflow:"auto"}}>
         {filtered.length===0?<div style={{padding:24,textAlign:"center",color:G.muted,fontSize:13}}>No received shipments</div>:
