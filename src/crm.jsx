@@ -408,7 +408,7 @@ function LogModal({shipment,customer,onSave,onClose}) {
   const [type,setType]=useState("call"); const [notes,setNotes]=useState(""); const [saving,setSaving]=useState(false);
   async function save(){
     if(!notes.trim())return; setSaving(true);
-    try { await apiPost({action:"addContactLog",data:{customer_id:shipment.customer_id,type,notes}}); onSave({type,notes,timestamp:new Date().toISOString()}); }
+    try { await apiPost({action:"addContactLog",data:{customer_id:shipment.customer_id,type,notes,shipment_id:shipment.shipment_id}}); onSave({type,notes,timestamp:new Date().toISOString(),shipment_id:shipment.shipment_id}); }
     catch(e){alert("Failed: "+e.message);} setSaving(false);
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -1424,12 +1424,19 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
 // ══════════════════════════════════════════════════════════
 
 // CONTACT LOG LIST with inline edit
-function ContactLogList({logs, onUpdate, onDelete}) {
+function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipments}) {
   const [editingIdx, setEditingIdx] = useState(null);
   const [editNotes, setEditNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   const reversed = [...logs].reverse();
+
+  // Short label for a shipment id (e.g. "SHP-664" → "664") for compact tags.
+  const shipShort = (sid) => {
+    if (!sid) return null;
+    const m = String(sid).match(/(\d+)\s*$/);
+    return m ? m[1] : String(sid);
+  };
 
   async function saveEdit(log, idx) {
     if (!editNotes.trim()) return;
@@ -1462,7 +1469,11 @@ function ContactLogList({logs, onUpdate, onDelete}) {
   return <div style={{marginTop:16,background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`}}>
     <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Contact Log</div>
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
-      {reversed.map((log,i)=><div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12}}>
+      {reversed.map((log,i)=>{
+        const logShip = log.shipment_id || "";
+        const isOther = logShip && currentShipmentId && logShip !== currentShipmentId;
+        const isThis = logShip && currentShipmentId && logShip === currentShipmentId;
+        return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12,opacity:isOther?0.55:1}}>
         <span style={{background:G.bg,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700,color:G.muted,flexShrink:0,textTransform:"capitalize"}}>{log.type||"note"}</span>
         <div style={{flex:1}}>
           {editingIdx===i
@@ -1477,7 +1488,10 @@ function ContactLogList({logs, onUpdate, onDelete}) {
                 <button onClick={()=>saveEdit(log,i)} disabled={saving} style={{fontSize:11,padding:"2px 8px",background:G.gold,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{saving?"…":"Save"}</button>
                 <button onClick={()=>setEditingIdx(null)} style={{fontSize:11,padding:"2px 6px",background:"none",border:`1px solid ${G.border}`,borderRadius:4,cursor:"pointer",color:G.muted}}>Cancel</button>
               </div>
-            : <span style={{color:G.text}}>{log.notes}</span>
+            : <span style={{color:G.text}}>
+                {log.notes}
+                {logShip&&<span title={isOther?("From a different shipment: "+logShip):logShip} style={{marginLeft:6,background:isOther?"#FBEFEF":"#FFF8EE",color:isOther?"#A05A5A":G.gold,border:`1px solid ${isOther?"#A05A5A44":G.gold+"44"}`,borderRadius:4,padding:"0px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{isOther?"⤺ SHP-"+shipShort(logShip):"SHP-"+shipShort(logShip)}</span>}
+              </span>
           }
         </div>
         <div style={{color:G.muted,flexShrink:0,fontSize:10}}>{log.timestamp?new Date(log.timestamp).toLocaleDateString():""}</div>
@@ -1485,7 +1499,8 @@ function ContactLogList({logs, onUpdate, onDelete}) {
           <button onClick={()=>{setEditingIdx(i);setEditNotes(log.notes||'');}} title="Edit" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>✏️</button>
           <button onClick={()=>deleteLog(log,i)} title="Delete" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>🗑️</button>
         </div>}
-      </div>)}
+      </div>;
+      })}
     </div>
   </div>;
 }
@@ -1578,11 +1593,11 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
       // error object on failure. Treat any truthy non-error response as success.
       const result = await apiPost({
         action: "addContactLog",
-        data: { customer_id: shipment.customer_id, type: "note", notes: "Inspection: " + notes.trim() }
+        data: { customer_id: shipment.customer_id, type: "note", notes: "Inspection: " + notes.trim(), shipment_id: shipment.shipment_id }
       });
       const isError = result && typeof result === "object" && result.error;
       if (!isError && result) {
-        onSaved({ type:"note", notes:"Inspection: "+notes.trim(), timestamp:new Date().toISOString() });
+        onSaved({ type:"note", notes:"Inspection: "+notes.trim(), timestamp:new Date().toISOString(), shipment_id: shipment.shipment_id });
       } else {
         setError("Save failed: " + (result?.error || "no response"));
       }
@@ -2333,7 +2348,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>
         </div>
       </div>
-      {localLogs.length>0&&<ContactLogList logs={localLogs} onUpdate={(updatedLog,idx)=>{
+      {localLogs.length>0&&<ContactLogList logs={localLogs} currentShipmentId={shipment?.shipment_id} allShipments={allShipments} onUpdate={(updatedLog,idx)=>{
         const updated=[...localLogs];
         updated[updated.length-1-idx]=updatedLog;
         setLocalLogs(updated);
