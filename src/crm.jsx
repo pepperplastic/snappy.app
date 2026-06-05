@@ -1812,6 +1812,50 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     }
   }
 
+  async function resendOfferEmail(){
+    // Re-send (or send) the self-serve offer email for a shipment that's already
+    // at Pending Response. Pre-fills the amount from the stored offer_price.
+    if(!customer?.email){ alert("This customer has no email on file."); return; }
+    const stored = shipment?.offer_price ? String(shipment.offer_price).replace(/[^0-9.]/g,"") : "";
+    const promptAmount = window.prompt(
+      "Offer amount to send "+(customer?.name||"customer")+"?\n\nExamples: 300 or $300.00",
+      stored
+    );
+    if(promptAmount===null) return;
+    let offerAmount="";
+    if(promptAmount.trim()){
+      const n=parseFloat(String(promptAmount).replace(/[^0-9.]/g,""));
+      if(isNaN(n)||n<=0){ alert("Couldn't parse that as a dollar amount. Try '300' or '300.00'."); return; }
+      offerAmount="$"+n.toFixed(2);
+    }
+    const promptDesc=window.prompt(
+      "Short description shown under the offer (optional).",
+      shipment?.offer_description || (shipment?.item?("for "+shipment.item):"")
+    );
+    if(promptDesc===null) return;
+    const offerDescription=promptDesc.trim();
+    if(!confirm("Send offer email to:\n\n"+customer?.name+" <"+customer?.email+">\n\n"+(offerAmount?("Offer: "+offerAmount+"\n"):"(no amount)\n")+(offerDescription?("Description: "+offerDescription):"")+"\n\nThey'll get the acceptance link.")) return;
+    try{
+      const res=await apiPost({
+        action:"generateSelfServeToken",
+        shipment_id:shipment.shipment_id,
+        customer_id:shipment.customer_id,
+        offer_amount:offerAmount,
+        offer_description:offerDescription,
+        send_email:true
+      });
+      if(res&&res.success){
+        // keep offer_price/description on the shipment in sync with what was sent
+        if(offerAmount){
+          apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{offer_price:offerAmount,offer_description:offerDescription}}).then(()=>onUpdate({...shipment,offer_price:offerAmount,offer_description:offerDescription})).catch(()=>{});
+        }
+        alert(res.email_sent?("✅ Offer email sent to "+customer.email+" (BCC to you)."):("⚠ Saved but email not sent. Link: "+(res.url||"(none)")));
+      } else {
+        alert("⚠ Send failed: "+((res&&res.error)||"unknown"));
+      }
+    }catch(e){ alert("Send failed: "+e.message); }
+  }
+
   async function quickStage(stage){
     try {
       // Special case: USPS label shipment moving to outbound_complete
@@ -2280,6 +2324,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         <Badge stage={shipment.stage}/>
         <Btn v="ghost" small onClick={()=>setModal("stage")}>Change Stage ↓</Btn>
         {actions.map((a,i)=><Btn key={i} v={a.v} small onClick={()=>a.stage?quickStage(a.stage):setModal(a.action)}>{a.label}</Btn>)}
+        {shipment.stage==="pending_response"&&<Btn v="orange" small onClick={resendOfferEmail}>📧 Resend offer email</Btn>}
         <div style={{marginLeft:"auto",display:"flex",gap:8}}>
           <Btn v="ghost" small onClick={()=>setModal("log")}>+ Log</Btn>
           <Btn v="purple" small onClick={()=>setModal("addShipment")}>+ Shipment</Btn>
