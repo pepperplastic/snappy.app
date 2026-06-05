@@ -2221,16 +2221,16 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Tracking</div>
             {shipment.outbound_tracking?<Field label="Outbound" value={shipment.outbound_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No outbound tracking</div>}
             {shipment.return_tracking?<Field label="Return" value={shipment.return_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No return tracking</div>}
-            {shipment.outbound_tracking && shipment.easypost_shipment_id && (
+            {shipment.outbound_tracking && (shipment.easypost_shipment_id || shipment.shippo_transaction_id) && (
               <Btn v="ghost" small onClick={async()=>{
-                if(!confirm("Resend the label email + SMS to " + (customer?.name||"customer") + " at " + customer?.email + "?\n\nThis fetches the existing label from EasyPost — no new postage charge.")) return;
+                if(!confirm("Resend the label email to " + (customer?.name||"customer") + " at " + customer?.email + ", plus a text letting them know to check their inbox?\n\nThis fetches the existing label — no new postage charge.")) return;
                 try {
                   const res = await apiPost({action:"resendLabelEmail",shipment_id:shipment.shipment_id});
                   alert(res.success ? "✅ Resent: " + res.message : "❌ Failed: " + (res.error||"unknown error"));
                 } catch(e) {
                   alert("❌ Error: " + e.message);
                 }
-              }}>📧 Resend label email + SMS</Btn>
+              }}>📧 Resend label email + text</Btn>
             )}
           </div>
           {/* Inventory Photos — shown for received and later stages */}
