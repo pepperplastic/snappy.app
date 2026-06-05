@@ -228,7 +228,11 @@ function VerifyPage() {
             {(offerAmount || shipment.purchase_price) && (
               <div style={{ background:'#fff', border:`2px solid ${VERIFY_BRAND.gold}`, borderRadius:8, padding:'20px 24px', textAlign:'center', marginBottom:28 }}>
                 <div style={{ fontSize:12, color:VERIFY_BRAND.muted, textTransform:'uppercase', letterSpacing:1, marginBottom:6 }}>Your Offer</div>
-                <div style={{ fontSize:32, fontWeight:600, color:VERIFY_BRAND.dark }}>{offerAmount || ('$' + shipment.purchase_price)}</div>
+                <div style={{ fontSize:32, fontWeight:600, color:VERIFY_BRAND.dark }}>{(() => {
+                  const raw = offerAmount || ('$' + shipment.purchase_price);
+                  const s = String(raw).trim();
+                  return s.startsWith('$') ? s : ('$' + s.replace(/^\$*/, ''));
+                })()}</div>
                 {offerDescription
                   ? <div style={{ fontSize:14, color:VERIFY_BRAND.muted, marginTop:8 }}>{offerDescription}</div>
                   : (shipment.item && <div style={{ fontSize:14, color:VERIFY_BRAND.muted, marginTop:8 }}>for {shipment.item}</div>)
