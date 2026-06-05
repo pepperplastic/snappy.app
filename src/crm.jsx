@@ -1631,7 +1631,7 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
   </div>;
 }
 
-function OfferPromptModal({shipment, onSaved, onCancel}) {
+function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
   const [price, setPrice] = useState("");
   const [desc, setDesc] = useState("");
   const canSave = price !== "" && !isNaN(parseFloat(price));
@@ -2200,13 +2200,34 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {showOfferPrompt && (
       <OfferPromptModal
         shipment={shipment}
-        onSaved={(offerPrice, offerDesc)=>{
+        customer={customer}
+        onSaved={async (offerPrice, offerDesc)=>{
           setShowOfferPrompt(false);
-          // Set offer fields AND advance the stage in one update, then reflect locally.
-          const updates={ stage:"pending_response", offer_price: offerPrice, offer_description: offerDesc };
-          apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates})
-            .then(()=>onUpdate({...shipment, ...updates}))
-            .catch(e=>alert("Failed to save offer: "+e.message));
+          try {
+            // 1) Persist the offer on the shipment + advance the stage.
+            const updates={ stage:"pending_response", offer_price: offerPrice, offer_description: offerDesc };
+            await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates});
+            // 2) ACTUALLY SEND THE OFFER: create a self-serve token + email the
+            //    customer the acceptance link. Without this, the stage moves to
+            //    "pending response" but the customer never hears about the offer.
+            const res=await apiPost({
+              action:"generateSelfServeToken",
+              shipment_id:shipment.shipment_id,
+              customer_id:shipment.customer_id,
+              offer_amount:offerPrice,
+              offer_description:offerDesc
+            });
+            onUpdate({...shipment, ...updates});
+            if (res && res.success) {
+              alert(res.email_sent
+                ? "✅ Offer sent — acceptance email delivered to "+(customer?.email||"customer")+"."
+                : "⚠ Offer saved, but no email was sent (customer has no email on file). Acceptance link: "+(res.url||"(none)"));
+            } else {
+              alert("⚠ Offer saved + stage advanced, but sending the acceptance email FAILED: "+((res&&res.error)||"unknown")+"\n\nThe customer was NOT notified.");
+            }
+          } catch(e) {
+            alert("Failed to send offer: "+e.message+"\n\nThe customer may not have been notified — check the shipment.");
+          }
         }}
         onCancel={()=>setShowOfferPrompt(false)}
       />
@@ -2240,6 +2261,11 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           <div>
             <div style={{fontWeight:700,fontSize:17,color:G.text}}>{customer?.name||"(no name)"}</div>
             <div style={{fontSize:12,color:G.muted,marginTop:1}}>{customer?.email}</div>
+            {customer?.customer_id&&<span
+              onClick={()=>{navigator.clipboard&&navigator.clipboard.writeText(customer.customer_id);}}
+              title="Click to copy customer ID"
+              style={{display:"inline-block",marginTop:5,fontFamily:"monospace",fontSize:11,fontWeight:700,color:G.gold,background:"#FFF8EE",border:`1px solid ${G.gold}55`,borderRadius:5,padding:"2px 8px",cursor:"pointer",letterSpacing:"0.02em"}}
+            >{customer.customer_id} ⧉</span>}
           </div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
