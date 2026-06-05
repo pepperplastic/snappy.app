@@ -1631,6 +1631,51 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
   </div>;
 }
 
+function OfferPromptModal({shipment, onSaved, onCancel}) {
+  const [price, setPrice] = useState("");
+  const [desc, setDesc] = useState("");
+  const canSave = price !== "" && !isNaN(parseFloat(price));
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onCancel()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(500px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontSize:22,marginBottom:6}}>💸</div>
+      <div style={{fontWeight:700,fontSize:17,marginBottom:6,color:G.text}}>Generate offer</div>
+      <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
+        Set the offer for <strong>{shipment.item||"this item"}</strong>. This is the amount the customer sees on the self-serve acceptance page.
+        {shipment.estimate && <span> AI estimate was <strong>{shipment.estimate}</strong> for reference.</span>}
+      </div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:G.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Offer price</div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontSize:18,fontWeight:700,color:G.gold}}>$</span>
+          <input
+            value={price}
+            onChange={e=>setPrice(e.target.value)}
+            type="number"
+            placeholder="0.00"
+            autoFocus
+            style={{flex:1,padding:10,fontSize:16,fontWeight:700,border:`1px solid ${G.border}`,borderRadius:8,boxSizing:"border-box"}}
+          />
+        </div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:700,color:G.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Description <span style={{textTransform:"none",fontWeight:400}}>(shown to customer with the offer)</span></div>
+        <textarea
+          value={desc}
+          onChange={e=>setDesc(e.target.value)}
+          placeholder="e.g. 14K yellow gold, 8.2g confirmed. Offer reflects current gold spot price."
+          rows={3}
+          style={{width:"100%",padding:10,fontSize:14,fontFamily:"inherit",border:`1px solid ${G.border}`,borderRadius:8,resize:"vertical",boxSizing:"border-box"}}
+        />
+      </div>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        <Btn v="gold" onClick={()=>onSaved(parseFloat(price), desc.trim())} disabled={!canSave}>Generate offer</Btn>
+        <button onClick={onCancel} style={{background:"none",border:"none",color:G.muted,fontSize:13,cursor:"pointer",textDecoration:"underline",marginLeft:"auto"}}>Cancel</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function BinNumberPromptModal({shipment, onSaved, onSkip}) {
   const [binNumber, setBinNumber] = useState(shipment.bin_number || "");
   const [saving, setSaving] = useState(false);
@@ -1696,6 +1741,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   const [showReceivedPhotoPrompt, setShowReceivedPhotoPrompt] = useState(false);
   const [showBinNumberPrompt, setShowBinNumberPrompt] = useState(false);
   const [showInspectedNotesPrompt, setShowInspectedNotesPrompt] = useState(false);
+  const [showOfferPrompt, setShowOfferPrompt] = useState(false);
 
   // PERF PATCH (May 19): attribution is lazy-loaded.
   // Initial load uses getShipmentsLite (no attribution). When this detail pane opens,
@@ -1801,11 +1847,13 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           return;
         }
       }
-      // GATE: Inspected → Pending Response requires an offer price set.
-      // (Offer-price prompt modal is the next build step; for now, block + tell.)
+      // GATE: Inspected → Pending Response requires an offer price.
+      // Instead of blocking, open a prompt to capture offer price + description
+      // right here (set the price AS you make the offer). The modal completes
+      // the transition once saved.
       if (stage === "pending_response" && shipment.stage === "inspected") {
         if (!shipment.offer_price && shipment.offer_price !== 0) {
-          alert("Set an offer price first (Edit → Offer Price) before generating the offer.");
+          setShowOfferPrompt(true);
           return;
         }
       }
@@ -2149,6 +2197,20 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         onSkip={()=>setShowInspectedNotesPrompt(false)}
       />
     )}
+    {showOfferPrompt && (
+      <OfferPromptModal
+        shipment={shipment}
+        onSaved={(offerPrice, offerDesc)=>{
+          setShowOfferPrompt(false);
+          // Set offer fields AND advance the stage in one update, then reflect locally.
+          const updates={ stage:"pending_response", offer_price: offerPrice, offer_description: offerDesc };
+          apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates})
+            .then(()=>onUpdate({...shipment, ...updates}))
+            .catch(e=>alert("Failed to save offer: "+e.message));
+        }}
+        onCancel={()=>setShowOfferPrompt(false)}
+      />
+    )}
     {/* MAY 31: Self-serve form submission banner. Visible after customer
         completes the verification form, until shipment is marked purchased. */}
     {shipment?.self_serve_submitted_at && !["pending_payment","pending_leadsonline","complete","returned","purchased"].includes(shipment?.stage) && (
@@ -2184,6 +2246,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           {customer?.phone&&<><a href={`tel:${customer.phone}`} style={{textDecoration:"none"}}><Btn v="green" small>📞 Call</Btn></a><a href={smsHref(customer.phone)} style={{textDecoration:"none"}}><Btn v="blue" small>💬 Text</Btn></a></>}
           {customer?.email&&<a href={emailHref(customer.email)} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none"}}><Btn v="ghost" small>✉ Email</Btn></a>}
           <Btn v={shipment?.is_urgent==="true"||shipment?.is_urgent===true?"red":"outline"} small onClick={async()=>{const nv=shipment?.is_urgent==="true"||shipment?.is_urgent===true?"false":"true";await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{is_urgent:nv}});onUpdate({...shipment,is_urgent:nv});}}>{shipment?.is_urgent==="true"||shipment?.is_urgent===true?"🚨 Urgent":"⚐ Mark Urgent"}</Btn>
+          {shipment?.stage==="ready_to_fulfill"&&(()=>{const deferred=!!String(shipment?.deferred_at||"").trim();return <Btn v={deferred?"gold":"ghost"} small onClick={async()=>{const nv=deferred?"":new Date().toISOString();await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{deferred_at:nv}});onUpdate({...shipment,deferred_at:nv});}}>{deferred?"↩ Un-defer":"💤 Defer"}</Btn>;})()}
           <Btn v="ghost" small onClick={onClose}>✕</Btn>
         </div>
       </div>
@@ -2715,15 +2778,24 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const [uploadModal,setUploadModal]=useState(false);
   const [uploadResults,setUploadResults]=useState(null);
   const [uploading,setUploading]=useState(false);
+  const [showDeferred,setShowDeferred]=useState(false);
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
 
+  // A shipment is "deferred" when deferred_at is set. Deferred items are
+  // deliberately held — they drop out of the active queue so fresh leads
+  // aren't buried under clutter, and live in the Deferred view until un-deferred.
+  const isDeferred=(s)=>!!String(s.deferred_at||"").trim();
+
+  const deferredCount=useMemo(()=>shipments.filter(s=>FULFILL_STAGES.includes(s.stage)&&isDeferred(s)).length,[shipments]);
+
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>FULFILL_STAGES.includes(s.stage));
+    list=list.filter(s=>showDeferred?isDeferred(s):!isDeferred(s)); // active vs deferred view
     if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-  },[shipments,search,custById]);
+  },[shipments,search,custById,showDeferred]);
 
   const kits=filtered.filter(s=>String(s.shipping_type||"").trim()==="kit");
   const labels=filtered.filter(s=>String(s.shipping_type||"").trim()==="label");
@@ -3075,6 +3147,10 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
           <span style={{background:"#EEF4FF",color:G.blue,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{labels.length} FedEx</span>
           <span style={{background:"#F0FFF4",color:G.green,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{uspsLabels.length} USPS</span>
           {selectedIds.size>0&&<button onClick={()=>setBulkModal(true)} style={{marginLeft:"auto",fontSize:10,padding:"2px 10px",borderRadius:4,background:G.gold,color:"#fff",border:"none",cursor:"pointer",fontWeight:700}}>Bulk ({selectedIds.size})</button>}
+        </div>
+        <div style={{display:"flex",gap:4}}>
+          <button onClick={()=>setShowDeferred(false)} style={{flex:1,fontSize:11,fontWeight:700,padding:"5px 0",borderRadius:6,cursor:"pointer",border:`1px solid ${!showDeferred?G.gold:G.border}`,background:!showDeferred?G.gold:"#fff",color:!showDeferred?"#fff":G.muted}}>Active</button>
+          <button onClick={()=>setShowDeferred(true)} style={{flex:1,fontSize:11,fontWeight:700,padding:"5px 0",borderRadius:6,cursor:"pointer",border:`1px solid ${showDeferred?G.gold:G.border}`,background:showDeferred?G.gold:"#fff",color:showDeferred?"#fff":G.muted}}>Deferred{deferredCount>0?` (${deferredCount})`:""}</button>
         </div>
       </div>
       <div style={{flex:1,overflow:"auto"}}>
