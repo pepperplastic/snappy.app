@@ -1812,6 +1812,33 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     }
   }
 
+  async function copyInfoFromPreviousShipment(){
+    // Repeat-customer convenience: pull ID + payment info from this customer's
+    // most recent OTHER shipment that has it, onto this shipment, so a warm
+    // repeat seller (e.g. handled over SMS) doesn't re-enter known details.
+    // Stamps a FRESH sworn_statement_at for THIS transaction (per-sale legal
+    // attestation — valid because the customer attests on this sale's acceptance).
+    const mine=(allShipments||[]).filter(s=>s.customer_id===shipment.customer_id && s.shipment_id!==shipment.shipment_id);
+    if(!mine.length){ alert("No other shipments found for this customer to copy from."); return; }
+    // Prefer the most recent one that actually has ID data.
+    const withId=mine.filter(s=>String(s.id_number||"").trim()||String(s.date_birth||"").trim());
+    const pool=withId.length?withId:mine;
+    pool.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+    const src=pool[0];
+    const fields=["id_type","id_number","id_state","date_birth","payment_method","payment_info"];
+    const copied={};
+    fields.forEach(f=>{ if(String(src[f]||"").trim()) copied[f]=src[f]; });
+    if(!Object.keys(copied).length){ alert("Previous shipment ("+src.shipment_id+") has no ID/payment info to copy."); return; }
+    const summary=Object.keys(copied).map(f=>f+": "+copied[f]).join("\n");
+    if(!confirm("Copy from "+src.shipment_id+" onto "+shipment.shipment_id+"?\n\n"+summary+"\n\nA fresh sworn-statement timestamp will be stamped for THIS sale. You can still edit any field after.")) return;
+    const updates={...copied, sworn_statement_at:new Date().toISOString()};
+    try{
+      await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates});
+      onUpdate({...shipment,...updates});
+      alert("✅ Copied ID + payment from "+src.shipment_id+" and stamped a fresh sworn statement. Edit any field if "+(customer?.name||"the customer")+" wants something different this time.");
+    }catch(e){ alert("Copy failed: "+e.message); }
+  }
+
   async function resendOfferEmail(){
     // Re-send (or send) the self-serve offer email for a shipment that's already
     // at Pending Response. Pre-fills the amount from the stored offer_price.
@@ -2408,6 +2435,12 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
                 <Btn v="gold" small onClick={()=>setModal("paymentId")}>{hasAnyId||hasAnyPay?"Edit":"+ Capture"}</Btn>
               </div>
               {!hasAnyId && !hasAnyPay && <div style={{fontSize:12,color:G.muted,fontStyle:"italic"}}>Not yet captured. Click "+ Capture" after offer accepted.</div>}
+              {!hasAnyId && !hasAnyPay && (allShipments||[]).some(s=>s.customer_id===shipment.customer_id&&s.shipment_id!==shipment.shipment_id&&(String(s.id_number||"").trim()||String(s.date_birth||"").trim())) && (
+                <div style={{marginTop:8}}>
+                  <Btn v="ghost" small onClick={copyInfoFromPreviousShipment}>♻️ Copy ID + payment from previous shipment</Btn>
+                  <div style={{fontSize:11,color:G.muted,marginTop:4}}>Repeat customer — pull their known ID & payment info, stamp a fresh sworn statement.</div>
+                </div>
+              )}
               {hasAnyId && <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 {idTypeLabel && <Field label="ID Type" value={idTypeLabel + (shipment.id_state?` (${shipment.id_state})`:"")}/>}
                 {shipment.id_number && <Field label="ID Number" value={mask(shipment.id_number)} mono/>}
