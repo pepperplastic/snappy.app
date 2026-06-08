@@ -1113,6 +1113,15 @@ function InventoryPhotosPanel({shipment, photos, onPhotoAdded}) {
     String(p.source || "").toLowerCase() === "inventory"
   );
 
+  async function setPhotoStatus(photoId, newStatus) {
+    try {
+      await apiPost({action:"setPhotoStatus", photo_id:photoId, purchase_status:newStatus});
+      if (onPhotoAdded) onPhotoAdded();  // refresh photos from server
+    } catch(e) {
+      alert("Couldn't update photo status: " + (e && e.message || e));
+    }
+  }
+
   async function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -1214,18 +1223,37 @@ function InventoryPhotosPanel({shipment, photos, onPhotoAdded}) {
       </div>
     )}
     {inventoryPhotos.length > 0 && (
-      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {inventoryPhotos.map(p => (
-          <a key={p.photo_id} href={p.drive_url} target="_blank" rel="noopener noreferrer"
-             style={{display:"block",width:84,height:84,borderRadius:6,overflow:"hidden",border:`1px solid ${G.border}`,background:G.bg}}
-             title={`Uploaded ${p.uploaded_at ? fmtDateTime(p.uploaded_at) : ""}`}>
-            <img src={getDriveThumb(p.drive_url)} alt="inventory"
-                 style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
-                 onError={e=>{e.target.style.display="none";}}/>
-          </a>
-        ))}
+      <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+        {inventoryPhotos.map(p => {
+          const status = String(p.purchase_status||"").toLowerCase();
+          const isReturned = status === "returned";
+          return (
+          <div key={p.photo_id} style={{width:84}}>
+            <a href={p.drive_url} target="_blank" rel="noopener noreferrer"
+               style={{display:"block",width:84,height:84,borderRadius:6,overflow:"hidden",border:`2px solid ${isReturned?"#C0392B":G.border}`,background:G.bg,position:"relative",opacity:isReturned?0.5:1}}
+               title={`Uploaded ${p.uploaded_at ? fmtDateTime(p.uploaded_at) : ""}`}>
+              <img src={getDriveThumb(p.drive_url)} alt="inventory"
+                   style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+                   onError={e=>{e.target.style.display="none";}}/>
+              {isReturned && <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(192,57,43,0.15)"}}>
+                <span style={{background:"#C0392B",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 5px",borderRadius:3,letterSpacing:"0.04em"}}>RETURNED</span>
+              </div>}
+            </a>
+            <div style={{display:"flex",gap:3,marginTop:3}}>
+              <button onClick={()=>setPhotoStatus(p.photo_id, isReturned?"":"returned")}
+                title={isReturned?"Mark as purchased (will report to LeadsOnline)":"Mark as returned (excluded from LeadsOnline)"}
+                style={{flex:1,fontSize:9,fontWeight:700,padding:"2px 0",borderRadius:3,cursor:"pointer",border:`1px solid ${isReturned?"#C0392B":G.border}`,background:isReturned?"#C0392B":"#fff",color:isReturned?"#fff":G.muted}}>
+                {isReturned?"↩ returned":"buying"}
+              </button>
+            </div>
+          </div>
+          );
+        })}
       </div>
     )}
+    <div style={{fontSize:10,color:G.muted,marginTop:8,lineHeight:1.4}}>
+      Tap a photo's button to mark items you're <strong>returning</strong> (not buying). Returned items are excluded from the LeadsOnline report. Default is "buying."
+    </div>
   </div>;
 }
 
