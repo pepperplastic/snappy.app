@@ -518,25 +518,46 @@ function LeadsOnlineSubmitBtn({shipment, ready, missing, onSuccess}) {
         shipment_id: shipment.shipment_id
       });
       if (res && res.success) {
-        setResult({ok:true, message:res.message || `Submitted as ${res.ticket_number}`, ticket:res.ticket_number, sandbox:res.sandbox, photoError:res.photo_error});
+        // Ticket submitted + stamped server-side in ~1s. Show success NOW.
+        setResult({ok:true, message:res.message || `Submitted as ${res.ticket_number}`, ticket:res.ticket_number, sandbox:res.sandbox});
         if (onSuccess) onSuccess(res);
+        // Fire photo upload separately (non-blocking) — a slow upload no longer
+        // holds up (or times out) the confirmation. Best-effort; ticket is done.
+        if (res.photos_pending) {
+          apiPost({action:"uploadLeadsOnlinePhotos", shipment_id:shipment.shipment_id})
+            .then(p=>{ if(p&&p.message) setResult(r=>r&&r.ok?{...r, message:`Submitted as ${res.ticket_number} · ${p.message}`}:r); })
+            .catch(()=>{ setResult(r=>r&&r.ok?{...r, message:`Submitted as ${res.ticket_number} · photos pending (retry photos if needed)`}:r); });
+        }
       } else if (res && (res.message || res.error)) {
-        // Backend responded with a real, structured failure — show it verbatim.
         setResult({ok:false, message:(res.message || res.error)});
       } else {
-        // Got a response but it's empty/unparseable — backend MAY have submitted.
-        setResult({ok:false, unconfirmed:true,
-          message:"Couldn't confirm result. The ticket MAY have submitted — verify in LeadsOnline before retrying (a resubmit will be rejected as a duplicate)."});
+        // Empty/unparseable response — verify whether it actually landed.
+        await verifyThenReport();
       }
     } catch (err) {
-      // Network/timeout/JSON-parse error. The POST often completes server-side
-      // anyway (esp. during slow photo uploads), so do NOT call this a failure.
-      setResult({ok:false, unconfirmed:true,
-        message:"Connection error: " + String(err && err.message || err) + ". The ticket MAY have submitted — verify in LeadsOnline before retrying (a resubmit will be rejected as a duplicate)."});
+      // Network/timeout — the submit usually completed server-side. Verify.
+      await verifyThenReport();
     } finally {
       setBusy(false);
       setConfirmOpen(false);
     }
+  }
+
+  // After an unconfirmed response, re-fetch the shipment and check whether
+  // leadsonline_submitted_at got stamped. Turns "maybe" into a definitive answer.
+  async function verifyThenReport() {
+    try {
+      const check = await apiPost({action:"getShipment", shipment_id:shipment.shipment_id});
+      const s = (check && (check.shipment || check.data || check)) || {};
+      if (s && s.leadsonline_submitted_at) {
+        setResult({ok:true, message:`Submitted (confirmed on re-check) — SG-${String(shipment.shipment_id).replace(/^SHP-/,"")}`, ticket:`SG-${String(shipment.shipment_id).replace(/^SHP-/,"")}`});
+        if (onSuccess) onSuccess({success:true, ticket_number:`SG-${String(shipment.shipment_id).replace(/^SHP-/,"")}`, submitted_at:s.leadsonline_submitted_at});
+        return;
+      }
+    } catch(e) {}
+    // Genuinely couldn't confirm it landed.
+    setResult({ok:false, unconfirmed:true,
+      message:"Couldn't confirm the submit landed. Check the LeadsOnline monitor before retrying (a true resubmit is rejected as a duplicate)."});
   }
 
   if (!ready) {
