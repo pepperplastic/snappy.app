@@ -434,14 +434,16 @@ function trackEvent(eventName, params = {}) {
   }
 }
 
-// ── A/B/C Flow Variant Assignment ──
+// ── A/B Flow Variant Assignment ──
 // A = current (show estimate freely)
-// B = gated (require email to see estimate)
-// C = nudge (show estimate but aggressively prompt for email)
-const VARIANTS = ['A', 'B', 'C']
+// B = gated (require email to see estimate)  ← proven profitable winner
+// C = RETIRED (Jun 8) — nudge variant; worst ROAS, killed. Existing C visitors
+//     are migrated to B. C overrides no longer honored.
+const VARIANTS = ['A', 'B']
+const RETIRED_VARIANTS = ['C']
 
 function getVariant() {
-  // Allow URL override: ?variant=A, ?variant=B, ?variant=C
+  // Allow URL override: ?variant=A, ?variant=B (C retired — ignored)
   const urlParams = new URLSearchParams(window.location.search)
   const override = urlParams.get('variant')?.toUpperCase()
   if (override && VARIANTS.includes(override)) {
@@ -452,8 +454,13 @@ function getVariant() {
   // Check cookie for existing assignment
   const existing = getCookie('snappy_variant')
   if (existing && VARIANTS.includes(existing)) return existing
+  // Migrate retired-variant cookies (e.g. C) to the winner, B.
+  if (existing && RETIRED_VARIANTS.includes(existing)) {
+    setCookie('snappy_variant', 'B', 90)
+    return 'B'
+  }
 
-  // Randomly assign
+  // Randomly assign among live variants
   const variant = VARIANTS[Math.floor(Math.random() * VARIANTS.length)]
   setCookie('snappy_variant', variant, 90)
   return variant
