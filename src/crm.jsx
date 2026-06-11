@@ -476,6 +476,66 @@ function AddShipmentModal({customer,onSave,onClose}) {
 }
 
 
+// Manual entry: create a NEW customer + shipment in one go, for off-platform
+// deals (high-value mail-ins, phone deals, FB leads handled by hand). Lets you
+// set the stage + outbound tracking directly (e.g. when you already made the
+// label outside the normal fulfill flow).
+function ManualEntryModal({onSaved,onClose}) {
+  const [name,setName]=useState(""); const [email,setEmail]=useState(""); const [phone,setPhone]=useState(""); const [address,setAddress]=useState("");
+  const [item,setItem]=useState(""); const [estimate,setEstimate]=useState("");
+  const [stage,setStage]=useState("outbound_complete");
+  const [shippingType,setShippingType]=useState("usps");
+  const [tracking,setTracking]=useState(""); const [notes,setNotes]=useState("");
+  const [saving,setSaving]=useState(false);
+  const canSave = (name.trim()||email.trim()) && !saving;
+
+  async function save(){
+    setSaving(true);
+    try {
+      const res=await apiPost({action:"manualCustomerShipment",
+        customer:{name:name.trim(),email:email.trim(),phone:phone.trim(),address:address.trim()},
+        shipment:{stage,shipping_type:shippingType,item:item.trim(),estimate:estimate.trim(),outbound_tracking:tracking.trim(),notes:notes.trim()}});
+      if(res&&res.success){ onSaved(); }
+      else { alert("Failed: "+((res&&res.error)||"unknown")); setSaving(false); }
+    } catch(e){ alert("Failed: "+(e&&e.message||e)); setSaving(false); }
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(520px,95vw)",maxHeight:"90vh",overflowY:"auto",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontWeight:700,fontSize:17,marginBottom:4,color:G.text}}>+ New Customer &amp; Shipment</div>
+      <div style={{fontSize:12,color:G.muted,marginBottom:18}}>For off-platform entries — high-value mail-ins, phone deals, manually-handled leads. Dedupes by email if the customer already exists.</div>
+
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Customer</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:18}}>
+        <Inp label="Name" value={name} onChange={e=>setName(e.target.value)} placeholder="Full name"/>
+        <Inp label="Email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="email@example.com"/>
+        <Inp label="Phone" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="(561) 555-1234"/>
+        <Inp label="Address" value={address} onChange={e=>setAddress(e.target.value)} placeholder="123 Main St, City, ST, 12345"/>
+      </div>
+
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Shipment</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <Inp label="Item Description" value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. 14K Yellow Gold Chain"/>
+        <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)} placeholder="e.g. $1,200 – $1,800"/>
+        <Sel label="Stage" value={stage} onChange={e=>setStage(e.target.value)} options={[
+          {value:"outbound_complete",label:"Outbound (label already sent)"},
+          {value:"ready_to_fulfill",label:"Fulfill queue (needs a label)"},
+          {value:"received",label:"Received (already have items)"},
+        ]}/>
+        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"usps",label:"USPS"},{value:"label",label:"FedEx"},{value:"kit",label:"Kit"}]}/>
+        <Inp label="Outbound Tracking" value={tracking} onChange={e=>setTracking(e.target.value)} placeholder="Tracking # (if label already created)" mono/>
+        <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Insured $7,500 via Secursus"/>
+      </div>
+
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+        <Btn v="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn v="gold" onClick={save} disabled={!canSave}>{saving?"Creating...":"Create"}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+
 // ══════════════════════════════════════════════════════════
 // PAYMENT & ID CAPTURE MODAL
 // ══════════════════════════════════════════════════════════
@@ -4526,6 +4586,7 @@ export default function SnappyGoldCRM() {
   const [lastLoaded,setLastLoaded]=useState(null);
   const [error,setError]=useState(null);
   const [tab,setTab]=useState("fulfill");
+  const [showManualEntry,setShowManualEntry]=useState(false);
   const [tsFlash,setTsFlash]=useState(false);
 
   // Auto-refresh every 5 minutes when tab is visible
@@ -4598,7 +4659,9 @@ export default function SnappyGoldCRM() {
       {error&&<div style={{color:G.red,fontSize:11}}>{error}</div>}
       {lastLoaded&&<div style={{color:tsFlash?G.gold:G.muted,fontSize:11,fontWeight:tsFlash?700:400,transition:"color 0.3s, font-weight 0.3s"}}>Loaded {new Date(lastLoaded).toLocaleTimeString()}</div>}
       <button onClick={()=>loadData(true)} disabled={loading} style={{background:"transparent",color:G.muted,border:`1px solid #444`,borderRadius:6,padding:"4px 12px",fontSize:11,fontWeight:600,cursor:loading?"not-allowed":"pointer"}}>{loading?"Loading…":"⟳ Refresh"}</button>
+      <button onClick={()=>setShowManualEntry(true)} style={{background:G.gold,color:"#1A1816",border:"none",borderRadius:6,padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ New Entry</button>
     </div>
+    {showManualEntry&&<ManualEntryModal onSaved={()=>{setShowManualEntry(false);loadData(true);}} onClose={()=>setShowManualEntry(false)}/>}
 
     {/* Tab bar */}
     <div style={{background:"#fff",borderBottom:`1px solid ${G.border}`,padding:"0 16px",display:"flex",gap:0,flexShrink:0,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
