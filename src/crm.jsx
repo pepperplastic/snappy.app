@@ -1890,11 +1890,34 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
 
   async function generateReturnLabel(){
     if(!customer?.address){ alert("This customer has no address on file — can't create a return label."); return; }
-    if(!confirm("Generate a USPS Ground Advantage return label to send "+(customer?.name||"the customer")+"'s items BACK to them?\n\nTo: "+customer.address+"\n\nThis bills postage to us (outbound). The label is emailed to you to print, and tracking is emailed to the customer.")) return;
+    // Returns vary in size/weight (whatever the customer originally sent), so
+    // collect the box dimensions + weight per label. USPS bills on weight + size.
+    const dimStr = window.prompt(
+      "Box dimensions in inches (L x W x H)?\n\nExample: 13x11x6",
+      "13x11x6"
+    );
+    if(dimStr===null) return;
+    const m = dimStr.replace(/\s/g,"").match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i);
+    if(!m){ alert("Couldn't read dimensions. Use format L x W x H, e.g. 13x11x6"); return; }
+    const length=parseFloat(m[1]), width=parseFloat(m[2]), height=parseFloat(m[3]);
+
+    const wStr = window.prompt(
+      "Estimated package weight in POUNDS?\n\n⚠ Round UP — underestimating triggers USPS surcharges. If it feels like ~2.3 lbs, enter 3.",
+      "2"
+    );
+    if(wStr===null) return;
+    const weight_lbs=parseFloat(String(wStr).replace(/[^0-9.]/g,""));
+    if(isNaN(weight_lbs)||weight_lbs<=0){ alert("Couldn't read weight. Enter a number of pounds, e.g. 3"); return; }
+
+    if(!confirm("Generate USPS Ground Advantage return label for "+(customer?.name||"the customer")+"?\n\n"+
+      "To: "+customer.address+"\n"+
+      "Box: "+length+"×"+width+"×"+height+" in · ~"+weight_lbs+" lb\n\n"+
+      "Bills postage to us (outbound). Label emailed to you to print; tracking emailed to the customer.")) return;
     try {
-      const res = await apiPost({action:"generateReturnLabel", shipment_id:shipment.shipment_id});
+      const res = await apiPost({action:"generateReturnLabel", shipment_id:shipment.shipment_id,
+        length, width, height, weight_lbs, weight_oz:0});
       if(res && res.success){
-        if(res.return_tracking || res.tracking_number) onUpdate({...shipment, return_tracking:res.tracking_number});
+        if(res.tracking_number) onUpdate({...shipment, return_tracking:res.tracking_number});
         alert("✅ "+(res.message||"Return label created")+"\n\nLabel PDF emailed to you to print.");
       } else {
         alert("⚠ "+((res&&res.message)||(res&&res.error)||"Return label failed"));
