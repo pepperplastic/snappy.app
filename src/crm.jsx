@@ -1888,6 +1888,20 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     }catch(e){ alert("Copy failed: "+e.message); }
   }
 
+  async function generateReturnLabel(){
+    if(!customer?.address){ alert("This customer has no address on file — can't create a return label."); return; }
+    if(!confirm("Generate a USPS Ground Advantage return label to send "+(customer?.name||"the customer")+"'s items BACK to them?\n\nTo: "+customer.address+"\n\nThis bills postage to us (outbound). The label is emailed to you to print, and tracking is emailed to the customer.")) return;
+    try {
+      const res = await apiPost({action:"generateReturnLabel", shipment_id:shipment.shipment_id});
+      if(res && res.success){
+        if(res.return_tracking || res.tracking_number) onUpdate({...shipment, return_tracking:res.tracking_number});
+        alert("✅ "+(res.message||"Return label created")+"\n\nLabel PDF emailed to you to print.");
+      } else {
+        alert("⚠ "+((res&&res.message)||(res&&res.error)||"Return label failed"));
+      }
+    } catch(e){ alert("Return label failed: "+(e&&e.message||e)); }
+  }
+
   async function resendOfferEmail(){
     // Re-send (or send) the self-serve offer email for a shipment that's already
     // at Pending Response. Pre-fills the amount from the stored offer_price.
@@ -2401,6 +2415,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         <Btn v="ghost" small onClick={()=>setModal("stage")}>Change Stage ↓</Btn>
         {actions.map((a,i)=><Btn key={i} v={a.v} small onClick={()=>a.stage?quickStage(a.stage):setModal(a.action)}>{a.label}</Btn>)}
         {shipment.stage==="pending_response"&&<Btn v="orange" small onClick={resendOfferEmail}>📧 Resend offer email</Btn>}
+        <Btn v="ghost" small onClick={generateReturnLabel}>📦 Return label</Btn>
         <div style={{marginLeft:"auto",display:"flex",gap:8}}>
           <Btn v="ghost" small onClick={()=>setModal("log")}>+ Log</Btn>
           <Btn v="purple" small onClick={()=>setModal("addShipment")}>+ Shipment</Btn>
