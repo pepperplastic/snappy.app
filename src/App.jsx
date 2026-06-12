@@ -1063,7 +1063,12 @@ ${corrections}`
   })
 
   const body = {
-    model: 'claude-opus-4-20250514',
+    // Estimate is customer-facing + conversion-critical, so latency matters.
+    // Opus is the slowest tier and overkill for a rule-driven preliminary
+    // estimate (we already give explicit weight/classification rules below and
+    // caveat it as pending in-person verification). Sonnet 4.6 = much faster,
+    // ~40% cheaper, and follows the detailed prompt well. (Was claude-opus-4-20250514.)
+    model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     temperature: 0.3,
     messages: [
