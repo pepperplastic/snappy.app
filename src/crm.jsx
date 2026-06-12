@@ -3390,8 +3390,6 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{flex:1,background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
-          <Btn v="ghost" small onClick={()=>setUploadModal(true)}>⬆ Ship Reports</Btn>
-          <Btn v="gold" small onClick={generateBatch} disabled={filtered.length===0}>⬇ Batch</Btn>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11,color:G.muted}}>
           <span style={{background:"#F5F0FF",color:G.purple,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{kits.length} kits</span>
