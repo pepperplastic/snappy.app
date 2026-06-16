@@ -349,7 +349,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
     setSaving(true);
     try {
       await apiPost({action:"upsertCustomer",data:{email:c.email,name:c.name,phone:c.phone,address:c.address,source:c.source,notes:c.notes}});
-      await apiPost({action:"updateShipment",shipment_id:s.shipment_id,updates:{stage:s.stage,shipping_type:s.shipping_type,item:s.item,estimate:s.estimate,outbound_tracking:s.outbound_tracking,return_tracking:s.return_tracking,purchase_price:s.purchase_price,appraised_value:s.appraised_value,payment_method:s.payment_method,payment_info:s.payment_info,notes:s.notes,bin_number:s.bin_number}});
+      await apiPost({action:"updateShipment",shipment_id:s.shipment_id,updates:{stage:s.stage,shipping_type:s.shipping_type,item:s.item,estimate:s.estimate,outbound_tracking:s.outbound_tracking,kit_tracking:s.kit_tracking,return_tracking:s.return_tracking,purchase_price:s.purchase_price,appraised_value:s.appraised_value,payment_method:s.payment_method,payment_info:s.payment_info,notes:s.notes,bin_number:s.bin_number}});
       onSave({shipment:s,customer:c});
     } catch(e){alert("Save failed: "+e.message);}
     setSaving(false);
@@ -381,14 +381,17 @@ function EditModal({shipment,customer,onSave,onClose}) {
           <div style={{marginTop:12}}><Inp label="Item Description" value={s.item} onChange={e=>updS("item",e.target.value)}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
             <Inp label="Estimate" value={s.estimate} onChange={e=>updS("estimate",e.target.value)}/>
-            <Inp label="Outbound Tracking" value={s.outbound_tracking} onChange={e=>updS("outbound_tracking",e.target.value)} mono/>
+            <Inp label="Inbound Tracking (customer → us)" value={s.outbound_tracking} onChange={e=>updS("outbound_tracking",e.target.value)} mono/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
-            <Inp label="Return Tracking" value={s.return_tracking} onChange={e=>updS("return_tracking",e.target.value)} mono/>
+            <Inp label="Outbound / Kit Tracking (us → customer)" value={s.kit_tracking} onChange={e=>updS("kit_tracking",e.target.value)} mono/>
+            <Inp label="Product Return Tracking" value={s.return_tracking} onChange={e=>updS("return_tracking",e.target.value)} mono/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
             <Inp label="Purchase Price" value={s.purchase_price} type="number" onChange={e=>updS("purchase_price",e.target.value)}/>
+            <Inp label="Appraised Value" value={s.appraised_value} type="number" onChange={e=>updS("appraised_value",e.target.value)}/>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
-            <Inp label="Appraised Value" value={s.appraised_value} type="number" onChange={e=>updS("appraised_value",e.target.value)}/>
             <Inp label="Payment Method" value={s.payment_method} onChange={e=>updS("payment_method",e.target.value)}/>
           </div>
           <div style={{marginTop:12}}><Inp label="Payment Info" value={s.payment_info} onChange={e=>updS("payment_info",e.target.value)}/></div>
@@ -1953,8 +1956,10 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     // Returns vary in size/weight (whatever the customer originally sent), so
     // collect the box dimensions + weight per label. USPS bills on weight + size.
     const dimStr = window.prompt(
-      "Box dimensions in inches (L x W x H)?\n\nExample: 13x11x6",
-      "13x11x6"
+      "Box / mailer dimensions in inches (L x W x H)?\n\n"+
+      "• Small padded mailer (ring, pendant): try 9x7x1\n"+
+      "• Box: e.g. 13x11x6",
+      "9x7x1"
     );
     if(dimStr===null) return;
     const m = dimStr.replace(/\s/g,"").match(/^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i);
@@ -1962,20 +1967,29 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     const length=parseFloat(m[1]), width=parseFloat(m[2]), height=parseFloat(m[3]);
 
     const wStr = window.prompt(
-      "Estimated package weight in POUNDS?\n\n⚠ Round UP — underestimating triggers USPS surcharges. If it feels like ~2.3 lbs, enter 3.",
-      "2"
+      "Package weight — include the unit (oz or lb):\n\n"+
+      "• Small item in a padded mailer (ring, pendant): enter OUNCES, e.g. 4oz, 6oz, 8oz\n"+
+      "• Bigger box: enter POUNDS, e.g. 2lb, 3lb\n\n"+
+      "⚠ Round UP a little. Tiny items in ounces ship MUCH cheaper than rounding to 1 lb.",
+      "4oz"
     );
     if(wStr===null) return;
-    const weight_lbs=parseFloat(String(wStr).replace(/[^0-9.]/g,""));
-    if(isNaN(weight_lbs)||weight_lbs<=0){ alert("Couldn't read weight. Enter a number of pounds, e.g. 3"); return; }
+    const raw = String(wStr).toLowerCase().trim();
+    const num = parseFloat(raw.replace(/[^0-9.]/g,""));
+    if(isNaN(num)||num<=0){ alert("Couldn't read weight. Include a number + unit, e.g. 4oz or 2lb"); return; }
+    // Detect unit: 'oz' anywhere = ounces; otherwise default to pounds.
+    const isOz = /oz/.test(raw) || (!/lb/.test(raw) && num >= 16);  // bare number ≥16 likely meant oz
+    let weight_lbs = 0, weight_oz = 0;
+    if(isOz){ weight_oz = num; } else { weight_lbs = num; }
+    const weightLabel = isOz ? (weight_oz+" oz") : (weight_lbs+" lb");
 
     if(!confirm("Generate USPS Ground Advantage return label for "+(customer?.name||"the customer")+"?\n\n"+
       "To: "+customer.address+"\n"+
-      "Box: "+length+"×"+width+"×"+height+" in · ~"+weight_lbs+" lb\n\n"+
+      "Box: "+length+"×"+width+"×"+height+" in · ~"+weightLabel+"\n\n"+
       "Bills postage to us (outbound). Label emailed to you to print; tracking emailed to the customer.")) return;
     try {
       const res = await apiPost({action:"generateReturnLabel", shipment_id:shipment.shipment_id,
-        length, width, height, weight_lbs, weight_oz:0});
+        length, width, height, weight_lbs, weight_oz});
       if(res && res.success){
         if(res.tracking_number) onUpdate({...shipment, return_tracking:res.tracking_number});
         alert("✅ "+(res.message||"Return label created")+"\n\nLabel PDF emailed to you to print.");
@@ -2527,8 +2541,18 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:10}}>
             <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Tracking</div>
-            {shipment.outbound_tracking?<Field label="Outbound" value={shipment.outbound_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No outbound tracking</div>}
-            {shipment.return_tracking?<Field label="Return" value={shipment.return_tracking} mono/>:<div style={{fontSize:12,color:G.muted}}>No return tracking</div>}
+            {/* Outbound = a kit/mailer WE send TO the customer (not currently used; ready for when kits return). */}
+            {shipment.kit_tracking
+              ? <Field label="Outbound (kit to customer)" value={shipment.kit_tracking} mono/>
+              : <div style={{fontSize:12,color:G.muted}}>Outbound (kit): none</div>}
+            {/* Inbound = the label the customer uses to ship their items TO US. Stored in outbound_tracking (legacy field name). The common one. */}
+            {shipment.outbound_tracking
+              ? <Field label="Inbound (customer → us)" value={shipment.outbound_tracking} mono/>
+              : <div style={{fontSize:12,color:G.muted}}>Inbound (customer → us): none</div>}
+            {/* Product Return = we ship the customer's items BACK to them. */}
+            {shipment.return_tracking
+              ? <Field label="Product Return (us → customer)" value={shipment.return_tracking} mono/>
+              : <div style={{fontSize:12,color:G.muted}}>Product Return: none</div>}
             {shipment.outbound_tracking && (shipment.easypost_shipment_id || shipment.shippo_transaction_id) && (
               <Btn v="ghost" small onClick={async()=>{
                 if(!confirm("Resend the label email to " + (customer?.name||"customer") + " at " + customer?.email + ", plus a text letting them know to check their inbox?\n\nThis fetches the existing label — no new postage charge.")) return;
