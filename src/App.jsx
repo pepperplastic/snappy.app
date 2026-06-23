@@ -2635,7 +2635,7 @@ Additional info: ${customerEditsText}` : correctionLines
                 </div>
               </div>
             )}
-            <div style={{ opacity: isReEstimating ? 0.3 : 1, transition: 'opacity 0.3s, filter 0.6s ease', filter: isReEstimating ? 'blur(1px)' : (offerBlurred ? 'blur(7px)' : 'none'), pointerEvents: offerBlurred ? 'none' : 'auto' }}>
+            <div style={{ opacity: isReEstimating ? 0.3 : 1, transition: 'opacity 0.3s', filter: isReEstimating ? 'blur(1px)' : 'none' }}>
             <div style={styles.offerTop}>
               {imageData && (() => {
                 const images = Array.isArray(imageData) ? imageData : [imageData]
@@ -2859,23 +2859,25 @@ Additional info: ${customerEditsText}` : correctionLines
                 </button>
               )}
             </div>
-            {/* Timed blur overlay (Variant B): fades in after 7s to pull toward the firm offer */}
+            {/* Timed blur overlay (Variant B): fixed to viewport so it appears
+                dead-center on screen regardless of where the user has scrolled. */}
             {offerBlurred && (
               <div style={{
-                position: 'absolute', inset: 0, zIndex: 5,
+                position: 'fixed', inset: 0, zIndex: 9999,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 padding: '24px 20px', textAlign: 'center',
-                background: 'rgba(250,246,240,0.55)',
-                animation: 'fadeIn 0.5s ease',
+                background: 'rgba(26,24,22,0.45)',
+                backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+                animation: 'fadeIn 0.4s ease',
               }}>
                 <div style={{
-                  background: '#fff', borderRadius: 12, padding: '20px 18px',
-                  border: '0.5px solid #E0D6C4', boxShadow: '0 8px 30px rgba(0,0,0,0.12)', maxWidth: 340,
+                  background: '#fff', borderRadius: 14, padding: '24px 20px',
+                  border: '0.5px solid #E0D6C4', boxShadow: '0 12px 40px rgba(0,0,0,0.25)', maxWidth: 360, width: '100%',
                 }}>
-                  <p style={{ fontSize: 16, fontWeight: 700, color: '#1A1816', margin: '0 0 8px' }}>
-                    This is a preliminary estimate.<br />Your firm cash offer might be higher.
+                  <p style={{ fontSize: 17, fontWeight: 700, color: '#1A1816', margin: '0 0 10px', lineHeight: 1.3 }}>
+                    This is a preliminary estimate. Your firm cash offer might be higher.
                   </p>
-                  <p style={{ fontSize: 13, color: '#5F5E5A', lineHeight: 1.5, margin: '0 0 16px' }}>
+                  <p style={{ fontSize: 14, color: '#5F5E5A', lineHeight: 1.55, margin: '0 0 18px' }}>
                     Send it in for a free expert evaluation. We'll make you a same-day cash offer — accept and be paid, or decline and we'll ship it back for free.
                   </p>
                   <button
@@ -2888,8 +2890,8 @@ Additional info: ${customerEditsText}` : correctionLines
                   <button
                     onClick={() => { setBlurEscaped(true); setOfferBlurred(false); trackEvent('blur_escape_peek') }}
                     style={{
-                      background: 'none', border: 'none', color: '#9A7B3C', fontSize: 12,
-                      textDecoration: 'underline', cursor: 'pointer', marginTop: 12, padding: 4,
+                      background: 'none', border: 'none', color: '#9A7B3C', fontSize: 13,
+                      textDecoration: 'underline', cursor: 'pointer', marginTop: 14, padding: 4,
                     }}
                   >
                     See estimate again
