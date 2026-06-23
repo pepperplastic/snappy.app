@@ -2881,7 +2881,7 @@ Additional info: ${customerEditsText}` : correctionLines
                     Send it in for a free expert evaluation. We'll make you a same-day cash offer — accept and be paid, or decline and we'll ship it back for free.
                   </p>
                   <button
-                    onClick={() => { trackEvent('cta_get_firm_offer_blur'); onDirectSubmit() }}
+                    onClick={() => { trackEvent('cta_get_firm_offer_blur'); onGetOffer() }}
                     style={{ ...styles.firmOfferBtn, width: '100%', justifyContent: 'center', marginTop: 0 }}
                   >
                     <span>Get My Firm Offer</span>
@@ -2901,17 +2901,10 @@ Additional info: ${customerEditsText}` : correctionLines
             )}
           </div>
 
-          {leadData.email ? (
-            <button onClick={() => { trackEvent('cta_submit_from_offer'); onDirectSubmit() }} style={styles.firmOfferBtn}>
-              <span>Get My Firm Offer</span>
-              <ArrowIcon size={18} />
-            </button>
-          ) : (
-            <button onClick={() => { trackEvent('cta_get_firm_offer'); onGetOffer() }} style={styles.firmOfferBtn}>
-              <span>Get My Firm Offer</span>
-              <ArrowIcon size={18} />
-            </button>
-          )}
+          <button onClick={() => { trackEvent('cta_get_firm_offer'); onGetOffer() }} style={styles.firmOfferBtn}>
+            <span>Get My Firm Offer</span>
+            <ArrowIcon size={18} />
+          </button>
           <p style={styles.offerCaveat}>
             Free prepaid shipping · Expert in-person evaluation · Payment within 24 hours
           </p>
