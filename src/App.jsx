@@ -2851,9 +2851,27 @@ Additional info: ${customerEditsText}` : correctionLines
             </div>
           </div>
 
+          {/* POST-REVEAL PULL-FORWARD (Variant B): once the offer is revealed
+              (email captured), reframe the estimate as preliminary and pull them
+              toward completion with the firm-offer upside + risk-free return.
+              Built to lift B's post-reveal completion (was ~29%). */}
+          {leadData.email && (
+            <div style={{
+              background: '#F4F9F0', border: '0.5px solid #CFE3BE', borderRadius: 10,
+              padding: '14px 16px', marginTop: 14, marginBottom: 4,
+            }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#3B6D11', margin: '0 0 6px' }}>
+                This is a preliminary estimate. Your firm cash offer might be higher.
+              </p>
+              <p style={{ fontSize: 13, color: '#4A5240', lineHeight: 1.5, margin: 0 }}>
+                Send it in for a free expert evaluation. We'll make you a same-day cash offer — accept and be paid, or decline and we'll ship it back for free.
+              </p>
+            </div>
+          )}
+
           {leadData.email ? (
             <button onClick={() => { trackEvent('cta_submit_from_offer'); onDirectSubmit() }} style={styles.firmOfferBtn}>
-              <span>Submit</span>
+              <span>Get My Firm Offer</span>
               <ArrowIcon size={18} />
             </button>
           ) : (
