@@ -1794,7 +1794,7 @@ function InlineBinEditor({shipment, onUpdate}) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(String(shipment.bin_number || ""));
   const [saving, setSaving] = useState(false);
-  React.useEffect(()=>{ setVal(String(shipment.bin_number || "")); }, [shipment.shipment_id, shipment.bin_number]);
+  useEffect(()=>{ setVal(String(shipment.bin_number || "")); }, [shipment.shipment_id, shipment.bin_number]);
 
   async function save(){
     const v = String(val).trim();
