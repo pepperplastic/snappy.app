@@ -2533,6 +2533,16 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
   const [showCorrections, setShowCorrections] = useState(false)
   const [showDetailsInput, setShowDetailsInput] = useState(false)
   const [isUpdated, setIsUpdated] = useState(false)
+  // ── Timed post-reveal blur (Variant B): once the offer is revealed (email
+  //    captured), let them absorb the number for 7s, then blur it behind a
+  //    firm-offer prompt to pull them toward completion. Escape hatch un-blurs.
+  const [offerBlurred, setOfferBlurred] = useState(false)
+  const [blurEscaped, setBlurEscaped] = useState(false)
+  useEffect(() => {
+    if (!leadData.email || blurEscaped || offerBlurred) return
+    const t = setTimeout(() => setOfferBlurred(true), 7000)
+    return () => clearTimeout(t)
+  }, [leadData.email, blurEscaped, offerBlurred])
   const detailsRef = useRef(null)
   const offerRangeRef = useRef(null)
   const offerTopRef = useRef(null)
@@ -2625,7 +2635,7 @@ Additional info: ${customerEditsText}` : correctionLines
                 </div>
               </div>
             )}
-            <div style={{ opacity: isReEstimating ? 0.3 : 1, transition: 'opacity 0.3s', filter: isReEstimating ? 'blur(1px)' : 'none' }}>
+            <div style={{ opacity: isReEstimating ? 0.3 : 1, transition: 'opacity 0.3s, filter 0.6s ease', filter: isReEstimating ? 'blur(1px)' : (offerBlurred ? 'blur(7px)' : 'none'), pointerEvents: offerBlurred ? 'none' : 'auto' }}>
             <div style={styles.offerTop}>
               {imageData && (() => {
                 const images = Array.isArray(imageData) ? imageData : [imageData]
@@ -2849,25 +2859,45 @@ Additional info: ${customerEditsText}` : correctionLines
                 </button>
               )}
             </div>
+            {/* Timed blur overlay (Variant B): fades in after 7s to pull toward the firm offer */}
+            {offerBlurred && (
+              <div style={{
+                position: 'absolute', inset: 0, zIndex: 5,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                padding: '24px 20px', textAlign: 'center',
+                background: 'rgba(250,246,240,0.55)',
+                animation: 'fadeIn 0.5s ease',
+              }}>
+                <div style={{
+                  background: '#fff', borderRadius: 12, padding: '20px 18px',
+                  border: '0.5px solid #E0D6C4', boxShadow: '0 8px 30px rgba(0,0,0,0.12)', maxWidth: 340,
+                }}>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: '#1A1816', margin: '0 0 8px' }}>
+                    This is a preliminary estimate.<br />Your firm cash offer might be higher.
+                  </p>
+                  <p style={{ fontSize: 13, color: '#5F5E5A', lineHeight: 1.5, margin: '0 0 16px' }}>
+                    Send it in for a free expert evaluation. We'll make you a same-day cash offer — accept and be paid, or decline and we'll ship it back for free.
+                  </p>
+                  <button
+                    onClick={() => { trackEvent('cta_get_firm_offer_blur'); onDirectSubmit() }}
+                    style={{ ...styles.firmOfferBtn, width: '100%', justifyContent: 'center', marginTop: 0 }}
+                  >
+                    <span>Get My Firm Offer</span>
+                    <ArrowIcon size={18} />
+                  </button>
+                  <button
+                    onClick={() => { setBlurEscaped(true); setOfferBlurred(false); trackEvent('blur_escape_peek') }}
+                    style={{
+                      background: 'none', border: 'none', color: '#9A7B3C', fontSize: 12,
+                      textDecoration: 'underline', cursor: 'pointer', marginTop: 12, padding: 4,
+                    }}
+                  >
+                    See estimate again
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* POST-REVEAL PULL-FORWARD (Variant B): once the offer is revealed
-              (email captured), reframe the estimate as preliminary and pull them
-              toward completion with the firm-offer upside + risk-free return.
-              Built to lift B's post-reveal completion (was ~29%). */}
-          {leadData.email && (
-            <div style={{
-              background: '#F4F9F0', border: '0.5px solid #CFE3BE', borderRadius: 10,
-              padding: '14px 16px', marginTop: 14, marginBottom: 4,
-            }}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: '#3B6D11', margin: '0 0 6px' }}>
-                This is a preliminary estimate. Your firm cash offer might be higher.
-              </p>
-              <p style={{ fontSize: 13, color: '#4A5240', lineHeight: 1.5, margin: 0 }}>
-                Send it in for a free expert evaluation. We'll make you a same-day cash offer — accept and be paid, or decline and we'll ship it back for free.
-              </p>
-            </div>
-          )}
 
           {leadData.email ? (
             <button onClick={() => { trackEvent('cta_submit_from_offer'); onDirectSubmit() }} style={styles.firmOfferBtn}>
@@ -3568,6 +3598,7 @@ const styleSheet = document.createElement('style')
 styleSheet.textContent = `
   @keyframes ctaRing { 0% { box-shadow: 0 0 0 0 rgba(200,149,60,0.5); } 70% { box-shadow: 0 0 0 14px rgba(200,149,60,0); } 100% { box-shadow: 0 0 0 0 rgba(200,149,60,0); } }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
   @keyframes weightPulse { 0%, 100% { background: transparent; } 50% { background: rgba(200, 149, 60, 0.08); } }
   @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
