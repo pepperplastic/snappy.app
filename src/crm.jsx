@@ -1788,6 +1788,59 @@ function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
   </div>;
 }
 
+// Always-visible, inline-editable bin field for the detail panel (mobile-friendly).
+// Shows current bin (or "—") and lets you tap to edit + save without opening the full edit form.
+function InlineBinEditor({shipment, onUpdate}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(String(shipment.bin_number || ""));
+  const [saving, setSaving] = useState(false);
+  React.useEffect(()=>{ setVal(String(shipment.bin_number || "")); }, [shipment.shipment_id, shipment.bin_number]);
+
+  async function save(){
+    const v = String(val).trim();
+    setSaving(true);
+    try{
+      await apiPost({action:"updateShipment", shipment_id:shipment.shipment_id, updates:{bin_number:v}});
+      onUpdate({...shipment, bin_number:v});
+      setEditing(false);
+    }catch(e){ alert("Couldn't save bin: "+(e.message||e)); }
+    setSaving(false);
+  }
+
+  const wrap = {background:"#FFF8EE", borderRadius:8, padding:"10px 12px", border:`1px solid ${G.gold}44`};
+  const lbl  = {fontSize:10, fontWeight:700, color:G.gold, textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:4};
+
+  if(!editing){
+    return <div style={wrap}>
+      <div style={lbl}>Bin Number</div>
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10}}>
+        <div style={{fontSize:24, fontWeight:700, color: shipment.bin_number ? G.gold : G.muted}}>
+          {shipment.bin_number ? shipment.bin_number : "—"}
+        </div>
+        <Btn v="gold" small onClick={()=>setEditing(true)}>{shipment.bin_number ? "Edit" : "Set bin"}</Btn>
+      </div>
+    </div>;
+  }
+
+  return <div style={wrap}>
+    <div style={lbl}>Bin Number</div>
+    <div style={{display:"flex", alignItems:"center", gap:8}}>
+      <input
+        autoFocus
+        value={val}
+        onChange={e=>setVal(e.target.value)}
+        onKeyDown={e=>{ if(e.key==="Enter") save(); if(e.key==="Escape") setEditing(false); }}
+        placeholder="e.g. 7"
+        inputMode="numeric"
+        style={{flex:1, minWidth:0, fontSize:20, fontWeight:700, color:G.gold, padding:"8px 10px",
+          border:`1px solid ${G.gold}`, borderRadius:6, background:"#fff", outline:"none"}}
+      />
+      <Btn v="green" small onClick={save} disabled={saving}>{saving?"…":"Save"}</Btn>
+      <Btn v="ghost" small onClick={()=>{ setVal(String(shipment.bin_number||"")); setEditing(false); }}>Cancel</Btn>
+    </div>
+  </div>;
+}
+
 function BinNumberPromptModal({shipment, onSaved, onSkip}) {
   const [binNumber, setBinNumber] = useState(shipment.bin_number || "");
   const [saving, setSaving] = useState(false);
@@ -1992,7 +2045,17 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         length, width, height, weight_lbs, weight_oz});
       if(res && res.success){
         if(res.tracking_number) onUpdate({...shipment, return_tracking:res.tracking_number});
-        alert("✅ "+(res.message||"Return label created")+"\n\nLabel PDF emailed to you to print.");
+        // Pop the label open in a new tab so it can be printed immediately —
+        // no need to go fetch it from email. (Email still goes out as a backup.)
+        if(res.label_url){
+          const w = window.open(res.label_url, "_blank");
+          if(!w){
+            // popup blocked — give a clickable fallback
+            alert("✅ "+(res.message||"Return label created")+"\n\nPopup was blocked. The label is also emailed to you. Tracking: "+(res.tracking_number||"—"));
+          }
+        } else {
+          alert("✅ "+(res.message||"Return label created")+"\n\nLabel PDF emailed to you to print.");
+        }
       } else {
         alert("⚠ "+((res&&res.message)||(res&&res.error)||"Return label failed"));
       }
@@ -2535,7 +2598,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             {shipment.payment_method&&<div style={{fontSize:11,color:G.muted}}>via {shipment.payment_method} {shipment.payment_info}</div>}
           </div>}
           <Field label="Shipping Type" value={shipment.shipping_type}/>
-          {shipment.bin_number&&<div style={{background:"#FFF8EE",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.gold}44`}}><div style={{fontSize:10,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2}}>Bin Number</div><div style={{fontSize:22,fontWeight:700,color:G.gold}}>{shipment.bin_number}</div></div>}
+          <InlineBinEditor shipment={shipment} onUpdate={onUpdate}/>
           <NotesPanel shipment={shipment}/>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
