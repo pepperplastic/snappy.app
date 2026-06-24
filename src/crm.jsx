@@ -2164,7 +2164,10 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       if (stage === "received") setShowReceivedPhotoPrompt(true);
       if (stage === "inspected") setShowInspectedNotesPrompt(true);
     }
-    catch(e){alert("Failed: "+e.message);}
+    catch(e){
+      console.error("Stage change failed:", stage, e);
+      alert("Stage change to '"+(SL[stage]||stage)+"' failed:\n\n"+(e&&e.message||String(e))+"\n\nThe shipment was NOT moved. You can try again.");
+    }
   }
 
   function Field({label,value,mono,copy}){
