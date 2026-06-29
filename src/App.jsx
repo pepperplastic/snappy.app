@@ -34,6 +34,18 @@ const VERIFY_PAYMENT_METHODS = [
   { value: 'cashapp', label: 'Cash App', hint: '$cashtag' },
 ]
 
+// Defined at module level (NOT inside VerifyPage) so it has a stable identity
+// across renders. When this lived inside VerifyPage it was recreated on every
+// keystroke, remounting the inputs and stealing focus after each character.
+function VerifyField({ label, children }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <label style={{ display:'block', fontSize:13, color:VERIFY_BRAND.muted, marginBottom:6, fontWeight:500 }}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
 function VerifyPage() {
   const [step, setStep]         = useState('loading')  // loading | form | submitting | success | error
   const [errorMsg, setErrorMsg] = useState('')
@@ -166,13 +178,6 @@ function VerifyPage() {
   const sectionHeader = { margin:'0 0 16px', fontSize:13, color:VERIFY_BRAND.dark, fontWeight:700, textTransform:'uppercase', letterSpacing:1 }
   const inputStyle = { width:'100%', padding:'12px 14px', fontSize:15, border:`1px solid #D5CBB8`, borderRadius:6, fontFamily:'inherit', background:'#fff', boxSizing:'border-box' }
 
-  const Field = ({ label, children }) => (
-    <div style={{ marginBottom:16 }}>
-      <label style={{ display:'block', fontSize:13, color:VERIFY_BRAND.muted, marginBottom:6, fontWeight:500 }}>{label}</label>
-      {children}
-    </div>
-  )
-
   return (
     <div style={{ minHeight:'100vh', background:VERIFY_BRAND.cream, fontFamily:'Georgia, serif', color:VERIFY_BRAND.dark }}>
       <header style={{ background:VERIFY_BRAND.dark, padding:'20px 24px', borderBottom:`3px solid ${VERIFY_BRAND.gold}`, textAlign:'center' }}>
@@ -265,25 +270,25 @@ function VerifyPage() {
 
               {/* Option B: Manual entry */}
               <div style={{ fontSize:13, fontWeight:600, color:VERIFY_BRAND.dark, marginBottom:12, textTransform:'uppercase', letterSpacing:0.5 }}>Option B — Fill in manually</div>
-              <Field label="ID Type">
+              <VerifyField label="ID Type">
                 <select value={idType} onChange={e => setIdType(e.target.value)} style={inputStyle}>
                   <option value="driver_license">Driver's License</option>
                   <option value="state_id">State ID</option>
                   <option value="passport">Passport</option>
                   <option value="military_id">Military ID</option>
                 </select>
-              </Field>
-              <Field label="ID Number">
+              </VerifyField>
+              <VerifyField label="ID Number">
                 <input type="text" value={idNumber} onChange={e => setIdNumber(e.target.value)} style={inputStyle} placeholder="As shown on your ID" autoComplete="off" />
-              </Field>
-              <Field label="Issuing State">
+              </VerifyField>
+              <VerifyField label="Issuing State">
                 <select value={idState} onChange={e => setIdState(e.target.value)} style={inputStyle}>
                   {VERIFY_US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-              </Field>
-              <Field label="Date of Birth">
+              </VerifyField>
+              <VerifyField label="Date of Birth">
                 <input type="date" value={dateBirth} onChange={e => setDateBirth(e.target.value)} style={inputStyle} />
-              </Field>
+              </VerifyField>
             </div>
 
             <div style={cardStyle}>
@@ -293,14 +298,14 @@ function VerifyPage() {
                   We have your payment info on file — please confirm or update below.
                 </p>
               )}
-              <Field label="How would you like to be paid?">
+              <VerifyField label="How would you like to be paid?">
                 <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} style={inputStyle}>
                   {VERIFY_PAYMENT_METHODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                 </select>
-              </Field>
-              <Field label={VERIFY_PAYMENT_METHODS.find(p => p.value === paymentMethod)?.hint || 'Payment details'}>
+              </VerifyField>
+              <VerifyField label={VERIFY_PAYMENT_METHODS.find(p => p.value === paymentMethod)?.hint || 'Payment details'}>
                 <input type="text" value={paymentInfo} onChange={e => setPaymentInfo(e.target.value)} style={inputStyle} placeholder="Required" />
-              </Field>
+              </VerifyField>
             </div>
 
             <div style={{ ...cardStyle, background:'#FFFCF5', border:`2px solid ${VERIFY_BRAND.gold}` }}>
