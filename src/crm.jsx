@@ -3826,7 +3826,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
   const filtered=useMemo(()=>{
     if(!search) return customers;
     const q=search.toLowerCase();
-    return customers.filter(c=>String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").toLowerCase().includes(q)||String(c.customer_id||"").toLowerCase().includes(q));
+    return customers.filter(c=>String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").toLowerCase().includes(q)||String(c.customer_id||"").toLowerCase().includes(q)||String(c.address||"").toLowerCase().includes(q));
   },[customers,search]);
 
   const selCustomer=selected?custById[selected]:null;
