@@ -2149,7 +2149,7 @@ function Hero({ onStart, onCamera, onUpload }) {
     if (!track) return
     let offset = 0
     let halfWidth = 0
-    const speed = 0.6
+    const speed = 0.3
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => { halfWidth = track.scrollWidth / 3 })
@@ -2180,15 +2180,11 @@ function Hero({ onStart, onCamera, onUpload }) {
 
   const categories = [
     { name: 'Gold', icon: <GoldBarIcon /> },
+    { name: 'Platinum', icon: <PlatBarIcon /> },
     { name: 'Watches', icon: <WatchIcon /> },
     { name: 'Diamonds', icon: <DiamondIcon /> },
-    { name: 'Designer Belts', icon: <BeltIcon /> },
-    { name: 'Silver', icon: <SilverBarIcon /> },
     { name: 'Jewelry', icon: <NecklaceIcon /> },
     { name: 'Rings', icon: <RingIcon /> },
-    { name: 'Handbags', icon: <PurseIcon /> },
-    { name: 'Coins', icon: <CoinIcon /> },
-    { name: 'Designer Glasses', icon: <SunglassesIcon /> },
   ]
 
   // Double the list for seamless loop
