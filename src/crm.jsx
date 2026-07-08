@@ -4103,6 +4103,9 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   const [selectedShipIds, setSelectedShipIds] = useState(initialShipmentIds || []);
   const [shipFilter, setShipFilter] = useState("");
   const [saving, setSaving] = useState(false);
+  // Refiner/bulk-melt sale: metal sold to a refiner can't be tied to one inbound
+  // shipment (many items pooled into one melt), so allow recording without a link.
+  const [refinerSale, setRefinerSale] = useState(!!(sale && String(sale.shipment_ids||"").trim()==="" ));
 
   const custById = useMemo(() => {
     const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
@@ -4129,13 +4132,15 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   async function save() {
     if (!buyerName.trim()) { alert("Buyer name required"); return; }
     if (!amount || isNaN(parseFloat(amount))) { alert("Amount must be a number"); return; }
-    if (selectedShipIds.length === 0) { alert("Select at least one shipment"); return; }
+    if (selectedShipIds.length === 0 && !refinerSale) { alert("Select at least one shipment, or check \u201CRefiner / bulk melt\u201D above."); return; }
     setSaving(true);
     try {
       const action = isEdit ? "updateSale" : "addSale";
+      const shipIdsStr = refinerSale ? "" : selectedShipIds.join(",");
+      const noteStr = refinerSale && notes.trim() && !/refiner/i.test(notes) ? ("[Refiner sale] " + notes.trim()) : (refinerSale && !notes.trim() ? "[Refiner sale]" : notes.trim());
       const payload = isEdit
-        ? {action,sale_id:sale.sale_id,updates:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}}
-        : {action,data:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:notes.trim(),shipment_ids:selectedShipIds.join(",")}};
+        ? {action,sale_id:sale.sale_id,updates:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr}}
+        : {action,data:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr}};
       const r = await apiPost(payload);
       if (r?.success) onSave(); else alert("Save failed: "+(r?.error||"unknown"));
     } catch(e) { alert("Save failed: "+(e.message||e)); }
@@ -4152,6 +4157,11 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
     <div style={{background:"#fff",borderRadius:12,width:"min(700px,95vw)",maxHeight:"90vh",overflow:"auto",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
       <h2 style={{margin:"0 0 6px",fontSize:18,color:G.text}}>{isEdit ? "Edit Sale" : "Record New Sale"}</h2>
       <div style={{fontSize:13,color:G.muted,marginBottom:18}}>Track what you sold, to whom, for how much.</div>
+
+      <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",marginBottom:16,border:`1px solid ${refinerSale?G.gold:G.border}`,borderRadius:8,background:refinerSale?"#FFF8EE":"#fff",cursor:"pointer",fontSize:13,color:G.text}}>
+        <input type="checkbox" checked={refinerSale} onChange={e=>setRefinerSale(e.target.checked)} style={{width:16,height:16}}/>
+        <span><b>Refiner / bulk melt</b> — metal sold to a refiner (no single shipment to link)</span>
+      </label>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
         <div>
@@ -4186,6 +4196,11 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
         <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything worth remembering — payment terms, condition adjustments, etc." rows={2} style={{width:"100%",padding:10,fontSize:14,fontFamily:"inherit",border:`1px solid ${G.border}`,borderRadius:6,resize:"vertical",boxSizing:"border-box"}}/>
       </div>
 
+      {refinerSale ? (
+        <div style={{marginBottom:14,padding:"12px 14px",border:`1px dashed ${G.border}`,borderRadius:8,background:"#FAFAF8",fontSize:13,color:G.muted}}>
+          Refiner sale — not linked to individual shipments. Enter the total refiner payout as the sale amount. Use the notes field for weight, purity, and which bins/batch this covered.
+        </div>
+      ) : (
       <div style={{marginBottom:14}}>
         <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
           Shipments sold ({selectedShipIds.length} selected{selectedShipIds.length>0 && `, cost basis $${totalCost.toFixed(2)}, profit $${profit.toFixed(2)}`})
@@ -4208,6 +4223,7 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
             })}
         </div>
       </div>
+      )}
 
       <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
         <Btn v="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
