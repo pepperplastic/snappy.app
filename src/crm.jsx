@@ -1788,6 +1788,125 @@ function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
   </div>;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  Multi-item inspection. Per-item metal/purity/weight/stones/disposition
+//  with a live suggested offer (weight × purity × spot/g × payout%), rolled
+//  up to a total offer. Spot + payout persist to Script Properties via the
+//  backend; inspection data persists on the shipment as inspection_json.
+//  Storage is via the existing updateShipment path → migrates cleanly to PG.
+// ═══════════════════════════════════════════════════════════════════════
+const INSP_PURITY = {
+  Gold:     [["10k",0.417],["14k",0.585],["18k",0.75],["22k",0.917],["24k",0.999]],
+  Silver:   [[".925 Sterling",0.925],[".999 Fine",0.999]],
+  Platinum: [[".950",0.95],[".999",0.999]],
+};
+const INSP_METALS = ["Gold","Silver","Platinum"];
+const GRAMS_PER_OZT = 31.1035;
+function inspSuggest(item, spot, payoutPct){
+  const perOz=parseFloat(spot?.[item.metal])||0, purity=parseFloat(item.purityDecimal)||0;
+  const grams=parseFloat(item.weight)||0, pct=(parseFloat(payoutPct)||0)/100;
+  return Math.max(0, grams*purity*(perOz/GRAMS_PER_OZT)*pct);
+}
+function inspMoney(n){ return "$"+(Math.round((n+Number.EPSILON)*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+function InspectionPanel({shipment, onUpdate}){
+  const parseItems=()=>{ try{ const v=shipment.inspection_json; if(!v) return []; const p=typeof v==="string"?JSON.parse(v):v; return Array.isArray(p)?p:[]; }catch(e){ return []; } };
+  const [items,setItems]=useState(parseItems());
+  const [spot,setSpot]=useState(()=>{ try{ return JSON.parse(localStorage.getItem("snappy_spot")||'{"Gold":"","Silver":"","Platinum":""}'); }catch(e){ return {Gold:"",Silver:"",Platinum:""}; } });
+  const [spotDate,setSpotDate]=useState(()=>localStorage.getItem("snappy_spot_date")||"");
+  const [payout,setPayout]=useState(()=>localStorage.getItem("snappy_payout")||"80");
+  const [saving,setSaving]=useState(false);
+  const [open,setOpen]=useState(false);
+  const todayStr=new Date().toISOString().slice(0,10);
+  const [spotOpen,setSpotOpen]=useState(!spot.Gold||spotDate!==todayStr);
+  const spotStale=spotDate&&spotDate!==todayStr;
+
+  function newItem(){ return {id:"it_"+Math.random().toString(36).slice(2,8),metal:"Gold",purityLabel:"14k",purityDecimal:0.585,weight:"",hasStones:false,stoneNote:"",disposition:"TBD",finalValue:"",overridden:false}; }
+  function addItem(){ setItems(p=>[...p,newItem()]); }
+  function removeItem(id){ setItems(p=>p.filter(i=>i.id!==id)); }
+  function update(id,patch){ setItems(p=>p.map(i=>i.id===id?{...i,...patch}:i)); }
+  function changeMetal(id,metal){ const first=INSP_PURITY[metal][0]; update(id,{metal,purityLabel:first[0],purityDecimal:first[1]}); }
+  function changePurity(id,label){ const it=items.find(i=>i.id===id); const row=INSP_PURITY[it.metal].find(r=>r[0]===label); update(id,{purityLabel:label,purityDecimal:row?row[1]:0}); }
+
+  const rows=items.map(it=>{ const suggested=inspSuggest(it,spot,payout); const final=it.overridden&&it.finalValue!==""?parseFloat(it.finalValue):suggested; return {...it,suggested,final:isNaN(final)?0:final}; });
+  const totalSuggested=rows.reduce((s,r)=>s+r.suggested,0);
+  const totalOffer=rows.reduce((s,r)=>s+r.final,0);
+
+  function saveSpot(){ localStorage.setItem("snappy_spot",JSON.stringify(spot)); localStorage.setItem("snappy_spot_date",todayStr); localStorage.setItem("snappy_payout",String(payout)); setSpotDate(todayStr); setSpotOpen(false); }
+
+  async function handleSave(){
+    setSaving(true);
+    try{
+      const payload=rows.map(r=>({metal:r.metal,purity:r.purityLabel,purityDecimal:r.purityDecimal,weight:parseFloat(r.weight)||0,hasStones:r.hasStones,stoneNote:r.stoneNote,disposition:r.disposition,suggested:Math.round(r.suggested*100)/100,finalValue:Math.round(r.final*100)/100}));
+      const total=Math.round(totalOffer*100)/100;
+      await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{inspection_json:JSON.stringify(payload),appraised_value:String(total)}});
+      onUpdate&&onUpdate({...shipment,inspection_json:JSON.stringify(payload),appraised_value:String(total)});
+    } finally { setSaving(false); }
+  }
+
+  const card={background:G.card,border:`1px solid ${G.border}`,borderRadius:10,padding:14,marginBottom:12};
+  const lbl={display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.4px"};
+  const field={width:"100%",boxSizing:"border-box",background:"#FDFAF6",color:G.text,border:`1px solid ${G.border}`,borderRadius:6,padding:"9px 10px",fontSize:15,outline:"none"};
+  const chip=(active,color)=>({flex:1,textAlign:"center",padding:"9px 6px",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",border:`1px solid ${active?color:G.border}`,background:active?color+"18":"#fff",color:active?color:G.muted});
+
+  return (
+    <div style={{marginTop:12}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",padding:"10px 12px",background:"#FBF7F0",borderRadius:8,border:`1px solid ${G.border}`}}>
+        <span style={{fontWeight:700,color:G.dark}}>🔍 Inspection {rows.length>0?`· ${rows.length} item${rows.length!==1?"s":""} · ${inspMoney(totalOffer)}`:""}</span>
+        <span style={{color:G.muted}}>{open?"▲":"▼"}</span>
+      </div>
+      {open&&<div style={{marginTop:12}}>
+        <div style={{...card,background:spotStale?"#FFF6E9":"#FBF7F0",borderColor:spotStale?G.gold:G.border}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setSpotOpen(o=>!o)}>
+            <div style={{fontWeight:700,color:G.dark,fontSize:13}}>Spot & payout{spotStale?" — update for today":""}</div>
+            <div style={{fontSize:13,color:G.muted}}>Au {spot.Gold?"$"+spot.Gold:"—"} · {payout}% {spotOpen?"▲":"▼"}</div>
+          </div>
+          {spotOpen&&<div style={{marginTop:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {INSP_METALS.map(m=><div key={m}><label style={lbl}>{m} $/ozt</label><input style={field} inputMode="decimal" value={spot[m]||""} placeholder="0" onChange={e=>setSpot(s=>({...s,[m]:e.target.value}))}/></div>)}
+            </div>
+            <div style={{marginTop:10}}><label style={lbl}>Payout % of melt</label><input style={field} inputMode="decimal" value={payout} onChange={e=>setPayout(e.target.value)}/></div>
+            <button onClick={saveSpot} style={{marginTop:10,width:"100%",background:G.dark,color:G.cream,border:"none",borderRadius:6,padding:"10px",fontWeight:600,fontSize:14,cursor:"pointer"}}>Save spot & payout</button>
+          </div>}
+        </div>
+        {rows.map((r,idx)=><div key={r.id} style={card}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{fontWeight:700,color:G.gold}}>Item {idx+1}</div>
+            <button onClick={()=>removeItem(r.id)} style={{background:"none",border:"none",color:G.muted,fontSize:20,cursor:"pointer",lineHeight:1}}>×</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div><label style={lbl}>Metal</label><select style={field} value={r.metal} onChange={e=>changeMetal(r.id,e.target.value)}>{INSP_METALS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div><label style={lbl}>Purity</label><select style={field} value={r.purityLabel} onChange={e=>changePurity(r.id,e.target.value)}>{INSP_PURITY[r.metal].map(([label])=><option key={label} value={label}>{label}</option>)}</select></div>
+          </div>
+          <div style={{marginBottom:10}}><label style={lbl}>Weight (grams)</label><input style={field} inputMode="decimal" value={r.weight} placeholder="0.0" onChange={e=>update(r.id,{weight:e.target.value})}/></div>
+          <div style={{marginBottom:10}}>
+            <label style={lbl}>Stones</label>
+            <div style={{display:"flex",gap:8,marginBottom:r.hasStones?8:0}}>
+              <div style={chip(!r.hasStones,G.muted)} onClick={()=>update(r.id,{hasStones:false})}>None</div>
+              <div style={chip(r.hasStones,G.gold)} onClick={()=>update(r.id,{hasStones:true})}>Has stones</div>
+            </div>
+            {r.hasStones&&<input style={field} value={r.stoneNote} placeholder="e.g. ~1ct round diamond center" onChange={e=>update(r.id,{stoneNote:e.target.value})}/>}
+          </div>
+          <div style={{marginBottom:10}}>
+            <label style={lbl}>Disposition</label>
+            <div style={{display:"flex",gap:8}}>{["Melt","Retail","TBD"].map(d=><div key={d} style={chip(r.disposition===d,d==="Melt"?G.orange:d==="Retail"?G.green:G.muted)} onClick={()=>update(r.id,{disposition:d})}>{d}</div>)}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#FBF7F0",borderRadius:8,padding:"10px 12px"}}>
+            <div style={{fontSize:13,color:G.muted}}>Suggested<br/><span style={{fontSize:17,fontWeight:700,color:G.text}}>{inspMoney(r.suggested)}</span></div>
+            <div style={{textAlign:"right"}}><label style={{...lbl,textAlign:"right"}}>Final value</label><input style={{...field,width:110,textAlign:"right",fontSize:16,fontWeight:600}} inputMode="decimal" value={r.overridden?r.finalValue:""} placeholder={inspMoney(r.suggested).replace("$","")} onChange={e=>update(r.id,{finalValue:e.target.value,overridden:true})}/></div>
+          </div>
+        </div>)}
+        <button onClick={addItem} style={{width:"100%",background:"#fff",color:G.gold,border:`1px dashed ${G.gold}`,borderRadius:8,padding:"12px",fontWeight:600,fontSize:14,cursor:"pointer",marginBottom:14}}>+ Add item</button>
+        {rows.length>0&&<div style={{...card,background:G.dark,color:G.cream,borderColor:G.dark}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,opacity:0.8,marginBottom:4}}><span>{rows.length} item{rows.length!==1?"s":""} · suggested</span><span>{inspMoney(totalSuggested)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><span style={{fontWeight:700,fontSize:16}}>Offer to customer</span><span style={{fontWeight:700,fontSize:24,color:G.goldLt}}>{inspMoney(totalOffer)}</span></div>
+          <button onClick={handleSave} disabled={saving} style={{marginTop:12,width:"100%",background:G.gold,color:"#fff",border:"none",borderRadius:8,padding:"13px",fontWeight:700,fontSize:15,cursor:saving?"wait":"pointer",opacity:saving?0.6:1}}>{saving?"Saving…":"Save inspection · sets appraised "+inspMoney(totalOffer)}</button>
+        </div>}
+      </div>}
+    </div>
+  );
+}
+
 // Always-visible, inline-editable bin field for the detail panel (mobile-friendly).
 // Shows current bin (or "—") and lets you tap to edit + save without opening the full edit form.
 function InlineBinEditor({shipment, onUpdate}) {
@@ -2602,6 +2721,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           </div>}
           <Field label="Shipping Type" value={shipment.shipping_type}/>
           <InlineBinEditor shipment={shipment} onUpdate={onUpdate}/>
+          <InspectionPanel shipment={shipment} onUpdate={onUpdate}/>
           <NotesPanel shipment={shipment}/>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
