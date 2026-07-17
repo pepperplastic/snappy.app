@@ -4133,13 +4133,16 @@ function SalesTab({shipments, customers}) {
 
   // Refiner/bulk-melt sales have no linked shipment, so there's no real cost
   // basis — they were showing $0 cost / 100% profit, which inflated totals.
-  // For those we IMPUTE a cost at an assumed 20% margin (cost = 80% of revenue)
-  // and mark it with an asterisk. This is display-only: the assumption is never
-  // written to the sheet, so stored data stays truthful.
-  const REFINER_ASSUMED_MARGIN = 0.20;
+  // For those we IMPUTE a cost from an assumed margin (cost = revenue × (1-margin))
+  // and mark it with an asterisk. The margin is editable per-sale in the Sale
+  // modal (margin_assumption); blank falls back to the default below.
+  const REFINER_DEFAULT_MARGIN = 20;   // percent
   function isRefinerSale(sale) {
-    const noShipments = !String(sale.shipment_ids || "").trim();
-    return noShipments;
+    return !String(sale.shipment_ids || "").trim();
+  }
+  function saleAssumedMarginPct(sale) {
+    const v = parseFloat(sale.margin_assumption);
+    return (!isNaN(v) && v >= 0 && v < 100) ? v : REFINER_DEFAULT_MARGIN;
   }
   // Render a stored date as YYYY-MM-DD regardless of how it was stored
   // (ISO string, JS Date string, or already-short). Display-only.
@@ -4164,16 +4167,18 @@ function SalesTab({shipments, customers}) {
     const revenue = parseFloat(sale.amount) || 0;
     let totalCost = ships.reduce((sum, s) => sum + (parseFloat(s.purchase_price) || 0), 0);
     let imputed = false;
+    let assumedPct = null;
     // No linked shipments (refiner/bulk melt) → impute cost at the assumed margin
     if (isRefinerSale(sale) && revenue > 0) {
-      totalCost = revenue * (1 - REFINER_ASSUMED_MARGIN);
+      assumedPct = saleAssumedMarginPct(sale);
+      totalCost = revenue * (1 - assumedPct/100);
       imputed = true;
     }
     const profit = revenue - totalCost;
     const margin = totalCost > 0 ? (profit / totalCost) * 100 : null;
     const customerNames = [...new Set(ships.map(s => custById[s.customer_id]?.name).filter(Boolean))].join(", ");
     const items = ships.map(s => s.item || s.shipment_id).filter(Boolean);
-    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed };
+    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct };
   }
 
   const totalRevenue = sales.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
@@ -4225,7 +4230,7 @@ function SalesTab({shipments, customers}) {
                  <div style={{fontSize:11,marginTop:2}}>{s.ids.join(", ")}</div>
                </td>
                <td style={{padding:"10px 12px",fontSize:12,color:G.muted,textTransform:"capitalize"}}>{sale.payment_method ? sale.payment_method.replace(/_/g," ") : "—"}</td>
-               <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}} title={s.imputed?`Assumed cost — no linked shipment. Imputed at ${Math.round(REFINER_ASSUMED_MARGIN*100)}% margin.`:""}>
+               <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}} title={s.imputed?`Assumed cost — no linked shipment. Imputed at ${s.assumedPct}% margin. Edit the sale to change.`:""}>
                  ${s.totalCost.toFixed(2)}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}
                </td>
                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>${(parseFloat(sale.amount)||0).toFixed(2)}</td>
@@ -4246,7 +4251,7 @@ function SalesTab({shipments, customers}) {
          </tbody>
        </table>
        {sales.some(sl=>summarizeSale(sl).imputed) && <div style={{padding:"10px 12px",fontSize:12,color:G.muted,fontStyle:"italic"}}>
-         <span style={{color:G.gold,fontWeight:700}}>*</span> Refiner/bulk sale — no linked shipment, so cost is <b>assumed</b> at a {Math.round(REFINER_ASSUMED_MARGIN*100)}% margin (cost = {Math.round((1-REFINER_ASSUMED_MARGIN)*100)}% of revenue). Not a recorded cost.
+         <span style={{color:G.gold,fontWeight:700}}>*</span> Refiner/bulk sale — no linked shipment, so cost is <b>assumed</b> from a margin % (default {REFINER_DEFAULT_MARGIN}%, editable per sale via Edit). Not a recorded cost.
        </div>}
      </div>
     }
@@ -4267,6 +4272,7 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   // Refiner/bulk-melt sale: metal sold to a refiner can't be tied to one inbound
   // shipment (many items pooled into one melt), so allow recording without a link.
   const [refinerSale, setRefinerSale] = useState(!!(sale && String(sale.shipment_ids||"").trim()==="" ));
+  const [marginAssumption, setMarginAssumption] = useState(sale?.margin_assumption ?? "");
 
   const custById = useMemo(() => {
     const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
@@ -4299,9 +4305,11 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
       const action = isEdit ? "updateSale" : "addSale";
       const shipIdsStr = refinerSale ? "" : selectedShipIds.join(",");
       const noteStr = refinerSale && notes.trim() && !/refiner/i.test(notes) ? ("[Refiner sale] " + notes.trim()) : (refinerSale && !notes.trim() ? "[Refiner sale]" : notes.trim());
+      const marginStr = refinerSale ? String(marginAssumption ?? "").trim() : "";
+      const fields = {buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr,margin_assumption:marginStr};
       const payload = isEdit
-        ? {action,sale_id:sale.sale_id,updates:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr}}
-        : {action,data:{buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr}};
+        ? {action,sale_id:sale.sale_id,updates:fields}
+        : {action,data:fields};
       const r = await apiPost(payload);
       if (r?.success) onSave(); else alert("Save failed: "+(r?.error||"unknown"));
     } catch(e) { alert("Save failed: "+(e.message||e)); }
@@ -4360,6 +4368,15 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
       {refinerSale ? (
         <div style={{marginBottom:14,padding:"12px 14px",border:`1px dashed ${G.border}`,borderRadius:8,background:"#FAFAF8",fontSize:13,color:G.muted}}>
           Refiner sale — not linked to individual shipments. Enter the total refiner payout as the sale amount. Use the notes field for weight, purity, and which bins/batch this covered.
+          <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+            <label style={{fontSize:12,fontWeight:600,color:G.text,whiteSpace:"nowrap"}}>Assumed margin %</label>
+            <input value={marginAssumption} onChange={e=>setMarginAssumption(e.target.value)} placeholder="20"
+              inputMode="decimal"
+              style={{width:80,padding:"6px 8px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
+            <span style={{fontSize:11,color:G.muted}}>
+              cost = {(() => { const m=parseFloat(marginAssumption); const pct=(!isNaN(m)&&m>=0&&m<100)?m:20; return (100-pct).toFixed(0); })()}% of revenue · blank = 20% default
+            </span>
+          </div>
         </div>
       ) : (
       <div style={{marginBottom:14}}>
