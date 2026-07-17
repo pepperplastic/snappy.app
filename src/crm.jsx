@@ -4131,15 +4131,49 @@ function SalesTab({shipments, customers}) {
     const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
   }, [customers]);
 
+  // Refiner/bulk-melt sales have no linked shipment, so there's no real cost
+  // basis — they were showing $0 cost / 100% profit, which inflated totals.
+  // For those we IMPUTE a cost at an assumed 20% margin (cost = 80% of revenue)
+  // and mark it with an asterisk. This is display-only: the assumption is never
+  // written to the sheet, so stored data stays truthful.
+  const REFINER_ASSUMED_MARGIN = 0.20;
+  function isRefinerSale(sale) {
+    const noShipments = !String(sale.shipment_ids || "").trim();
+    return noShipments;
+  }
+  // Render a stored date as YYYY-MM-DD regardless of how it was stored
+  // (ISO string, JS Date string, or already-short). Display-only.
+  function fmtSaleDate(v) {
+    const raw = String(v || "").trim();
+    if (!raw) return "—";
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);   // already ISO-ish
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    const d = new Date(raw);                            // JS Date string etc
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const mo = String(d.getMonth()+1).padStart(2,"0");
+      const da = String(d.getDate()).padStart(2,"0");
+      return `${y}-${mo}-${da}`;
+    }
+    return raw.slice(0,10);
+  }
+
   function summarizeSale(sale) {
     const ids = String(sale.shipment_ids || "").split(",").map(s => s.trim()).filter(Boolean);
     const ships = ids.map(id => shipById[id]).filter(Boolean);
-    const totalCost = ships.reduce((sum, s) => sum + (parseFloat(s.purchase_price) || 0), 0);
-    const profit = (parseFloat(sale.amount) || 0) - totalCost;
+    const revenue = parseFloat(sale.amount) || 0;
+    let totalCost = ships.reduce((sum, s) => sum + (parseFloat(s.purchase_price) || 0), 0);
+    let imputed = false;
+    // No linked shipments (refiner/bulk melt) → impute cost at the assumed margin
+    if (isRefinerSale(sale) && revenue > 0) {
+      totalCost = revenue * (1 - REFINER_ASSUMED_MARGIN);
+      imputed = true;
+    }
+    const profit = revenue - totalCost;
     const margin = totalCost > 0 ? (profit / totalCost) * 100 : null;
     const customerNames = [...new Set(ships.map(s => custById[s.customer_id]?.name).filter(Boolean))].join(", ");
     const items = ships.map(s => s.item || s.shipment_id).filter(Boolean);
-    return { ids, ships, totalCost, profit, margin, customerNames, items };
+    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed };
   }
 
   const totalRevenue = sales.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
@@ -4184,17 +4218,21 @@ function SalesTab({shipments, customers}) {
            {sales.slice().sort((a,b)=>new Date(b.sale_date||b.created_at)-new Date(a.sale_date||a.created_at)).map(sale => {
              const s = summarizeSale(sale);
              return <tr key={sale.sale_id} style={{borderBottom:`1px solid ${G.border}`,fontSize:13}}>
-               <td style={{padding:"10px 12px",color:G.muted}}>{sale.sale_date || (sale.created_at && new Date(sale.created_at).toLocaleDateString())}</td>
+               <td style={{padding:"10px 12px",color:G.muted}}>{fmtSaleDate(sale.sale_date || sale.created_at)}</td>
                <td style={{padding:"10px 12px",fontWeight:600}}>{sale.buyer_name}</td>
                <td style={{padding:"10px 12px",fontSize:12,color:G.muted,maxWidth:300}}>
                  <div>{s.items.length} item{s.items.length!==1?"s":""}{s.customerNames?` · from ${s.customerNames}`:""}</div>
                  <div style={{fontSize:11,marginTop:2}}>{s.ids.join(", ")}</div>
                </td>
                <td style={{padding:"10px 12px",fontSize:12,color:G.muted,textTransform:"capitalize"}}>{sale.payment_method ? sale.payment_method.replace(/_/g," ") : "—"}</td>
-               <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}}>${s.totalCost.toFixed(2)}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}} title={s.imputed?`Assumed cost — no linked shipment. Imputed at ${Math.round(REFINER_ASSUMED_MARGIN*100)}% margin.`:""}>
+                 ${s.totalCost.toFixed(2)}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}
+               </td>
                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>${(parseFloat(sale.amount)||0).toFixed(2)}</td>
-               <td style={{padding:"10px 12px",textAlign:"right",color:s.profit>=0?G.green:G.red,fontWeight:600}}>${s.profit.toFixed(2)}</td>
-               <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:G.muted}}>{s.margin!==null?s.margin.toFixed(0)+"%":"—"}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",color:s.profit>=0?G.green:G.red,fontWeight:600}}>
+                 ${s.profit.toFixed(2)}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}
+               </td>
+               <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:G.muted}}>{s.margin!==null?s.margin.toFixed(0)+"%":"—"}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}</td>
                <td style={{padding:"10px 12px",textAlign:"right"}}>
                  <Btn v="ghost" small onClick={()=>setEditingSale(sale)}>Edit</Btn>
                  <Btn v="ghost" small onClick={async()=>{
@@ -4207,6 +4245,9 @@ function SalesTab({shipments, customers}) {
            })}
          </tbody>
        </table>
+       {sales.some(sl=>summarizeSale(sl).imputed) && <div style={{padding:"10px 12px",fontSize:12,color:G.muted,fontStyle:"italic"}}>
+         <span style={{color:G.gold,fontWeight:700}}>*</span> Refiner/bulk sale — no linked shipment, so cost is <b>assumed</b> at a {Math.round(REFINER_ASSUMED_MARGIN*100)}% margin (cost = {Math.round((1-REFINER_ASSUMED_MARGIN)*100)}% of revenue). Not a recorded cost.
+       </div>}
      </div>
     }
   </div>;
