@@ -4157,7 +4157,21 @@ function SalesTab({shipments, customers}) {
   // For those we IMPUTE a cost from an assumed margin (cost = revenue × (1-margin))
   // and mark it with an asterisk. The margin is editable per-sale in the Sale
   // modal (margin_assumption); blank falls back to the default below.
-  const REFINER_DEFAULT_MARGIN = 20;   // percent
+  // AUG 3: when a sale has no linked shipment we can't know the real cost, so
+  // we impute one from an assumed margin. Raised 20 → 30 (i.e. cost = 70% of
+  // revenue) to match what DW actually pays relative to resale.
+  // NOTE: this is an ASSUMPTION, not a recorded cost — every imputed figure is
+  // marked with * in the table so it never reads as measured.
+  const UNLINKED_DEFAULT_MARGIN = 30;   // percent
+  const REFINER_DEFAULT_MARGIN = UNLINKED_DEFAULT_MARGIN;  // legacy alias
+  // eBay takes a cut of gross (final value fee + fixed per-order). Rather than
+  // hand-discounting the sale amount — which made the books impossible to
+  // reconcile against eBay's own report — record GROSS "Sold For" as the sale
+  // amount and subtract the fee here as its own line.
+  const EBAY_FEE_PCT = 15;
+  function isEbaySale(sale) {
+    return /ebay/i.test(String(sale.buyer_name || ""));
+  }
   function isRefinerSale(sale) {
     return !String(sale.shipment_ids || "").trim();
   }
@@ -4189,21 +4203,28 @@ function SalesTab({shipments, customers}) {
     let totalCost = ships.reduce((sum, s) => sum + (parseFloat(s.purchase_price) || 0), 0);
     let imputed = false;
     let assumedPct = null;
-    // No linked shipments (refiner/bulk melt) → impute cost at the assumed margin
+    // No linked shipments (refiner, bulk melt, or simply unmatched) → impute
+    // cost at the assumed margin.
     if (isRefinerSale(sale) && revenue > 0) {
       assumedPct = saleAssumedMarginPct(sale);
       totalCost = revenue * (1 - assumedPct/100);
       imputed = true;
     }
-    const profit = revenue - totalCost;
+    // eBay fee: flat % of gross, computed here so the recorded amount can stay
+    // gross and reconcile 1:1 against eBay's orders report.
+    const isEbay = isEbaySale(sale);
+    const fees = isEbay ? revenue * (EBAY_FEE_PCT/100) : 0;
+    const netRevenue = revenue - fees;
+    const profit = netRevenue - totalCost;
     const margin = totalCost > 0 ? (profit / totalCost) * 100 : null;
     const customerNames = [...new Set(ships.map(s => custById[s.customer_id]?.name).filter(Boolean))].join(", ");
     const items = ships.map(s => s.item || s.shipment_id).filter(Boolean);
-    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct };
+    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct, fees, netRevenue, isEbay };
   }
 
   const totalRevenue = sales.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
   const totalProfit = sales.reduce((sum, s) => sum + summarizeSale(s).profit, 0);
+  const totalFees   = sales.reduce((sum, s) => sum + summarizeSale(s).fees, 0);
 
   return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:24,background:G.bg}}>
     {showAdd && <SaleModal shipments={shipments} customers={customers} onSave={()=>{setShowAdd(false);loadSales();}} onCancel={()=>setShowAdd(false)} initialShipmentIds={[]}/>}
@@ -4213,7 +4234,8 @@ function SalesTab({shipments, customers}) {
       <h2 style={{margin:0,fontSize:22,color:G.text}}>Sales</h2>
       <div style={{flex:1}}/>
       <div style={{fontSize:13,color:G.muted}}>
-        Total revenue: <strong style={{color:G.text}}>${totalRevenue.toFixed(2)}</strong>
+        Gross revenue: <strong style={{color:G.text}}>${totalRevenue.toFixed(2)}</strong>
+        {totalFees>0 && <>{" · "}Fees: <strong style={{color:G.red}}>−${totalFees.toFixed(2)}</strong></>}
         {" · "}Total profit: <strong style={{color:totalProfit>=0?G.green:G.red}}>${totalProfit.toFixed(2)}</strong>
       </div>
       <Btn v="gold" onClick={()=>setShowAdd(true)}>+ Add Sale</Btn>
@@ -4235,6 +4257,7 @@ function SalesTab({shipments, customers}) {
              <th style={{textAlign:"left",padding:"10px 12px"}}>Payment</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Cost</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Sold For</th>
+             <th style={{textAlign:"right",padding:"10px 12px"}}>Fees</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Profit</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Margin</th>
              <th style={{padding:"10px 12px"}}/>
@@ -4255,6 +4278,9 @@ function SalesTab({shipments, customers}) {
                  ${s.totalCost.toFixed(2)}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}
                </td>
                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>${(parseFloat(sale.amount)||0).toFixed(2)}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",color:G.muted,fontSize:12}} title={s.isEbay?`eBay fee auto-calculated at ${EBAY_FEE_PCT}% of gross`:"No marketplace fee"}>
+                 {s.fees>0 ? "−$"+s.fees.toFixed(2) : "—"}
+               </td>
                <td style={{padding:"10px 12px",textAlign:"right",color:s.profit>=0?G.green:G.red,fontWeight:600}}>
                  ${s.profit.toFixed(2)}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}
                </td>
@@ -4272,7 +4298,7 @@ function SalesTab({shipments, customers}) {
          </tbody>
        </table>
        {sales.some(sl=>summarizeSale(sl).imputed) && <div style={{padding:"10px 12px",fontSize:12,color:G.muted,fontStyle:"italic"}}>
-         <span style={{color:G.gold,fontWeight:700}}>*</span> Refiner/bulk sale — no linked shipment, so cost is <b>assumed</b> from a margin % (default {REFINER_DEFAULT_MARGIN}%, editable per sale via Edit). Not a recorded cost.
+         <span style={{color:G.gold,fontWeight:700}}>*</span> No linked shipment (refiner, bulk melt, or unmatched), so cost is <b>assumed</b> from a margin % (default {UNLINKED_DEFAULT_MARGIN}%, editable per sale via Edit) — not a recorded cost. Link a shipment to replace the assumption with the real purchase price. eBay fees are auto-calculated at {EBAY_FEE_PCT}% of gross and deducted before profit.
        </div>}
      </div>
     }
@@ -4320,13 +4346,19 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   async function save() {
     if (!buyerName.trim()) { alert("Buyer name required"); return; }
     if (!amount || isNaN(parseFloat(amount))) { alert("Amount must be a number"); return; }
-    if (selectedShipIds.length === 0 && !refinerSale) { alert("Select at least one shipment, or check \u201CRefiner / bulk melt\u201D above."); return; }
+    // AUG 3: linking is now OPTIONAL. Previously you had to either link a
+    // shipment or tick "Refiner / bulk melt" — so unmatched sales got labelled
+    // as refiner melts just to get past this gate, which polluted the data.
+    // An unlinked sale simply gets an imputed cost, clearly marked with * .
     setSaving(true);
     try {
       const action = isEdit ? "updateSale" : "addSale";
-      const shipIdsStr = refinerSale ? "" : selectedShipIds.join(",");
+      const unlinked = refinerSale || selectedShipIds.length === 0;
+      const shipIdsStr = unlinked ? "" : selectedShipIds.join(",");
+      // Only stamp "[Refiner sale]" when the box is actually ticked — an
+      // unlinked eBay/retail sale is not a refiner melt.
       const noteStr = refinerSale && notes.trim() && !/refiner/i.test(notes) ? ("[Refiner sale] " + notes.trim()) : (refinerSale && !notes.trim() ? "[Refiner sale]" : notes.trim());
-      const marginStr = refinerSale ? String(marginAssumption ?? "").trim() : "";
+      const marginStr = unlinked ? String(marginAssumption ?? "").trim() : "";
       const fields = {buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr,margin_assumption:marginStr};
       const payload = isEdit
         ? {action,sale_id:sale.sale_id,updates:fields}
@@ -4350,7 +4382,7 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
 
       <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",marginBottom:16,border:`1px solid ${refinerSale?G.gold:G.border}`,borderRadius:8,background:refinerSale?"#FFF8EE":"#fff",cursor:"pointer",fontSize:13,color:G.text}}>
         <input type="checkbox" checked={refinerSale} onChange={e=>setRefinerSale(e.target.checked)} style={{width:16,height:16}}/>
-        <span><b>Refiner / bulk melt</b> — metal sold to a refiner (no single shipment to link)</span>
+        <span><b>Refiner / bulk melt</b> — metal pooled and sold to a refiner. Tick only if this really was a melt; for an unmatched eBay or retail sale just leave the shipment list empty.</span>
       </label>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
@@ -4391,11 +4423,11 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
           Refiner sale — not linked to individual shipments. Enter the total refiner payout as the sale amount. Use the notes field for weight, purity, and which bins/batch this covered.
           <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
             <label style={{fontSize:12,fontWeight:600,color:G.text,whiteSpace:"nowrap"}}>Assumed margin %</label>
-            <input value={marginAssumption} onChange={e=>setMarginAssumption(e.target.value)} placeholder="20"
+            <input value={marginAssumption} onChange={e=>setMarginAssumption(e.target.value)} placeholder="30"
               inputMode="decimal"
               style={{width:80,padding:"6px 8px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
             <span style={{fontSize:11,color:G.muted}}>
-              cost = {(() => { const m=parseFloat(marginAssumption); const pct=(!isNaN(m)&&m>=0&&m<100)?m:20; return (100-pct).toFixed(0); })()}% of revenue · blank = 20% default
+              cost = {(() => { const m=parseFloat(marginAssumption); const pct=(!isNaN(m)&&m>=0&&m<100)?m:30; return (100-pct).toFixed(0); })()}% of revenue · blank = 30% default
             </span>
           </div>
         </div>
@@ -4405,6 +4437,11 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
           Shipments sold ({selectedShipIds.length} selected{selectedShipIds.length>0 && `, cost basis $${totalCost.toFixed(2)}, profit $${profit.toFixed(2)}`})
         </label>
         <input value={shipFilter} onChange={e=>setShipFilter(e.target.value)} placeholder="Filter by name, item, or shipment ID…" style={{width:"100%",padding:"8px 12px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box",marginBottom:8}}/>
+        {selectedShipIds.length === 0 && (
+          <div style={{marginBottom:8,padding:"8px 10px",background:"#FFF8EE",border:`1px solid ${G.gold}55`,borderRadius:6,fontSize:12,color:G.text,lineHeight:1.45}}>
+            No shipment linked — that's fine. Cost will be <b>assumed</b> at 30% margin (cost = 70% of the sale amount) and shown with a <b>*</b> so it never reads as a real figure. Link one whenever you know which inbound it came from.
+          </div>
+        )}
         <div style={{border:`1px solid ${G.border}`,borderRadius:6,maxHeight:260,overflow:"auto"}}>
           {eligible.length === 0 ? <div style={{padding:14,color:G.muted,fontSize:13}}>No purchased shipments match.</div> :
             eligible.map(s => {
