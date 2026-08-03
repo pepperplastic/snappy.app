@@ -16,9 +16,8 @@ function useIsMobile() {
 // PIN: 5437
 // ═══════════════════════════════════════════════════════════
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby82CuMrlr0us5SUSCusqzGoxZYHPQg9nQuzalIplObIjtbXNUpRBNPrJWuV1qimmJbgA/exec";
-const CRM_KEY    = "snappy_crm_2026";
-const PIN        = "5437";
+const API_BASE   = "/api/crm-proxy";
+const AUTH_URL   = "/api/crm-auth";
 const CACHE_KEY  = "sg_crm_v5b_cache";
 const JUNK_KEY   = "sg_crm_junk_emails";
 
@@ -223,11 +222,13 @@ function avatarColor(str) {
 
 // ── API ───────────────────────────────────────────────────
 async function apiFetch(params) {
-  const res = await fetch(SCRIPT_URL+"?"+new URLSearchParams(params).toString());
+  const res = await fetch(API_BASE+"?"+new URLSearchParams(params).toString(), {credentials:"same-origin"});
+  if (res.status === 401) { window.location.reload(); return null; }
   return res.json();
 }
 async function apiPost(body) {
-  const res = await fetch(SCRIPT_URL,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(body)});
+  const res = await fetch(API_BASE,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});
+  if (res.status === 401) { window.location.reload(); return null; }
   return res.json();
 }
 
@@ -326,14 +327,25 @@ function Sel({label,value,onChange,options}) {
 // ══════════════════════════════════════════════════════════
 
 function PinGate({onUnlock}) {
-  const [pin,setPin]=useState(""); const [err,setErr]=useState(false);
-  function submit(){if(pin===PIN){onUnlock();}else{setErr(true);setTimeout(()=>setErr(false),800);setPin("");}}
+  const [pw,setPw]=useState(""); const [err,setErr]=useState(false); const [busy,setBusy]=useState(false);
+  async function submit(){
+    if(!pw||busy) return;
+    setBusy(true);
+    try{
+      const res=await fetch(AUTH_URL,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({password:pw})});
+      const data=await res.json();
+      if(res.ok&&data.ok){ onUnlock(); }
+      else { setErr(true); setTimeout(()=>setErr(false),1200); setPw(""); }
+    }catch{ setErr(true); setTimeout(()=>setErr(false),1200); }
+    setBusy(false);
+  }
   return <div style={{minHeight:"100vh",background:G.dark,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:24}}>
     <div style={{color:G.gold,fontSize:28,fontFamily:"'Georgia',serif",letterSpacing:"0.1em"}}>SNAPPY<span style={{color:G.cream}}>.GOLD</span></div>
     <div style={{color:G.muted,fontSize:13}}>CRM v5</div>
     <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}>
-      <input type="password" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="Enter PIN" autoFocus style={{background:err?"#3a1a1a":"#2a2420",color:G.cream,border:`1px solid ${err?G.red:G.gold}55`,borderRadius:8,padding:"12px 20px",fontSize:18,outline:"none",textAlign:"center",letterSpacing:"0.3em",width:160,transition:"all 0.15s"}}/>
-      <Btn v="gold" onClick={submit} style={{width:160,justifyContent:"center"}}>Unlock</Btn>
+      <input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="Password" autoFocus style={{background:err?"#3a1a1a":"#2a2420",color:G.cream,border:`1px solid ${err?G.red:G.gold}55`,borderRadius:8,padding:"12px 20px",fontSize:16,outline:"none",textAlign:"center",width:260,transition:"all 0.15s"}}/>
+      <Btn v="gold" onClick={submit} disabled={busy} style={{width:260,justifyContent:"center"}}>{busy?"Checking…":"Unlock"}</Btn>
+      {err&&<div style={{color:G.red,fontSize:12}}>Incorrect password</div>}
     </div>
   </div>;
 }
@@ -3800,7 +3812,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
   async function loadLeads(){
     setLoading(true);
     try {
-      const res=await apiFetch({action:"crm_leads",key:CRM_KEY});
+      const res=await apiFetch({action:"crm_leads"});
       if(res.leads) setLeads(res.leads);
     } catch(e){console.error(e);}
     setLoading(false);
@@ -4861,6 +4873,14 @@ function CohortComparison({shipments, fmt$, fmtN}) {
 export default function SnappyGoldCRM() {
   const isMobile=useIsMobile();
   const [unlocked,setUnlocked]=useState(false);
+  const [authChecked,setAuthChecked]=useState(false);
+useEffect(()=>{
+  fetch(AUTH_URL,{credentials:"same-origin"})
+    .then(r=>r.json())
+    .then(d=>{ if(d&&d.authed) setUnlocked(true); })
+    .catch(()=>{})
+    .finally(()=>setAuthChecked(true));
+},[]);
   const [customers,setCustomers]=useState([]);
   const [shipments,setShipments]=useState([]);
   const [contactLogs,setContactLogs]=useState([]);
@@ -4930,7 +4950,8 @@ export default function SnappyGoldCRM() {
   const completeCount=shipments.filter(s=>COMPLETE_STAGES.includes(s.stage)).length;
   const urgentCount=shipments.filter(s=>s.is_urgent==="true"||s.is_urgent===true).length;
 
-  if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
+if(!authChecked) return <div style={{minHeight:"100vh",background:G.dark}}/>;
+if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
 
   return <div style={{height:"100vh",display:"flex",flexDirection:"column",background:G.bg,fontFamily:"'Georgia','Times New Roman',serif",color:G.text}}>
     {/* Top bar */}
