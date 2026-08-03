@@ -2835,7 +2835,16 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
                     ready={loReady}
                     missing={loMissing}
                     onSuccess={(result)=>{
-                      onSave && onSave({leadsonline_submitted_at:result.submitted_at});
+                      // AUG 3 FIX: this called `onSave`, which is not a prop of
+                      // DetailPane (its props are onUpdate/onNewShipment/onClose).
+                      // An undeclared identifier throws a ReferenceError — and
+                      // `onSave &&` does NOT guard that, it only guards undefined.
+                      // The throw was caught by submit()'s catch, which meant the
+                      // `if (res.photos_pending)` branch right after this call was
+                      // never reached: inventory photos were never uploaded to
+                      // LeadsOnline (FL 538.32(4) transaction photos), and the
+                      // local row was never stamped so the reminder banner stayed up.
+                      onUpdate({...shipment, leadsonline_submitted_at: result.submitted_at});
                     }}
                   />
                 )}
@@ -3868,7 +3877,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
     {/* Right */}
     {sel?<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",position:isMobile?"fixed":"relative",inset:isMobile?"0":undefined,zIndex:isMobile?100:undefined,background:isMobile?"#fff":undefined}}>
       {isMobile&&<div style={{padding:"10px 16px",borderBottom:`1px solid ${G.border}`,background:G.dark,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-        <button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+        <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:G.gold,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
       </div>}
       <div style={{flex:1,overflow:"auto",padding:20}}>
       <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:20}}>
