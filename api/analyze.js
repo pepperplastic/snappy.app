@@ -30,12 +30,17 @@ function hostAllowed(host) {
   return h.endsWith('.vercel.app'); // preview deployments
 }
 
-// Models this endpoint may call. App.jsx uses sonnet-4-6 for estimates;
-// crm.jsx uses sonnet-4-20250514 for ID parsing. Anything else is refused
-// rather than silently billed.
+// Models this endpoint may call. Anything not listed silently falls back to
+// DEFAULT_MODEL rather than being billed or 404'd.
+//
+// AUG 3: crm.jsx's parseIdPhoto still asks for 'claude-sonnet-4-20250514',
+// which Anthropic has retired — that request was 404ing, so ID-photo parsing
+// had been failing (operators were hand-typing every ID number and DOB).
+// Deliberately NOT allowlisted, so it falls through to the current model and
+// starts working again without a crm.jsx change. Fix the string there too
+// when convenient, but this endpoint no longer depends on it.
 const ALLOWED_MODELS = new Set([
   'claude-sonnet-4-6',
-  'claude-sonnet-4-20250514',
 ]);
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
