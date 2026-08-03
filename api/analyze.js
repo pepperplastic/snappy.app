@@ -1,3 +1,48 @@
+// ═══════════════════════════════════════════════════════════════
+//  /api/analyze — Claude proxy for the photo estimate flow and the
+//  CRM's ID-photo parser.
+//
+//  AUG 3 HARDENING. This endpoint spends money on every call, so it
+//  was worth closing:
+//   • Access-Control-Allow-Origin was '*' with no auth — any site on
+//     the internet could POST to it and bill your Anthropic account.
+//     Now same-origin only.
+//   • req.body was forwarded to Anthropic wholesale, so a caller chose
+//     the model and max_tokens. Both are now validated server-side
+//     against an allowlist, and only known-good fields are forwarded.
+//   • Added an image count cap so one request can't ship 50 photos.
+//
+//  Deliberately NOT added: a login requirement. This is called by
+//  anonymous visitors on the estimate flow, which is the point of the
+//  product. Same-origin + field validation is the right ceiling here.
+// ═══════════════════════════════════════════════════════════════
+
+// Hosts allowed to call this endpoint. Vercel preview deploys are
+// included so staging keeps working.
+const ALLOWED_HOSTS = new Set([
+  'snappy.gold',
+  'www.snappy.gold',
+]);
+function hostAllowed(host) {
+  if (!host) return false;
+  const h = host.toLowerCase();
+  if (ALLOWED_HOSTS.has(h)) return true;
+  return h.endsWith('.vercel.app'); // preview deployments
+}
+
+// Models this endpoint may call. App.jsx uses sonnet-4-6 for estimates;
+// crm.jsx uses sonnet-4-20250514 for ID parsing. Anything else is refused
+// rather than silently billed.
+const ALLOWED_MODELS = new Set([
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-20250514',
+]);
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
+
+const MAX_TOKENS_CAP = 1500;  // above anything either caller legitimately needs
+const MAX_IMAGES     = 8;     // estimate flow sends a handful of angles
+const MAX_TEXT_CHARS = 40000; // the appraisal prompt is ~12k
+
 // ── Spot price cache (persists across warm invocations) ──
 let priceCache = {
   date: null,
@@ -90,19 +135,116 @@ function injectSpotPrices(body, gold, silver) {
   return modified;
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+// Build a request from ONLY the fields we permit. Anything else the caller
+// sent (system prompts, tools, extra params) is dropped rather than relayed.
+// Returns { ok:true, body } or { ok:false, error }.
+function buildSafeRequest(raw) {
+  if (!raw || typeof raw !== 'object') return { ok: false, error: 'Invalid request body' };
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  const model = ALLOWED_MODELS.has(raw.model) ? raw.model : DEFAULT_MODEL;
+
+  let maxTokens = parseInt(raw.max_tokens, 10);
+  if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 1024;
+  maxTokens = Math.min(maxTokens, MAX_TOKENS_CAP);
+
+  if (!Array.isArray(raw.messages) || raw.messages.length === 0) {
+    return { ok: false, error: 'messages required' };
+  }
+  if (raw.messages.length > 2) {
+    return { ok: false, error: 'too many messages' };
+  }
+
+  let imageCount = 0;
+  let textChars = 0;
+  const messages = [];
+
+  for (const msg of raw.messages) {
+    if (!msg || msg.role !== 'user') return { ok: false, error: 'only user messages allowed' };
+
+    // Content may be a plain string or an array of blocks.
+    if (typeof msg.content === 'string') {
+      textChars += msg.content.length;
+      messages.push({ role: 'user', content: msg.content });
+      continue;
+    }
+    if (!Array.isArray(msg.content)) return { ok: false, error: 'invalid message content' };
+
+    const blocks = [];
+    for (const b of msg.content) {
+      if (!b || typeof b !== 'object') return { ok: false, error: 'invalid content block' };
+
+      if (b.type === 'text') {
+        textChars += String(b.text || '').length;
+        blocks.push({ type: 'text', text: String(b.text || '') });
+
+      } else if (b.type === 'image') {
+        imageCount++;
+        const src = b.source || {};
+        if (src.type !== 'base64' || typeof src.data !== 'string') {
+          return { ok: false, error: 'invalid image source' };
+        }
+        if (!/^image\/(jpeg|png|gif|webp)$/.test(String(src.media_type || ''))) {
+          return { ok: false, error: 'unsupported image type' };
+        }
+        blocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: src.media_type, data: src.data },
+        });
+
+      } else {
+        // Drop anything else (tool_use, document, etc.) rather than relaying it.
+        return { ok: false, error: 'unsupported content block: ' + b.type };
+      }
+    }
+    messages.push({ role: 'user', content: blocks });
+  }
+
+  if (imageCount > MAX_IMAGES) return { ok: false, error: 'too many images' };
+  if (textChars > MAX_TEXT_CHARS) return { ok: false, error: 'prompt too long' };
+
+  const body = { model, max_tokens: maxTokens, messages };
+  // temperature is the only optional passthrough, and it's clamped.
+  if (raw.temperature !== undefined) {
+    const t = parseFloat(raw.temperature);
+    if (Number.isFinite(t)) body.temperature = Math.max(0, Math.min(1, t));
+  }
+  return { ok: true, body };
+}
+
+export default async function handler(req, res) {
+  // Same-origin only. No wildcard CORS — this endpoint is called by our own
+  // pages, so there is no legitimate cross-origin caller to allow.
+  if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  let callerHost = '';
+  try {
+    const origin = req.headers.origin;
+    const referer = req.headers.referer || req.headers.referrer;
+    if (origin) callerHost = new URL(origin).host;
+    else if (referer) callerHost = new URL(referer).host;
+  } catch {
+    callerHost = '';
+  }
+  if (!hostAllowed(callerHost)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'API key not configured' });
   }
 
   try {
+    const parsed = typeof req.body === 'string'
+      ? (() => { try { return JSON.parse(req.body); } catch { return null; } })()
+      : req.body;
+
+    const safe = buildSafeRequest(parsed);
+    if (!safe.ok) {
+      console.warn('analyze rejected request:', safe.error);
+      return res.status(400).json({ error: safe.error });
+    }
+
     // Fetch today's spot prices (cached after first call of the day)
     let gold = FALLBACK_GOLD;
     let silver = FALLBACK_SILVER;
@@ -115,7 +257,7 @@ export default async function handler(req, res) {
     }
 
     // Inject live prices into the prompt
-    const modifiedBody = injectSpotPrices(req.body, gold, silver);
+    const modifiedBody = injectSpotPrices(safe.body, gold, silver);
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
