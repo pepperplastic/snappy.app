@@ -5148,6 +5148,9 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
   const [bonusAmt,setBonusAmt] = useState(affiliate?.bonus_amount ?? "25");
   const [bonusThr,setBonusThr] = useState(affiliate?.bonus_threshold ?? "50");
   const [active,setActive]     = useState(String(affiliate?.active ?? "yes").toLowerCase() !== "no");
+  const [channelType,setChannelType] = useState(
+    String(affiliate?.channel_type || "affiliate").toLowerCase() === "campaign" ? "campaign" : "affiliate");
+  const [adSpend,setAdSpend]   = useState(affiliate?.ad_spend ?? "");
   const [notes,setNotes]       = useState(affiliate?.notes || "");
   const [saving,setSaving]     = useState(false);
 
@@ -5161,7 +5164,8 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
     try{
       const fields = { ref_code:cleanCode, name:name.trim(), contact:contact.trim(),
         cpl:String(parseFloat(cpl)||0), bonus_amount:String(parseFloat(bonusAmt)||0),
-        bonus_threshold:String(parseFloat(bonusThr)||0), active:active?"yes":"no", notes:notes.trim() };
+        bonus_threshold:String(parseFloat(bonusThr)||0), active:active?"yes":"no", notes:notes.trim(),
+        channel_type:channelType, ad_spend:String(parseFloat(adSpend)||0) };
       const res = isEdit
         ? await apiPost({action:"updateAffiliate", affiliate_id:affiliate.affiliate_id, updates:fields})
         : await apiPost({action:"addAffiliate", data:fields});
@@ -5202,25 +5206,52 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
         <input value={contact} onChange={e=>setContact(e.target.value)} placeholder="email / handle / phone" style={field}/>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:6}}>
-        <div>
-          <label style={lbl}>$ per registration</label>
-          <input value={cpl} onChange={e=>setCpl(e.target.value)} inputMode="decimal" style={field}/>
-        </div>
-        <div>
-          <label style={lbl}>Purchase bonus $</label>
-          <input value={bonusAmt} onChange={e=>setBonusAmt(e.target.value)} inputMode="decimal" style={field}/>
-        </div>
-        <div>
-          <label style={lbl}>Bonus if purchase ≥</label>
-          <input value={bonusThr} onChange={e=>setBonusThr(e.target.value)} inputMode="decimal" style={field}/>
+      <div style={{marginBottom:14}}>
+        <label style={lbl}>How you pay for this traffic</label>
+        <div style={{display:"flex",gap:8}}>
+          {[["affiliate","👤 Per lead","An affiliate/influencer paid per registration"],
+            ["campaign","📣 Ad spend","A paid campaign — cost is what you spent, e.g. Google Ads"]].map(([v,label,hint])=>{
+            const on = channelType===v;
+            const col = v==="campaign" ? G.blue : G.purple;
+            return <div key={v} onClick={()=>setChannelType(v)} title={hint} style={{
+              flex:1,textAlign:"center",padding:"9px 6px",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",
+              border:`1px solid ${on?col:G.border}`,background:on?col+"18":"#fff",color:on?col:G.muted}}>{label}</div>;
+          })}
         </div>
       </div>
-      <div style={{fontSize:11,color:G.muted,marginBottom:14,lineHeight:1.45}}>
-        Paid per completed registration, plus the bonus on each purchase clearing the threshold.
-        Changing these re-prices <b>all</b> of this affiliate's history — if you're renegotiating, consider
-        a new code instead so past cohorts keep their old rate.
-      </div>
+
+      {channelType === "affiliate" ? <>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:6}}>
+          <div>
+            <label style={lbl}>$ per registration</label>
+            <input value={cpl} onChange={e=>setCpl(e.target.value)} inputMode="decimal" style={field}/>
+          </div>
+          <div>
+            <label style={lbl}>Purchase bonus $</label>
+            <input value={bonusAmt} onChange={e=>setBonusAmt(e.target.value)} inputMode="decimal" style={field}/>
+          </div>
+          <div>
+            <label style={lbl}>Bonus if purchase ≥</label>
+            <input value={bonusThr} onChange={e=>setBonusThr(e.target.value)} inputMode="decimal" style={field}/>
+          </div>
+        </div>
+        <div style={{fontSize:11,color:G.muted,marginBottom:14,lineHeight:1.45}}>
+          Paid per completed registration, plus the bonus on each purchase clearing the threshold.
+          Changing these re-prices <b>all</b> of this affiliate's history — if you're renegotiating, consider
+          a new code instead so past cohorts keep their old rate.
+        </div>
+      </> : <>
+        <div style={{marginBottom:6}}>
+          <label style={lbl}>Ad spend to date ($)</label>
+          <input value={adSpend} onChange={e=>setAdSpend(e.target.value)} inputMode="decimal" placeholder="e.g. 1250" style={{...field,width:180}}/>
+        </div>
+        <div style={{fontSize:11,color:G.muted,marginBottom:14,lineHeight:1.45}}>
+          Hand-entered, like the inventory estimate — update it as the campaign runs. Cost here is what you
+          actually spent, not registrations × a rate, so <b>Net = margin − spend</b> is true ROI.
+          On the mature view the spend is <b>prorated</b> by registration share, since mature cohorts are only
+          part of the traffic that spend bought.
+        </div>
+      </>}
 
       <div style={{marginBottom:14}}>
         <label style={lbl}>Notes</label>
@@ -5329,7 +5360,11 @@ function MarketingTab() {
                 {a.name}{!a.active && <span style={{marginLeft:6,fontSize:10,color:G.muted}}>(inactive)</span>}
               </div>
               <code style={{flex:1,fontSize:12,color:G.muted,wordBreak:"break-all"}}>{link}</code>
-              <span style={{fontSize:11,color:G.muted,whiteSpace:"nowrap"}}>${a.cpl}/reg{a.bonus_amount>0?` + $${a.bonus_amount} ≥ $${a.bonus_threshold}`:""}</span>
+              <span style={{fontSize:11,color:G.muted,whiteSpace:"nowrap"}}>
+                {a.channel_type==="campaign"
+                  ? `spend ${money(a.ad_spend)}`
+                  : `$${a.cpl}/reg${a.bonus_amount>0?` + $${a.bonus_amount} ≥ $${a.bonus_threshold}`:""}`}
+              </span>
               <Btn v="ghost" small onClick={()=>{navigator.clipboard?.writeText(link); alert("Copied!");}}>Copy</Btn>
               <Btn v="ghost" small onClick={()=>setEditing(full)}>Edit</Btn>
               <Btn v="ghost" small onClick={()=>remove(a)}>Delete</Btn>
@@ -5350,8 +5385,9 @@ function MarketingTab() {
               <th style={th}>Purchased</th>
               <th style={th}>Buy&nbsp;%</th>
               <th style={th}>Margin</th>
-              <th style={th}>Payout</th>
+              <th style={th}>Cost</th>
               <th style={th}>Net</th>
+              <th style={th}>Cost / reg</th>
               <th style={th}>Cost / arrival</th>
             </tr>
           </thead>
@@ -5362,6 +5398,7 @@ function MarketingTab() {
               return <tr key={a.affiliate_id} style={{opacity:a.active?1:0.55}}>
                 <td style={{...td,textAlign:"left",fontWeight:600}}>
                   {a.name}
+                  {a.channel_type==="campaign" && <span style={{marginLeft:6,background:"#E8F0FF",color:G.blue,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>AD</span>}
                   <div style={{fontSize:11,color:G.muted,fontWeight:400}}>?ref={a.ref_code}</div>
                 </td>
                 <td style={td}>{b.registrations}</td>
@@ -5370,8 +5407,11 @@ function MarketingTab() {
                 <td style={{...td,color:G.green,fontWeight:600}}>{b.purchased}</td>
                 <td style={{...td,color:G.muted}}>{pct(b.purchase_rate)}</td>
                 <td style={td}>{money(b.margin)}</td>
-                <td style={{...td,color:G.red}}>{money(b.payout)}</td>
+                <td style={{...td,color:G.red}} title={b.spend_prorated?"Ad spend prorated by this cohort's share of registrations":""}>
+                  {money(b.payout)}{b.spend_prorated?"*":""}
+                </td>
                 <td style={{...td,color:netCol,fontWeight:700}}>{money(b.net)}</td>
+                <td style={{...td,color:G.muted}}>{b.cost_per_reg===null?"—":money(b.cost_per_reg)}</td>
                 <td style={{...td,color:G.muted}}>{b.cost_per_arrival===null?"—":money(b.cost_per_arrival)}</td>
               </tr>;
             })}
@@ -5380,8 +5420,10 @@ function MarketingTab() {
       </div>
 
       <div style={{marginTop:12,fontSize:11,color:G.muted,lineHeight:1.6}}>
-        <b>Net</b> = expected margin − payout owed. Negative means you're paying more than the cohort is worth —
-        that's the signal to cut the CPL. <b>Margin</b> uses <code>appraised_value</code>, which is blank on a lot of
+        <b>Cost</b> is payout owed for affiliate rows, or ad spend for <span style={{color:G.blue,fontWeight:700}}>AD</span> rows;
+        a <b>*</b> means spend was prorated to this cohort's share of registrations.
+        <b> Net</b> = expected margin − cost. Negative means the traffic costs more than it produces —
+        that's the signal to cut the CPL or the budget. <b>Margin</b> uses <code>appraised_value</code>, which is blank on a lot of
         purchased shipments, so it reads LOW until appraisals are filled in; the counts are reliable regardless.
       </div>
 
