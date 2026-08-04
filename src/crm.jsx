@@ -5121,6 +5121,282 @@ function CohortComparison({shipments, fmt$, fmtN}) {
   </div>;
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+//  MARKETING — affiliate registry, link generator, cohort analysis (Aug 3)
+//
+//  Links use ?ref=<code>, NOT utm_source. captureUtmParams() in App.jsx
+//  overwrites utm_source with 'facebook' whenever an fbclid is present, so
+//  an influencer's credit would vanish exactly when their post does well.
+//  `ref` can't collide with anything.
+//
+//  Attribution is FIRST-TOUCH: a customer belongs to whichever affiliate
+//  appeared on their earliest ref-bearing lead row, permanently.
+// ═══════════════════════════════════════════════════════════════
+
+const SITE_BASE = "https://snappy.gold";
+
+function pct(v){ return v===null||v===undefined ? "—" : (v*100).toFixed(0)+"%"; }
+function money(v){ const n=parseFloat(v)||0; return (n<0?"-$":"$")+Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0}); }
+
+function AffiliateModal({affiliate, onSave, onCancel}) {
+  const isEdit = !!affiliate;
+  const [refCode,setRefCode]   = useState(affiliate?.ref_code || "");
+  const [name,setName]         = useState(affiliate?.name || "");
+  const [contact,setContact]   = useState(affiliate?.contact || "");
+  const [cpl,setCpl]           = useState(affiliate?.cpl ?? "10");
+  const [bonusAmt,setBonusAmt] = useState(affiliate?.bonus_amount ?? "25");
+  const [bonusThr,setBonusThr] = useState(affiliate?.bonus_threshold ?? "50");
+  const [active,setActive]     = useState(String(affiliate?.active ?? "yes").toLowerCase() !== "no");
+  const [notes,setNotes]       = useState(affiliate?.notes || "");
+  const [saving,setSaving]     = useState(false);
+
+  const cleanCode = String(refCode).trim().toLowerCase().replace(/[^a-z0-9_-]/g,"");
+  const link = cleanCode ? `${SITE_BASE}/?ref=${cleanCode}` : "";
+
+  async function save(){
+    if(!cleanCode){ alert("A ref code is required — letters, numbers, - and _ only."); return; }
+    if(!name.trim()){ alert("Give the affiliate a name so you know who this is."); return; }
+    setSaving(true);
+    try{
+      const fields = { ref_code:cleanCode, name:name.trim(), contact:contact.trim(),
+        cpl:String(parseFloat(cpl)||0), bonus_amount:String(parseFloat(bonusAmt)||0),
+        bonus_threshold:String(parseFloat(bonusThr)||0), active:active?"yes":"no", notes:notes.trim() };
+      const res = isEdit
+        ? await apiPost({action:"updateAffiliate", affiliate_id:affiliate.affiliate_id, updates:fields})
+        : await apiPost({action:"addAffiliate", data:fields});
+      if(res && res.success) onSave();
+      else { alert("Save failed: "+((res&&res.error)||"unknown")); setSaving(false); }
+    }catch(e){ alert("Save failed: "+(e.message||e)); setSaving(false); }
+  }
+
+  const lbl = {display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5};
+  const field = {width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"};
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&onCancel()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(560px,95vw)",maxHeight:"90vh",overflow:"auto",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <h2 style={{margin:"0 0 6px",fontSize:18,color:G.text}}>{isEdit?"Edit affiliate":"New affiliate"}</h2>
+      <div style={{fontSize:13,color:G.muted,marginBottom:18}}>Give them a short code — it becomes their tracking link.</div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <div>
+          <label style={lbl}>Name</label>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Jane Doe / TikTok" style={field}/>
+        </div>
+        <div>
+          <label style={lbl}>Ref code</label>
+          <input value={refCode} onChange={e=>setRefCode(e.target.value)} placeholder="jane" style={field}/>
+        </div>
+      </div>
+
+      {link && <div style={{marginBottom:14,padding:"10px 12px",background:"#FFF8EE",border:`1px solid ${G.gold}55`,borderRadius:6}}>
+        <div style={{fontSize:10,fontWeight:700,color:G.gold,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Their link</div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <code style={{flex:1,fontSize:13,wordBreak:"break-all"}}>{link}</code>
+          <Btn v="ghost" small onClick={()=>{navigator.clipboard?.writeText(link); alert("Copied!");}}>Copy</Btn>
+        </div>
+      </div>}
+
+      <div style={{marginBottom:14}}>
+        <label style={lbl}>Contact (optional)</label>
+        <input value={contact} onChange={e=>setContact(e.target.value)} placeholder="email / handle / phone" style={field}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:6}}>
+        <div>
+          <label style={lbl}>$ per registration</label>
+          <input value={cpl} onChange={e=>setCpl(e.target.value)} inputMode="decimal" style={field}/>
+        </div>
+        <div>
+          <label style={lbl}>Purchase bonus $</label>
+          <input value={bonusAmt} onChange={e=>setBonusAmt(e.target.value)} inputMode="decimal" style={field}/>
+        </div>
+        <div>
+          <label style={lbl}>Bonus if purchase ≥</label>
+          <input value={bonusThr} onChange={e=>setBonusThr(e.target.value)} inputMode="decimal" style={field}/>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:G.muted,marginBottom:14,lineHeight:1.45}}>
+        Paid per completed registration, plus the bonus on each purchase clearing the threshold.
+        Changing these re-prices <b>all</b> of this affiliate's history — if you're renegotiating, consider
+        a new code instead so past cohorts keep their old rate.
+      </div>
+
+      <div style={{marginBottom:14}}>
+        <label style={lbl}>Notes</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Terms agreed, where they post, etc." style={{...field,fontFamily:"inherit",resize:"vertical"}}/>
+      </div>
+
+      <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:18,cursor:"pointer",fontSize:13,color:G.text}}>
+        <input type="checkbox" checked={active} onChange={e=>setActive(e.target.checked)} style={{width:16,height:16}}/>
+        <span>Active — link is live and payouts accrue</span>
+      </label>
+
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn v="ghost" onClick={onCancel} disabled={saving}>Cancel</Btn>
+        <Btn v="gold" onClick={save} disabled={saving}>{saving?"Saving…":(isEdit?"Save changes":"Create affiliate")}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+function MarketingTab() {
+  const [stats,setStats]     = useState(null);
+  const [loading,setLoading] = useState(true);
+  const [err,setErr]         = useState("");
+  const [matureDays,setMatureDays] = useState(30);
+  const [view,setView]       = useState("mature");   // mature | all
+  const [showAdd,setShowAdd] = useState(false);
+  const [editing,setEditing] = useState(null);
+  const [raw,setRaw]         = useState([]);         // full affiliate rows (for edit)
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr("");
+    try{
+      const [statRes, listRes] = await Promise.all([
+        apiPost({action:"getAffiliateStats", mature_days:matureDays}),
+        apiPost({action:"getAffiliates"}),
+      ]);
+      if(statRes && statRes.success) setStats(statRes); else setErr((statRes&&statRes.error)||"Couldn't load stats");
+      if(listRes && listRes.success) setRaw(listRes.affiliates||[]);
+    }catch(e){ setErr(e.message||String(e)); }
+    setLoading(false);
+  },[matureDays]);
+
+  useEffect(()=>{ load(); },[load]);
+
+  async function remove(a){
+    if(!confirm(`Delete ${a.name}? Their historical attribution stays in Lead Intake, but they'll drop off this report.`)) return;
+    const res = await apiPost({action:"deleteAffiliate", affiliate_id:a.affiliate_id});
+    if(res && res.success) load(); else alert("Delete failed: "+((res&&res.error)||"unknown"));
+  }
+
+  const rows = stats ? stats.affiliates : [];
+  const th = {padding:"10px 12px",textAlign:"right",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"};
+  const td = {padding:"10px 12px",textAlign:"right",fontSize:13,borderTop:`1px solid ${G.border}`};
+
+  return <div style={{flex:1,overflow:"auto",padding:24,background:G.bg}}>
+    {showAdd && <AffiliateModal onSave={()=>{setShowAdd(false);load();}} onCancel={()=>setShowAdd(false)}/>}
+    {editing && <AffiliateModal affiliate={editing} onSave={()=>{setEditing(null);load();}} onCancel={()=>setEditing(null)}/>}
+
+    <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
+      <h2 style={{margin:0,fontSize:22,color:G.text}}>Marketing</h2>
+      <div style={{flex:1}}/>
+      <Btn v="ghost" small onClick={load} disabled={loading}>{loading?"…":"⟳ Refresh"}</Btn>
+      <Btn v="gold" onClick={()=>setShowAdd(true)}>+ Add Affiliate</Btn>
+    </div>
+
+    {/* Cohort maturity — the guard against judging an affiliate too early */}
+    <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{fontSize:12,fontWeight:700,color:G.text}}>Counting:</div>
+      {[["mature","Mature cohorts only"],["all","Everything"]].map(([v,label])=>{
+        const on = view===v;
+        return <button key={v} onClick={()=>setView(v)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+          background:on?G.gold:"transparent",color:on?"#fff":G.muted,border:`1px solid ${on?G.gold:G.border}`}}>{label}</button>;
+      })}
+      {view==="mature" && <>
+        <span style={{fontSize:12,color:G.muted}}>registered at least</span>
+        {[14,30,60,90].map(d=>{
+          const on = matureDays===d;
+          return <button key={d} onClick={()=>setMatureDays(d)} style={{padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",
+            background:on?G.dark:"transparent",color:on?G.cream:G.muted,border:`1px solid ${on?G.dark:G.border}`}}>{d}d ago</button>;
+        })}
+      </>}
+      <div style={{flexBasis:"100%",fontSize:11,color:G.muted,lineHeight:1.5,marginTop:4}}>
+        Packages arrive on a long tail — the post-label drip alone runs to day 12. A cohort that's only a
+        week old will show a terrible ship rate purely because it hasn't matured. <b>Judge CPL on the mature view.</b>
+      </div>
+    </div>
+
+    {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+
+    {loading && !stats ? <div style={{color:G.muted}}>Loading…</div> :
+     rows.length === 0 ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
+       <div style={{fontSize:32,marginBottom:12}}>🔗</div>
+       <div style={{fontSize:14}}>No affiliates yet.</div>
+       <div style={{fontSize:12,marginTop:6}}>Add one to generate a tracking link and start measuring.</div>
+     </div> : <>
+
+      {/* Links */}
+      <div style={{background:"#fff",borderRadius:10,border:`1px solid ${G.border}`,padding:16,marginBottom:16}}>
+        <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Tracking links</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {rows.map(a=>{
+            const link = `${SITE_BASE}/?ref=${a.ref_code}`;
+            const full = raw.find(x=>x.affiliate_id===a.affiliate_id) || a;
+            return <div key={a.affiliate_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:a.active?G.bg:"#F7F5F2",borderRadius:6,opacity:a.active?1:0.6}}>
+              <div style={{minWidth:140,fontWeight:600,fontSize:13,color:G.text}}>
+                {a.name}{!a.active && <span style={{marginLeft:6,fontSize:10,color:G.muted}}>(inactive)</span>}
+              </div>
+              <code style={{flex:1,fontSize:12,color:G.muted,wordBreak:"break-all"}}>{link}</code>
+              <span style={{fontSize:11,color:G.muted,whiteSpace:"nowrap"}}>${a.cpl}/reg{a.bonus_amount>0?` + $${a.bonus_amount} ≥ $${a.bonus_threshold}`:""}</span>
+              <Btn v="ghost" small onClick={()=>{navigator.clipboard?.writeText(link); alert("Copied!");}}>Copy</Btn>
+              <Btn v="ghost" small onClick={()=>setEditing(full)}>Edit</Btn>
+              <Btn v="ghost" small onClick={()=>remove(a)}>Delete</Btn>
+            </div>;
+          })}
+        </div>
+      </div>
+
+      {/* Cohort funnel */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:10,overflow:"hidden",border:`1px solid ${G.border}`}}>
+          <thead>
+            <tr style={{background:"#1A1816",color:G.gold}}>
+              <th style={{...th,textAlign:"left"}}>Affiliate</th>
+              <th style={th}>Regs</th>
+              <th style={th}>Arrived</th>
+              <th style={th}>Ship&nbsp;%</th>
+              <th style={th}>Purchased</th>
+              <th style={th}>Buy&nbsp;%</th>
+              <th style={th}>Margin</th>
+              <th style={th}>Payout</th>
+              <th style={th}>Net</th>
+              <th style={th}>Cost / arrival</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(a=>{
+              const b = view==="mature" ? a.mature : a.all;
+              const netCol = b.net>=0 ? G.green : G.red;
+              return <tr key={a.affiliate_id} style={{opacity:a.active?1:0.55}}>
+                <td style={{...td,textAlign:"left",fontWeight:600}}>
+                  {a.name}
+                  <div style={{fontSize:11,color:G.muted,fontWeight:400}}>?ref={a.ref_code}</div>
+                </td>
+                <td style={td}>{b.registrations}</td>
+                <td style={td}>{b.arrived}</td>
+                <td style={{...td,color:G.muted}}>{pct(b.ship_rate)}</td>
+                <td style={{...td,color:G.green,fontWeight:600}}>{b.purchased}</td>
+                <td style={{...td,color:G.muted}}>{pct(b.purchase_rate)}</td>
+                <td style={td}>{money(b.margin)}</td>
+                <td style={{...td,color:G.red}}>{money(b.payout)}</td>
+                <td style={{...td,color:netCol,fontWeight:700}}>{money(b.net)}</td>
+                <td style={{...td,color:G.muted}}>{b.cost_per_arrival===null?"—":money(b.cost_per_arrival)}</td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{marginTop:12,fontSize:11,color:G.muted,lineHeight:1.6}}>
+        <b>Net</b> = expected margin − payout owed. Negative means you're paying more than the cohort is worth —
+        that's the signal to cut the CPL. <b>Margin</b> uses <code>appraised_value</code>, which is blank on a lot of
+        purchased shipments, so it reads LOW until appraisals are filled in; the counts are reliable regardless.
+      </div>
+
+      {stats && stats.unknown_refs && stats.unknown_refs.length > 0 && (
+        <div style={{marginTop:16,background:"#FFF8EC",border:`1px solid ${G.orange}55`,borderRadius:8,padding:"12px 14px",fontSize:12,color:G.text,lineHeight:1.55}}>
+          <strong style={{color:G.orange}}>⚠ Unrecognised ref codes seen in traffic:</strong>{" "}
+          {stats.unknown_refs.map(u=>`?ref=${u.ref_code} (${u.count})`).join(", ")}.
+          {" "}Either a typo in a link that's live, or an affiliate you haven't registered yet — those leads
+          aren't being credited to anyone.
+        </div>
+      )}
+    </>}
+  </div>;
+}
+
 export default function SnappyGoldCRM() {
   const isMobile=useIsMobile();
   const [unlocked,setUnlocked]=useState(false);
@@ -5192,7 +5468,7 @@ useEffect(()=>{
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"analytics",label:"Analytics",color:G.gold}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"analytics",label:"Analytics",color:G.gold}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -5239,6 +5515,7 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
       {tab==="leads"    &&<LeadsTab     activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="sales"    &&<SalesTab     shipments={shipments} customers={customers}/>}
+      {tab==="marketing"&&<MarketingTab/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
     </div>
   </div>;
