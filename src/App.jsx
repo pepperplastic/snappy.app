@@ -2142,6 +2142,115 @@ function RecentQuotesTicker() {
 // ═══════════════════════════════════════════════
 //  HERO SECTION
 // ═══════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+//  SOCIAL PROOF (Aug 4)
+//
+//  Placement is deliberate. The hero asks for a free photo upload — no trust
+//  needed, so it stays friction-light with just an accreditation badge.
+//  The REVIEWS go downstream, at the two steps where the visitor is actually
+//  being asked to commit. GA4 (July) shows those are the leaks:
+//    estimate_received → lead_form_started   66.9%
+//    lead_form_started → shipping_started    59.8%  ← worst step in the funnel
+//  Someone who typed their email and then abandoned before typing an address
+//  is having exactly the doubt these reviews answer.
+//
+//  Verbatim BBB reviews, first name + last initial as published. No review
+//  count and no aggregate rating on purpose — a 5.0 from eight people reads
+//  as friends-and-family; one specific stranger's story reads as real.
+// ═══════════════════════════════════════════════════════════════
+
+// NOTE: this is a plain typographic badge, NOT a reproduction of the BBB seal.
+// Snappy Gold is A+ RATED but NOT accredited — those are different things
+// (accreditation is a paid membership), and claiming the wrong one is the sort
+// of thing a competitor or the BBB itself will call out. Wording says rating only.
+// The official seal is for accredited businesses, so don't add one.
+function BbbBadge() {
+  return (
+    <div style={styles.bbbWrap}>
+      <span style={styles.bbbMark}>BBB</span>
+      <span style={styles.bbbText}>
+        <strong style={{ color: '#1A1A1A' }}>A+ Rating</strong>
+        <span style={{ color: muted }}> · Better Business Bureau</span>
+      </span>
+    </div>
+  )
+}
+
+const REVIEWS = [
+  {
+    quote: "I was a bit nervous sending my jewelry across the country to be appraised. I am happy to report that they gave me a fair price and promptly paid me.",
+    name: 'Lea Ann N.',
+  },
+  {
+    quote: "The appraiser reached out to me personally which I liked. I got to converse with a human. Would recommend!",
+    name: 'Sally Q.',
+  },
+  {
+    quote: "Preliminary estimates are given within seconds\u2026 shipping is a \u201Csnap\u201D using their prepaid labels. Once the item was received, an offer came within 24 hours and after accepting, payment was issued promptly.",
+    name: 'Micheline P.',
+  },
+  {
+    quote: "Great experience! Easy to work with. Quick response times. Fair payouts. It was a pleasure working with SnappyGold.",
+    name: 'Danya D.',
+  },
+  {
+    quote: "Excellent to deal with. I feel like I got a fair price and fast!!",
+    name: 'Angie D.',
+  },
+]
+
+function Stars({ size = 11 }) {
+  return (
+    <span aria-label="5 out of 5 stars" style={{ display: 'inline-flex', gap: 1, flexShrink: 0 }}>
+      {[0, 1, 2, 3, 4].map(i => (
+        <svg key={i} width={size} height={size} viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M6 0.5l1.6 3.4 3.7.5-2.7 2.6.7 3.7L6 9l-3.3 1.7.7-3.7L.7 4.4l3.7-.5L6 .5z" fill="#C8953C" />
+        </svg>
+      ))}
+    </span>
+  )
+}
+
+// Cross-fading rather than horizontally scrolling: at these decision points the
+// visitor should be able to actually READ one, and 87% of traffic is mobile
+// where a moving marquee is hard to follow.
+function ReviewTicker({ compact = false }) {
+  const [i, setI] = useState(() => Math.floor(Math.random() * REVIEWS.length))
+  const [shown, setShown] = useState(true)
+  const timers = useRef([])
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setShown(false)
+      const t = setTimeout(() => {
+        setI(prev => (prev + 1) % REVIEWS.length)
+        setShown(true)
+      }, 380)
+      timers.current.push(t)
+    }, 6500)
+    return () => {
+      clearInterval(tick)
+      timers.current.forEach(clearTimeout)
+      timers.current = []
+    }
+  }, [])
+
+  const r = REVIEWS[i]
+  return (
+    <div style={{ ...styles.reviewTicker, ...(compact ? styles.reviewTickerCompact : null) }}>
+      <div style={{ opacity: shown ? 1 : 0, transition: 'opacity 0.38s ease' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+          <Stars />
+          <span style={styles.reviewTickerName}>{r.name}</span>
+          <span style={styles.reviewTickerSrc}>· verified BBB review</span>
+        </div>
+        <div style={styles.reviewTickerQuote}>{r.quote}</div>
+      </div>
+    </div>
+  )
+}
+
 function Hero({ onStart, onCamera, onUpload }) {
   const [visible, setVisible] = useState(false)
   const catTrackRef = useRef(null)
@@ -2229,6 +2338,10 @@ function Hero({ onStart, onCamera, onUpload }) {
           <span>Upload Photo(s)</span>
         </button>
       </div>
+      {/* The hero's job is to get a photo uploaded — a zero-risk action — so these
+          stay friction-reducing. The trust question ("do I mail a stranger my
+          jewelry?") doesn't bite until the offer/shipping steps, which is where
+          the review ticker lives. */}
       <div style={styles.trustRow}>
         {['Free & instant', 'No obligation', 'Fair market pricing'].map((t) => (
           <div key={t} style={styles.trustItem}>
@@ -2237,6 +2350,8 @@ function Hero({ onStart, onCamera, onUpload }) {
           </div>
         ))}
       </div>
+
+      <BbbBadge />
 
       {/* How it works */}
       <div className="steps-grid">
@@ -2916,6 +3031,9 @@ Additional info: ${customerEditsText}` : correctionLines
             Free prepaid shipping · Expert in-person evaluation · Payment within 24 hours
           </p>
 
+          {/* estimate_received → lead_form_started is 66.9%; this is that decision. */}
+          <ReviewTicker />
+
           {/* VARIANT C: Nudge banner — persistent email prompt */}
           {variant === 'C' && !nudgeDismissed && !nudgeSubmitted && (
             <div style={{
@@ -3297,6 +3415,11 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
         <p style={styles.formDisclaimer}>
           Free shipping both ways. Don't like our offer? We return your item at no cost.
         </p>
+
+        {/* lead_form_started → shipping_started is 59.8% — the worst step in the
+            funnel. These people gave an email and then stalled at the address.
+            Lea Ann's review names that exact hesitation. */}
+        <ReviewTicker compact />
       </div>
     </section>
   )
@@ -3484,7 +3607,27 @@ const styles = {
   heroTitleGold: { color: gold },
   heroSubtitle: { fontSize: 18, color: muted, maxWidth: 520, margin: '0 auto 36px', lineHeight: 1.6, position: 'relative', zIndex: 1 },
   heroCta: { display: 'inline-flex', alignItems: 'center', gap: 10, padding: '16px 32px', borderRadius: 12, background: `linear-gradient(135deg, ${gold}, ${goldLight})`, color: '#fff', fontSize: 16, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.25s ease', boxShadow: '0 4px 16px rgba(184, 134, 11, 0.3)' },
-  trustRow: { display: 'flex', justifyContent: 'center', gap: 16, marginTop: 28, flexWrap: 'nowrap', position: 'relative', zIndex: 1 },
+  trustRow: { display: 'flex', justifyContent: 'center', gap: 16, marginTop: 28, flexWrap: 'wrap', position: 'relative', zIndex: 1 },
+  bbbWrap: {
+    display: 'inline-flex', alignItems: 'center', gap: 9, marginTop: 20,
+    padding: '7px 14px 7px 8px', borderRadius: 100,
+    background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)',
+    position: 'relative', zIndex: 1,
+  },
+  bbbMark: {
+    fontFamily: 'Georgia, serif', fontWeight: 700, fontSize: 13, letterSpacing: '0.02em',
+    color: '#fff', background: '#0B5394', borderRadius: 5, padding: '3px 7px', lineHeight: 1,
+  },
+  bbbText: { fontSize: 12.5, lineHeight: 1 },
+  reviewTicker: {
+    maxWidth: 560, margin: '18px auto 0', padding: '14px 16px',
+    background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(200,149,60,0.22)',
+    borderRadius: 12, textAlign: 'left', minHeight: 92,
+  },
+  reviewTickerCompact: { marginTop: 14, padding: '12px 14px', minHeight: 84 },
+  reviewTickerName: { fontSize: 12, fontWeight: 700, color: '#1A1A1A' },
+  reviewTickerSrc: { fontSize: 11, color: muted },
+  reviewTickerQuote: { fontSize: 13, lineHeight: 1.55, color: '#4A453F' },
   trustItem: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: muted, whiteSpace: 'nowrap' },
   stepCard: { padding: 20, borderRadius: 16, border: `1px solid ${border}`, background: '#FFFDF8', textAlign: 'left', height: '100%', display: 'flex', flexDirection: 'column' },
   stepNum: { width: 36, height: 36, borderRadius: '50%', background: goldBg, color: gold, fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
