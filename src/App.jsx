@@ -365,6 +365,11 @@ const STEPS = {
 const GA_MEASUREMENT_ID = 'G-Z6KH5RDZFZ'
 const GADS_CONVERSION_ID = 'AW-16675435094'
 const GADS_LEAD_LABEL = 'DediCI6QqfobENbku48-'
+// AUG 4: CompleteRegistration was firing to Meta but NOT to Google — the only
+// Google conversion was the email-gate Lead, i.e. the curiosity signal that
+// produces most of the ~90% ghost rate. Google was being trained to find people
+// who want a free number. This label is the shippable moment.
+const GADS_REG_LABEL = 'PUycCIHLhtwcENbku48-'
 const META_PIXEL_ID = '1040162166644550'
 const REDDIT_PIXEL_ID = 'a2_ib6a51fchsfd'
 
@@ -1461,6 +1466,7 @@ export default function App() {
     // CompleteRegistration is THE success event — fired when shipping address is submitted.
     // This is the moment the lead becomes shippable. Facebook ad set should optimize for this.
     trackMetaEvent('CompleteRegistration', { content_name: 'Shipping Form Submitted' })
+    trackGadsConversion(GADS_REG_LABEL)
     if (directQuote) {
       setDirectQuote(false) // Reset so photo flow doesn't loop back to "Get a Quote"
       setStep(STEPS.CAPTURE)
