@@ -2174,10 +2174,10 @@ function BbbBadge() {
         height={78}
         loading="lazy"
         decoding="async"
-        style={{ display: 'block', flexShrink: 0 }}
+        style={{ display: 'block', flexShrink: 0, transform: 'rotate(-10deg)' }}
       />
       <span style={styles.bbbText}>
-        <strong style={{ display: 'block', color: '#1A1A1A', fontSize: 13.5 }}>A+ Rating</strong>
+        <strong style={{ display: 'block', color: '#1A1A1A', fontSize: 13.5 }}>A+ Rated Buyer</strong>
         <span style={{ display: 'block', color: muted, fontSize: 11.5, marginTop: 2 }}>Better Business Bureau</span>
       </span>
     </div>
