@@ -4133,6 +4133,7 @@ function SalesTab({shipments, customers}) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [typeFilter, setTypeFilter] = useState("all");   // all | sale | loss | expected
   const [editingSale, setEditingSale] = useState(null);
 
   async function loadSales() {
@@ -4196,35 +4197,65 @@ function SalesTab({shipments, customers}) {
     return raw.slice(0,10);
   }
 
+  // AUG 3: a row is now one of three kinds.
+  //   sale     — money actually received (the default; everything pre-existing)
+  //   loss     — item paid for that will never produce revenue (breakage, lost
+  //              in transit, gifted). Cost counts against you, revenue is 0.
+  //   expected — anticipated revenue not yet realised. Kept OUT of actuals so
+  //              the real numbers stay honest; totalled separately.
+  function saleType(sale) {
+    const t = String(sale.sale_type || "").toLowerCase().trim();
+    return (t === "loss" || t === "expected") ? t : "sale";
+  }
+
   function summarizeSale(sale) {
     const ids = String(sale.shipment_ids || "").split(",").map(s => s.trim()).filter(Boolean);
     const ships = ids.map(id => shipById[id]).filter(Boolean);
-    const revenue = parseFloat(sale.amount) || 0;
+    const type = saleType(sale);
+    const revenue = type === "loss" ? 0 : (parseFloat(sale.amount) || 0);
     let totalCost = ships.reduce((sum, s) => sum + (parseFloat(s.purchase_price) || 0), 0);
     let imputed = false;
     let assumedPct = null;
+    // A typed-in cost beats any assumption — use it whenever there's no linked
+    // shipment. This is how a loss with no known SHP still carries a real cost.
+    const manual = parseFloat(sale.manual_cost);
+    const hasManual = !isNaN(manual) && manual > 0;
+    if (ships.length === 0 && hasManual) totalCost = manual;
     // No linked shipments (refiner, bulk melt, or simply unmatched) → impute
     // cost at the assumed margin.
-    if (isRefinerSale(sale) && revenue > 0) {
+    if (isRefinerSale(sale) && !hasManual && revenue > 0) {
       assumedPct = saleAssumedMarginPct(sale);
       totalCost = revenue * (1 - assumedPct/100);
       imputed = true;
     }
     // eBay fee: flat % of gross, computed here so the recorded amount can stay
     // gross and reconcile 1:1 against eBay's orders report.
-    const isEbay = isEbaySale(sale);
+    const isEbay = isEbaySale(sale) && type === "sale";
     const fees = isEbay ? revenue * (EBAY_FEE_PCT/100) : 0;
     const netRevenue = revenue - fees;
     const profit = netRevenue - totalCost;
     const margin = totalCost > 0 ? (profit / totalCost) * 100 : null;
     const customerNames = [...new Set(ships.map(s => custById[s.customer_id]?.name).filter(Boolean))].join(", ");
     const items = ships.map(s => s.item || s.shipment_id).filter(Boolean);
-    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct, fees, netRevenue, isEbay };
+    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct, fees, netRevenue, isEbay, type, hasManual };
   }
 
-  const totalRevenue = sales.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
-  const totalProfit = sales.reduce((sum, s) => sum + summarizeSale(s).profit, 0);
-  const totalFees   = sales.reduce((sum, s) => sum + summarizeSale(s).fees, 0);
+  // Actuals exclude "expected" rows entirely — projections must never inflate
+  // real revenue. Losses contribute cost (negative profit) but no revenue.
+  const actual   = sales.filter(s => saleType(s) !== "expected");
+  const lossRows = sales.filter(s => saleType(s) === "loss");
+  const expRows  = sales.filter(s => saleType(s) === "expected");
+
+  const totalRevenue = actual.reduce((sum, s) => sum + summarizeSale(s).netRevenue, 0);
+  const totalGross   = actual.reduce((sum, s) => sum + (saleType(s)==="loss" ? 0 : (parseFloat(s.amount)||0)), 0);
+  const totalProfit  = actual.reduce((sum, s) => sum + summarizeSale(s).profit, 0);
+  const totalFees    = actual.reduce((sum, s) => sum + summarizeSale(s).fees, 0);
+  const totalCostAll = actual.reduce((sum, s) => sum + summarizeSale(s).totalCost, 0);
+  const totalLost    = lossRows.reduce((sum, s) => sum + summarizeSale(s).totalCost, 0);
+  const totalExpected= expRows.reduce((sum, s) => sum + (parseFloat(s.amount)||0), 0);
+  const roiPct       = totalCostAll > 0 ? (totalProfit / totalCostAll) * 100 : null;
+
+  const shown = sales.filter(s => typeFilter === "all" ? true : saleType(s) === typeFilter);
 
   return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:24,background:G.bg}}>
     {showAdd && <SaleModal shipments={shipments} customers={customers} onSave={()=>{setShowAdd(false);loadSales();}} onCancel={()=>setShowAdd(false)} initialShipmentIds={[]}/>}
@@ -4234,15 +4265,36 @@ function SalesTab({shipments, customers}) {
       <h2 style={{margin:0,fontSize:22,color:G.text}}>Sales</h2>
       <div style={{flex:1}}/>
       <div style={{fontSize:13,color:G.muted}}>
-        Gross revenue: <strong style={{color:G.text}}>${totalRevenue.toFixed(2)}</strong>
+        Gross: <strong style={{color:G.text}}>${totalGross.toFixed(2)}</strong>
         {totalFees>0 && <>{" · "}Fees: <strong style={{color:G.red}}>−${totalFees.toFixed(2)}</strong></>}
-        {" · "}Total profit: <strong style={{color:totalProfit>=0?G.green:G.red}}>${totalProfit.toFixed(2)}</strong>
+        {" · "}Cost: <strong style={{color:G.text}}>${totalCostAll.toFixed(2)}</strong>
+        {" · "}Profit: <strong style={{color:totalProfit>=0?G.green:G.red}}>${totalProfit.toFixed(2)}</strong>
+        {roiPct!==null && <>{" · "}ROI: <strong style={{color:roiPct>=0?G.green:G.red}}>{roiPct.toFixed(0)}%</strong></>}
       </div>
       <Btn v="gold" onClick={()=>setShowAdd(true)}>+ Add Sale</Btn>
     </div>
 
+    {/* Type filter + the two side ledgers kept out of actuals */}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      {[["all","All"],["sale","Sales"],["loss","Losses"],["expected","Expected"]].map(([v,label])=>{
+        const on = typeFilter===v;
+        const n = v==="all" ? sales.length : sales.filter(x=>saleType(x)===v).length;
+        return <button key={v} onClick={()=>setTypeFilter(v)} style={{
+          padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+          background:on?G.gold:"transparent",color:on?"#fff":G.muted,
+          border:`1px solid ${on?G.gold:G.border}`}}>{label}{n>0?` ${n}`:""}</button>;
+      })}
+      <div style={{flex:1}}/>
+      {totalLost>0 && <span style={{fontSize:12,color:G.red}}>
+        Lost: <strong>−${totalLost.toFixed(2)}</strong>
+      </span>}
+      {totalExpected>0 && <span style={{fontSize:12,color:G.blue,marginLeft:12}}>
+        Expected: <strong>${totalExpected.toFixed(2)}</strong>
+      </span>}
+    </div>
+
     {loading ? <div style={{color:G.muted}}>Loading…</div> :
-     sales.length === 0 ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
+     shown.length === 0 ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
        <div style={{fontSize:32,marginBottom:12}}>💰</div>
        <div style={{fontSize:14}}>No sales recorded yet.</div>
        <div style={{fontSize:12,marginTop:6}}>Click "+ Add Sale" to record your first sale.</div>
@@ -4264,11 +4316,17 @@ function SalesTab({shipments, customers}) {
            </tr>
          </thead>
          <tbody>
-           {sales.slice().sort((a,b)=>new Date(b.sale_date||b.created_at)-new Date(a.sale_date||a.created_at)).map(sale => {
+           {shown.slice().sort((a,b)=>new Date(b.sale_date||b.created_at)-new Date(a.sale_date||a.created_at)).map(sale => {
              const s = summarizeSale(sale);
-             return <tr key={sale.sale_id} style={{borderBottom:`1px solid ${G.border}`,fontSize:13}}>
+             const tint = s.type==="loss" ? "#FFF6F6" : s.type==="expected" ? "#F5F8FF" : "#fff";
+             const chip = s.type==="loss"
+               ? <span style={{background:"#FFE8E8",color:G.red,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>LOSS</span>
+               : s.type==="expected"
+               ? <span style={{background:"#E8F0FF",color:G.blue,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>EXPECTED</span>
+               : null;
+             return <tr key={sale.sale_id} style={{borderBottom:`1px solid ${G.border}`,fontSize:13,background:tint}}>
                <td style={{padding:"10px 12px",color:G.muted}}>{fmtSaleDate(sale.sale_date || sale.created_at)}</td>
-               <td style={{padding:"10px 12px",fontWeight:600}}>{sale.buyer_name}</td>
+               <td style={{padding:"10px 12px",fontWeight:600}}>{sale.buyer_name}{chip}</td>
                <td style={{padding:"10px 12px",fontSize:12,color:G.muted,maxWidth:300}}>
                  <div>{s.items.length} item{s.items.length!==1?"s":""}{s.customerNames?` · from ${s.customerNames}`:""}</div>
                  <div style={{fontSize:11,marginTop:2}}>{s.ids.join(", ")}</div>
@@ -4277,7 +4335,9 @@ function SalesTab({shipments, customers}) {
                <td style={{padding:"10px 12px",textAlign:"right",color:G.muted}} title={s.imputed?`Assumed cost — no linked shipment. Imputed at ${s.assumedPct}% margin. Edit the sale to change.`:""}>
                  ${s.totalCost.toFixed(2)}{s.imputed && <span style={{color:G.gold,fontWeight:700}}>*</span>}
                </td>
-               <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600}}>${(parseFloat(sale.amount)||0).toFixed(2)}</td>
+               <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600,fontStyle:s.type==="expected"?"italic":"normal",color:s.type==="loss"?G.muted:G.text}}>
+                 {s.type==="loss" ? "—" : "$"+(parseFloat(sale.amount)||0).toFixed(2)}
+               </td>
                <td style={{padding:"10px 12px",textAlign:"right",color:G.muted,fontSize:12}} title={s.isEbay?`eBay fee auto-calculated at ${EBAY_FEE_PCT}% of gross`:"No marketplace fee"}>
                  {s.fees>0 ? "−$"+s.fees.toFixed(2) : "—"}
                </td>
@@ -4297,11 +4357,108 @@ function SalesTab({shipments, customers}) {
            })}
          </tbody>
        </table>
-       {sales.some(sl=>summarizeSale(sl).imputed) && <div style={{padding:"10px 12px",fontSize:12,color:G.muted,fontStyle:"italic"}}>
+       {shown.some(sl=>summarizeSale(sl).imputed) && <div style={{padding:"10px 12px",fontSize:12,color:G.muted,fontStyle:"italic"}}>
          <span style={{color:G.gold,fontWeight:700}}>*</span> No linked shipment (refiner, bulk melt, or unmatched), so cost is <b>assumed</b> from a margin % (default {UNLINKED_DEFAULT_MARGIN}%, editable per sale via Edit) — not a recorded cost. Link a shipment to replace the assumption with the real purchase price. eBay fees are auto-calculated at {EBAY_FEE_PCT}% of gross and deducted before profit.
        </div>}
      </div>
     }
+
+    <InventoryEstimatePanel
+      totalProfit={totalProfit}
+      totalLost={totalLost}
+      totalExpected={totalExpected}
+      totalCostAll={totalCostAll}
+    />
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INVENTORY ESTIMATE (Aug 3)
+//  A hand-maintained figure for what the unsold inventory is worth.
+//  Deliberately manual for now — deriving it from appraised_value would be
+//  wrong while a lot of purchased shipments still have no appraisal on file.
+//  NOTE: stored in localStorage, so it is PER-DEVICE — set it on your phone
+//  and the desktop won't see it. Fine for a number you revise occasionally;
+//  say the word and it can move to a Script Property so it follows the account.
+// ═══════════════════════════════════════════════════════════════
+const INVENTORY_EST_KEY = "sg_inventory_estimate";
+
+function InventoryEstimatePanel({totalProfit, totalLost, totalExpected, totalCostAll}) {
+  const [val, setVal] = useState("");
+  const [updated, setUpdated] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  useEffect(()=>{
+    try {
+      const raw = JSON.parse(localStorage.getItem(INVENTORY_EST_KEY) || "null");
+      if (raw) { setVal(String(raw.value ?? "")); setUpdated(raw.updated || ""); }
+    } catch {}
+  },[]);
+
+  function save(){
+    const n = parseFloat(String(draft).replace(/[^0-9.]/g,""));
+    if (isNaN(n) || n < 0) { alert("Enter a dollar amount, e.g. 12500"); return; }
+    const rec = { value: n, updated: new Date().toISOString() };
+    try { localStorage.setItem(INVENTORY_EST_KEY, JSON.stringify(rec)); } catch {}
+    setVal(String(n)); setUpdated(rec.updated); setEditing(false);
+  }
+
+  const inv = parseFloat(val) || 0;
+  // Realised profit, plus what's still sitting in the bins and what's expected
+  // to land, minus what's been written off.
+  const projected = totalProfit + inv + totalExpected - totalLost;
+
+  const cell = {padding:"10px 14px"};
+  const lbl  = {fontSize:10,fontWeight:700,color:G.muted,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4};
+
+  return <div style={{marginTop:20,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`,padding:16}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Inventory Estimate</div>
+      <div style={{fontSize:11,color:G.muted}}>
+        Hand-entered value of unsold stock{updated ? ` · updated ${String(updated).slice(0,10)}` : " · not set yet"}
+      </div>
+      <div style={{flex:1}}/>
+      {!editing
+        ? <Btn v="ghost" small onClick={()=>{setDraft(val);setEditing(true);}}>{val ? "Update" : "Set estimate"}</Btn>
+        : <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:14,fontWeight:700,color:G.gold}}>$</span>
+            <input autoFocus value={draft} onChange={e=>setDraft(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter")save();if(e.key==="Escape")setEditing(false);}}
+              placeholder="12500" inputMode="decimal"
+              style={{width:120,padding:"6px 10px",fontSize:14,fontWeight:600,border:`1px solid ${G.gold}`,borderRadius:6,outline:"none"}}/>
+            <Btn v="green" small onClick={save}>Save</Btn>
+            <Btn v="ghost" small onClick={()=>setEditing(false)}>Cancel</Btn>
+          </div>}
+    </div>
+
+    <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+      <div style={{...cell,flex:1,minWidth:150,background:G.bg,borderRadius:8}}>
+        <div style={lbl}>Realised profit</div>
+        <div style={{fontSize:20,fontWeight:700,color:totalProfit>=0?G.green:G.red,fontFamily:"monospace"}}>${totalProfit.toFixed(0)}</div>
+        <div style={{fontSize:10,color:G.muted,marginTop:2}}>sales, net of fees &amp; cost</div>
+      </div>
+      <div style={{...cell,flex:1,minWidth:150,background:"#FFF8EE",borderRadius:8}}>
+        <div style={lbl}>Inventory on hand</div>
+        <div style={{fontSize:20,fontWeight:700,color:G.gold,fontFamily:"monospace"}}>${inv.toFixed(0)}</div>
+        <div style={{fontSize:10,color:G.muted,marginTop:2}}>your estimate</div>
+      </div>
+      <div style={{...cell,flex:1,minWidth:150,background:"#F5F8FF",borderRadius:8}}>
+        <div style={lbl}>Expected</div>
+        <div style={{fontSize:20,fontWeight:700,color:G.blue,fontFamily:"monospace"}}>${totalExpected.toFixed(0)}</div>
+        <div style={{fontSize:10,color:G.muted,marginTop:2}}>rows marked expected</div>
+      </div>
+      <div style={{...cell,flex:1,minWidth:150,background:"#FFF6F6",borderRadius:8}}>
+        <div style={lbl}>Lost / written off</div>
+        <div style={{fontSize:20,fontWeight:700,color:G.red,fontFamily:"monospace"}}>−${totalLost.toFixed(0)}</div>
+        <div style={{fontSize:10,color:G.muted,marginTop:2}}>breakage, loss, gifts</div>
+      </div>
+      <div style={{...cell,flex:1,minWidth:170,background:G.dark,borderRadius:8}}>
+        <div style={{...lbl,color:G.goldLt}}>Projected position</div>
+        <div style={{fontSize:22,fontWeight:700,color:G.cream,fontFamily:"monospace"}}>${projected.toFixed(0)}</div>
+        <div style={{fontSize:10,color:"#9a9188",marginTop:2}}>profit + inventory + expected − lost</div>
+      </div>
+    </div>
   </div>;
 }
 
@@ -4320,6 +4477,14 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   // shipment (many items pooled into one melt), so allow recording without a link.
   const [refinerSale, setRefinerSale] = useState(!!(sale && String(sale.shipment_ids||"").trim()==="" ));
   const [marginAssumption, setMarginAssumption] = useState(sale?.margin_assumption ?? "");
+  // sale | loss | expected
+  const [entryType, setEntryType] = useState(() => {
+    const t = String(sale?.sale_type || "").toLowerCase().trim();
+    return (t === "loss" || t === "expected") ? t : "sale";
+  });
+  // Typed-in cost for rows with no linked shipment — a loss usually has no SHP
+  // to point at, but you still know roughly what you paid.
+  const [manualCost, setManualCost] = useState(sale?.manual_cost ?? "");
 
   const custById = useMemo(() => {
     const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
@@ -4345,7 +4510,9 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
 
   async function save() {
     if (!buyerName.trim()) { alert("Buyer name required"); return; }
-    if (!amount || isNaN(parseFloat(amount))) { alert("Amount must be a number"); return; }
+    if (entryType === "loss") {
+      if (!amount || isNaN(parseFloat(amount))) setAmount("0");
+    } else if (!amount || isNaN(parseFloat(amount))) { alert("Amount must be a number"); return; }
     // AUG 3: linking is now OPTIONAL. Previously you had to either link a
     // shipment or tick "Refiner / bulk melt" — so unmatched sales got labelled
     // as refiner melts just to get past this gate, which polluted the data.
@@ -4359,7 +4526,9 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
       // unlinked eBay/retail sale is not a refiner melt.
       const noteStr = refinerSale && notes.trim() && !/refiner/i.test(notes) ? ("[Refiner sale] " + notes.trim()) : (refinerSale && !notes.trim() ? "[Refiner sale]" : notes.trim());
       const marginStr = unlinked ? String(marginAssumption ?? "").trim() : "";
-      const fields = {buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr,margin_assumption:marginStr};
+      const fields = {buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr,margin_assumption:marginStr,
+        sale_type: entryType,
+        manual_cost: String(manualCost ?? "").trim() === "" ? "" : String(parseFloat(manualCost) || "")};
       const payload = isEdit
         ? {action,sale_id:sale.sale_id,updates:fields}
         : {action,data:fields};
@@ -4379,6 +4548,42 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
     <div style={{background:"#fff",borderRadius:12,width:"min(700px,95vw)",maxHeight:"90vh",overflow:"auto",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
       <h2 style={{margin:"0 0 6px",fontSize:18,color:G.text}}>{isEdit ? "Edit Sale" : "Record New Sale"}</h2>
       <div style={{fontSize:13,color:G.muted,marginBottom:18}}>Track what you sold, to whom, for how much.</div>
+
+      <div style={{marginBottom:14}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Entry type</label>
+        <div style={{display:"flex",gap:8}}>
+          {[["sale","💵 Sale","Money received"],
+            ["loss","⚠️ Loss","Paid for, no revenue — breakage, lost, gifted"],
+            ["expected","📈 Expected","Anticipated, not yet realised"]].map(([v,label,hint])=>{
+            const on = entryType===v;
+            const col = v==="loss"?G.red:v==="expected"?G.blue:G.green;
+            return <div key={v} onClick={()=>setEntryType(v)} title={hint} style={{
+              flex:1,textAlign:"center",padding:"9px 6px",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",
+              border:`1px solid ${on?col:G.border}`,background:on?col+"18":"#fff",color:on?col:G.muted}}>{label}</div>;
+          })}
+        </div>
+        <div style={{fontSize:11,color:G.muted,marginTop:6,lineHeight:1.45}}>
+          {entryType==="sale" && "Counts toward revenue and profit."}
+          {entryType==="loss" && "No revenue — the cost below counts against profit. Amount is ignored."}
+          {entryType==="expected" && "Kept out of actual revenue and profit; totalled separately so projections never inflate the real numbers."}
+        </div>
+      </div>
+
+      {/* Manual cost — the only way a loss with no linked shipment carries a cost */}
+      <div style={{marginBottom:14}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+          Cost {selectedShipIds.length>0 ? "(overridden by linked shipment)" : "(optional — what you paid)"}
+        </label>
+        <input value={manualCost} onChange={e=>setManualCost(e.target.value)} placeholder="e.g. 250"
+          inputMode="decimal" disabled={selectedShipIds.length>0}
+          style={{width:160,padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,
+            background:selectedShipIds.length>0?"#F5F5F3":"#fff"}}/>
+        <div style={{fontSize:11,color:G.muted,marginTop:4}}>
+          {selectedShipIds.length>0
+            ? "A shipment is linked, so its purchase price is used."
+            : "Enter it if you know it — that replaces the assumed cost and drops the *."}
+        </div>
+      </div>
 
       <label style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",marginBottom:16,border:`1px solid ${refinerSale?G.gold:G.border}`,borderRadius:8,background:refinerSale?"#FFF8EE":"#fff",cursor:"pointer",fontSize:13,color:G.text}}>
         <input type="checkbox" checked={refinerSale} onChange={e=>setRefinerSale(e.target.checked)} style={{width:16,height:16}}/>
