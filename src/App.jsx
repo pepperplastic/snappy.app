@@ -526,7 +526,7 @@ function isUnlocked() {
 // ── UTM / Ad tracking ──
 function captureUtmParams() {
   const params = new URLSearchParams(window.location.search)
-  const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid']
+  const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ref']
   const utm = {}
   let hasAny = false
   utmKeys.forEach(key => {
