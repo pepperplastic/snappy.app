@@ -2174,7 +2174,7 @@ function BbbBadge() {
         height={78}
         loading="lazy"
         decoding="async"
-        style={{ display: 'block', flexShrink: 0, transform: 'rotate(-10deg)' }}
+        style={{ display: 'block', flexShrink: 0, transform: 'rotate(-15deg)' }}
       />
       <span style={styles.bbbText}>
         <strong style={{ display: 'block', color: '#1A1A1A', fontSize: 13.5 }}>A+ Rated Buyer</strong>
