@@ -2160,18 +2160,25 @@ function RecentQuotesTicker() {
 //  as friends-and-family; one specific stranger's story reads as real.
 // ═══════════════════════════════════════════════════════════════
 
-// NOTE: this is a plain typographic badge, NOT a reproduction of the BBB seal.
-// Snappy Gold is A+ RATED but NOT accredited — those are different things
-// (accreditation is a paid membership), and claiming the wrong one is the sort
-// of thing a competitor or the BBB itself will call out. Wording says rating only.
-// The official seal is for accredited businesses, so don't add one.
+// ── BBB A+ badge ──────────────────────────────────────────────
+// Image lives at public/bbb-badge.png → served from /bbb-badge.png
+// Wording is RATING only. Snappy Gold is A+ rated but NOT accredited, so the
+// word "accredited" must never appear alongside this.
 function BbbBadge() {
   return (
     <div style={styles.bbbWrap}>
-      <span style={styles.bbbMark}>BBB</span>
+      <img
+        src="/bbb-badge.png"
+        alt="A+ rating from the Better Business Bureau"
+        width={78}
+        height={78}
+        loading="lazy"
+        decoding="async"
+        style={{ display: 'block', flexShrink: 0 }}
+      />
       <span style={styles.bbbText}>
-        <strong style={{ color: '#1A1A1A' }}>A+ Rating</strong>
-        <span style={{ color: muted }}> · Better Business Bureau</span>
+        <strong style={{ display: 'block', color: '#1A1A1A', fontSize: 13.5 }}>A+ Rating</strong>
+        <span style={{ display: 'block', color: muted, fontSize: 11.5, marginTop: 2 }}>Better Business Bureau</span>
       </span>
     </div>
   )
@@ -2214,37 +2221,56 @@ function Stars({ size = 11 }) {
 
 // Cross-fading rather than horizontally scrolling: at these decision points the
 // visitor should be able to actually READ one, and 87% of traffic is mobile
-// where a moving marquee is hard to follow.
+// where a moving marquee is hard to follow. Arrows let them move at their own
+// pace — auto-advance stops permanently once someone takes manual control,
+// because hijacking what they chose to read is worse than no rotation at all.
 function ReviewTicker({ compact = false }) {
   const [i, setI] = useState(() => Math.floor(Math.random() * REVIEWS.length))
   const [shown, setShown] = useState(true)
-  const timers = useRef([])
+  const [manual, setManual] = useState(false)
+  const fadeRef = useRef(null)
+
+  const swap = (next) => {
+    setShown(false)
+    clearTimeout(fadeRef.current)
+    fadeRef.current = setTimeout(() => {
+      setI(prev => (next === undefined ? (prev + 1) % REVIEWS.length : next))
+      setShown(true)
+    }, 320)
+  }
+
+  const go = (dir) => {
+    setManual(true)
+    setI(prev => {
+      const next = (prev + dir + REVIEWS.length) % REVIEWS.length
+      swap(next)
+      return prev
+    })
+  }
 
   useEffect(() => {
-    const tick = setInterval(() => {
-      setShown(false)
-      const t = setTimeout(() => {
-        setI(prev => (prev + 1) % REVIEWS.length)
-        setShown(true)
-      }, 380)
-      timers.current.push(t)
-    }, 6500)
-    return () => {
-      clearInterval(tick)
-      timers.current.forEach(clearTimeout)
-      timers.current = []
-    }
-  }, [])
+    if (manual) return undefined
+    const t = setInterval(() => swap(), 6500)
+    return () => clearInterval(t)
+  }, [manual])
+
+  useEffect(() => () => clearTimeout(fadeRef.current), [])
 
   const r = REVIEWS[i]
+  const arrow = { ...styles.reviewNav, ...(compact ? { width: 26, height: 26 } : null) }
+
   return (
     <div style={{ ...styles.reviewTicker, ...(compact ? styles.reviewTickerCompact : null) }}>
-      <div style={{ opacity: shown ? 1 : 0, transition: 'opacity 0.38s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
-          <Stars />
-          <span style={styles.reviewTickerName}>{r.name}</span>
-          <span style={styles.reviewTickerSrc}>· verified BBB review</span>
-        </div>
+      <div style={styles.reviewTickerHead}>
+        <Stars />
+        <span style={styles.reviewTickerName}>{r.name}</span>
+        <span style={styles.reviewTickerSrc}>· verified BBB review</span>
+        <span style={{ flex: 1 }} />
+        <button type="button" onClick={() => go(-1)} aria-label="Previous review" style={arrow}>‹</button>
+        <span style={styles.reviewCount}>{i + 1}/{REVIEWS.length}</span>
+        <button type="button" onClick={() => go(1)} aria-label="Next review" style={arrow}>›</button>
+      </div>
+      <div style={{ opacity: shown ? 1 : 0, transition: 'opacity 0.32s ease' }}>
         <div style={styles.reviewTickerQuote}>{r.quote}</div>
       </div>
     </div>
@@ -3609,23 +3635,25 @@ const styles = {
   heroCta: { display: 'inline-flex', alignItems: 'center', gap: 10, padding: '16px 32px', borderRadius: 12, background: `linear-gradient(135deg, ${gold}, ${goldLight})`, color: '#fff', fontSize: 16, fontWeight: 600, border: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.25s ease', boxShadow: '0 4px 16px rgba(184, 134, 11, 0.3)' },
   trustRow: { display: 'flex', justifyContent: 'center', gap: 16, marginTop: 28, flexWrap: 'wrap', position: 'relative', zIndex: 1 },
   bbbWrap: {
-    display: 'inline-flex', alignItems: 'center', gap: 9, marginTop: 20,
-    padding: '7px 14px 7px 8px', borderRadius: 100,
-    background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(0,0,0,0.08)',
+    display: 'inline-flex', alignItems: 'center', gap: 12, marginTop: 22,
     position: 'relative', zIndex: 1,
   },
-  bbbMark: {
-    fontFamily: 'Georgia, serif', fontWeight: 700, fontSize: 13, letterSpacing: '0.02em',
-    color: '#fff', background: '#0B5394', borderRadius: 5, padding: '3px 7px', lineHeight: 1,
-  },
-  bbbText: { fontSize: 12.5, lineHeight: 1 },
+  bbbText: { textAlign: 'left', lineHeight: 1.2 },
   reviewTicker: {
     maxWidth: 560, margin: '18px auto 0', padding: '14px 16px',
     background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(200,149,60,0.22)',
     borderRadius: 12, textAlign: 'left', minHeight: 92,
   },
   reviewTickerCompact: { marginTop: 14, padding: '12px 14px', minHeight: 84 },
-  reviewTickerName: { fontSize: 12, fontWeight: 700, color: '#1A1A1A' },
+  reviewTickerHead: { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'nowrap' },
+  reviewTickerName: { fontSize: 12, fontWeight: 700, color: '#1A1A1A', whiteSpace: 'nowrap' },
+  reviewNav: {
+    width: 30, height: 30, flexShrink: 0, borderRadius: '50%', cursor: 'pointer',
+    border: '1px solid rgba(200,149,60,0.35)', background: 'rgba(255,255,255,0.9)',
+    color: '#8A7A55', fontSize: 17, lineHeight: 1, fontFamily: 'inherit',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+  },
+  reviewCount: { fontSize: 10.5, color: muted, minWidth: 24, textAlign: 'center', flexShrink: 0 },
   reviewTickerSrc: { fontSize: 11, color: muted },
   reviewTickerQuote: { fontSize: 13, lineHeight: 1.55, color: '#4A453F' },
   trustItem: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: muted, whiteSpace: 'nowrap' },
