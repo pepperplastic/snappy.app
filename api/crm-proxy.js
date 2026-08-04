@@ -43,7 +43,7 @@ const WRITE_ACTIONS = new Set([
   'generateUSPSLabel', 'generateReturnLabel',
   'capturePaymentId', 'generateSelfServeToken',
   'pushToLeadsOnline', 'uploadLeadsOnlinePhotos',
-  'manualCustomerShipment',
+  'manualCustomerShipment','getAffiliates', 'addAffiliate', 'updateAffiliate', 'deleteAffiliate', 'getAffiliateStats',
 ]);
 
 // Migration seam. As a table moves to Postgres, add its action here and
