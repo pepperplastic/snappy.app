@@ -1512,9 +1512,8 @@ export default function App() {
               <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
             </svg>
             <span style={styles.logoWordmark}>
-              <span style={styles.logoText}>snappy</span>
-              <span style={styles.logoDot}>.</span>
-              <span style={styles.logoGold}>gold</span>
+              <span style={styles.logoText}>Snappy</span>
+              <span style={styles.logoGold}>Gold</span>
             </span>
           </button>
           <div style={styles.navLinks}>
@@ -3607,7 +3606,7 @@ const styles = {
   nav: { position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255, 251, 245, 0.9)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${border}` },
   navInner: { maxWidth: 960, margin: '0 auto', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   logoBtn: { background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 },
-  logoWordmark: { display: 'flex', alignItems: 'baseline', gap: 0 },
+  logoWordmark: { display: 'flex', alignItems: 'baseline', gap: '0.26em' },
   logoMark: { width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${gold}, ${goldLight})`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 18 },
   logoText: { fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 22, color: '#2A2015', letterSpacing: '0.01em', textShadow: '0 0 10px rgba(212,163,68,0.4), 0 0 20px rgba(212,163,68,0.2), 0 0 3px rgba(212,163,68,0.15)' },
   logoDot: { fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 22, color: gold, margin: '0 0 0 -2px', textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25)' },
