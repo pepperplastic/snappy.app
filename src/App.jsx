@@ -2543,7 +2543,15 @@ function AnalyzingScreen({ imageData, isDone, onComplete }) {
           </div>
         )}
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={styles.spinner} />
+          {/* The mascot lives HERE rather than on the hero. This is the one
+              screen where personality is honest — an AI really is looking at
+              their photo — and where a friendly face fills a wait. On the hero
+              it would undercut the credibility the trust badge is there to build. */}
+          <div style={styles.mascotWrap}>
+            <img src="/mascot.png" alt="" aria-hidden="true" width={64} height={64}
+                 style={styles.mascotImg} loading="lazy" decoding="async" />
+            <div style={styles.spinner} />
+          </div>
           <h2 style={{ ...styles.analyzingTitle, marginBottom: 4, transition: 'all 0.4s ease' }}>
             {isDone ? 'Get ready...' : 'Analyzing your item'}
           </h2>
@@ -3645,6 +3653,12 @@ const styles = {
     borderRadius: 12, textAlign: 'left', minHeight: 92,
   },
   reviewTickerCompact: { marginTop: 14, padding: '12px 14px', minHeight: 84 },
+  mascotWrap: { display: 'flex', alignItems: 'center', gap: 10 },
+  mascotImg: {
+    width: 64, height: 'auto', display: 'block',
+    animation: 'mascotBob 2.6s ease-in-out infinite',
+    filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.12))',
+  },
   reviewTickerHead: { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'nowrap' },
   reviewTickerName: { fontSize: 12, fontWeight: 700, color: '#1A1A1A', whiteSpace: 'nowrap' },
   reviewNav: {
@@ -3771,6 +3785,7 @@ const styleSheet = document.createElement('style')
 styleSheet.textContent = `
   @keyframes ctaRing { 0% { box-shadow: 0 0 0 0 rgba(200,149,60,0.5); } 70% { box-shadow: 0 0 0 14px rgba(200,149,60,0); } 100% { box-shadow: 0 0 0 0 rgba(200,149,60,0); } }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes mascotBob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-6px) rotate(2deg); } }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes scan { 0%, 100% { top: 0; } 50% { top: calc(100% - 3px); } }
   @keyframes weightPulse { 0%, 100% { background: transparent; } 50% { background: rgba(200, 149, 60, 0.08); } }
