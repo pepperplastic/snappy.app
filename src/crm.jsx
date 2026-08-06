@@ -2990,7 +2990,14 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
     <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search received..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search received..." style={{flex:1,minWidth:0,boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <ScanButton onScan={(code)=>{
+            const hit = shipments.some(s=>String(s.outbound_tracking||"").toUpperCase().includes(code)
+                                       || String(s.return_tracking||"").toUpperCase().includes(code));
+            setSearch(hit ? code : code.slice(-12));
+          }}/>
+        </div>
         <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:11,fontWeight:700,color:G.gold,whiteSpace:"nowrap"}}>Bin lookup</span>
           <input value={binLookup} onChange={e=>setBinLookup(e.target.value)} placeholder="What's in bin #?" style={{width:120,boxSizing:"border-box",background:"#FFF8EE",border:`1px solid ${G.gold}66`,borderRadius:7,padding:"5px 10px",fontSize:12,fontWeight:700,color:G.gold,outline:"none"}}/>
@@ -3103,7 +3110,14 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
     <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search purchased..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search purchased..." style={{flex:1,minWidth:0,boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <ScanButton onScan={(code)=>{
+            const hit = shipments.some(s=>String(s.outbound_tracking||"").toUpperCase().includes(code)
+                                       || String(s.return_tracking||"").toUpperCase().includes(code));
+            setSearch(hit ? code : code.slice(-12));
+          }}/>
+        </div>
       </div>
       {totalPurchased>0&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${G.border}`,background:"#F0FFF4",fontSize:12,color:G.green,fontWeight:700}}>Total purchased: {fmt$(totalPurchased)}</div>}
       <div style={{flex:1,overflow:"auto"}}>
@@ -5438,6 +5452,106 @@ function MarketingTab() {
     </>}
   </div>;
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+//  BARCODE SCANNER (Aug 6)
+//  Matching an arriving box to its shipment. Every shipping label carries a
+//  Code128 barcode holding the tracking number, so we read the barcode rather
+//  than photographing the label and OCR'ing it — instant, exact, free, offline,
+//  and no vision-API call. On a tracking number "nearly right" is useless.
+//
+//  Carriers pad the encoded value: USPS IMpb prefixes 420 + destination ZIP,
+//  and some labels carry a leading application identifier. normalizeScan strips
+//  those, and the caller falls back to a suffix match if the full value misses.
+// ═══════════════════════════════════════════════════════════════
+function normalizeScan(raw){
+  let v=String(raw||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+  // USPS IMpb: 420 + 5-digit ZIP (optionally +4) prepended to the 22-digit code
+  if(/^420\d{5}/.test(v)) v = v.length>=35 ? v.slice(12) : v.slice(8);
+  // GS1 application identifier for SSCC
+  if(/^00\d{18}$/.test(v)) v = v.slice(2);
+  return v;
+}
+
+function ScanButton({onScan, title="Scan tracking barcode"}){
+  const [open,setOpen]=useState(false);
+  const [err,setErr]=useState("");
+  const videoRef=useRef(null);
+  const streamRef=useRef(null);
+  const rafRef=useRef(null);
+  const supported = typeof window!=="undefined" && "BarcodeDetector" in window;
+
+  function stop(){
+    cancelAnimationFrame(rafRef.current);
+    if(streamRef.current){ streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current=null; }
+    setOpen(false);
+  }
+
+  useEffect(()=>{
+    if(!open) return undefined;
+    let cancelled=false;
+    (async()=>{
+      try{
+        const detector=new window.BarcodeDetector({formats:["code_128","code_39","itf","pdf417","data_matrix","qr_code"]});
+        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+        if(cancelled){ stream.getTracks().forEach(t=>t.stop()); return; }
+        streamRef.current=stream;
+        const v=videoRef.current;
+        if(v){ v.srcObject=stream; await v.play().catch(()=>{}); }
+        const loop=async()=>{
+          if(cancelled||!videoRef.current) return;
+          try{
+            const codes=await detector.detect(videoRef.current);
+            if(codes && codes.length){
+              const val=normalizeScan(codes[0].rawValue);
+              if(val && val.length>=8){
+                if(navigator.vibrate) navigator.vibrate(40);
+                onScan(val);
+                stop();
+                return;
+              }
+            }
+          }catch(e){ /* frame not ready — keep looping */ }
+          rafRef.current=requestAnimationFrame(loop);
+        };
+        rafRef.current=requestAnimationFrame(loop);
+      }catch(e){
+        setErr(e && e.name==="NotAllowedError" ? "Camera permission denied." : "Couldn't start the camera.");
+      }
+    })();
+    return ()=>{ cancelled=true; stop(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[open]);
+
+  if(!supported){
+    return <button type="button" title="Barcode scanning needs Chrome on Android, or iOS 17+ Safari" disabled
+      style={{...scanBtnStyle,opacity:0.35,cursor:"default"}}>⛶</button>;
+  }
+
+  return <>
+    <button type="button" onClick={()=>{setErr("");setOpen(true);}} title={title} style={scanBtnStyle}>⛶</button>
+    {open && <div onClick={e=>e.target===e.currentTarget&&stop()}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:2000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{color:"#fff",fontSize:13,marginBottom:12,textAlign:"center"}}>
+        Point at the barcode on the shipping label
+      </div>
+      <div style={{position:"relative",width:"min(92vw,460px)",aspectRatio:"4/3",borderRadius:12,overflow:"hidden",background:"#000"}}>
+        <video ref={videoRef} playsInline muted style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+        <div style={{position:"absolute",left:"8%",right:"8%",top:"38%",height:"24%",border:"2px solid #C8953C",borderRadius:8,boxShadow:"0 0 0 9999px rgba(0,0,0,0.35)"}}/>
+      </div>
+      {err && <div style={{color:"#F87171",fontSize:12,marginTop:12,textAlign:"center",maxWidth:340}}>{err}</div>}
+      <button type="button" onClick={stop} style={{marginTop:18,padding:"10px 22px",borderRadius:8,border:"1px solid rgba(255,255,255,0.35)",background:"transparent",color:"#fff",fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+    </div>}
+  </>;
+}
+
+const scanBtnStyle={
+  flexShrink:0,width:32,height:30,borderRadius:7,cursor:"pointer",
+  border:`1px solid ${G.border}`,background:G.bg,color:G.muted,
+  fontSize:15,lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center",
+  padding:0,fontFamily:"inherit",
+};
 
 export default function SnappyGoldCRM() {
   const isMobile=useIsMobile();
