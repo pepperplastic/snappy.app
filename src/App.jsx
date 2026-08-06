@@ -1481,36 +1481,7 @@ export default function App() {
       <nav style={styles.nav}>
         <div style={styles.navInner}>
           <button onClick={reset} style={styles.logoBtn}>
-            <svg width="34" height="32" viewBox="11 9 98 76" fill="none">
-              {/* Antenna */}
-              <line x1="60" y1="16" x2="60" y2="24" stroke="#C8953C" strokeWidth="3" strokeLinecap="round"/>
-              <circle cx="60" cy="14" r="4" fill="#C8953C"/>
-              {/* Head */}
-              <rect x="24" y="24" width="72" height="58" rx="16" fill="#1A1816" stroke="#C8953C" strokeWidth="2.5"/>
-              {/* Left eye */}
-              <circle cx="48" cy="51" r="16" fill="#2A2724" stroke="#C8953C" strokeWidth="2.5"/>
-              <circle cx="48" cy="51" r="11" fill="#1A1816" stroke="#8A8580" strokeWidth="0.7"/>
-              <circle cx="48" cy="51" r="7" fill="#C8953C"/>
-              <circle cx="48" cy="51" r="3.5" fill="#1A1816"/>
-              <circle cx="43" cy="46" r="2.5" fill="rgba(255,255,255,0.45)"/>
-              {/* Right eye */}
-              <circle cx="74" cy="51" r="11" fill="#2A2724" stroke="#C8953C" strokeWidth="1.5"/>
-              <circle cx="74" cy="51" r="6" fill="#1A1816"/>
-              <circle cx="74" cy="51" r="3" fill="#3A3530"/>
-              <circle cx="70" cy="47" r="1.8" fill="rgba(255,255,255,0.35)"/>
-              {/* Green indicator */}
-              <circle cx="84" cy="34" r="3" fill="#4ADE80"/>
-              {/* Mouth grille */}
-              <rect x="38" y="68" width="44" height="9" rx="4" fill="#0D0C0B"/>
-              <line x1="45" y1="69.5" x2="45" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="52" y1="69.5" x2="52" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="59" y1="69.5" x2="59" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="66" y1="69.5" x2="66" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="73" y1="69.5" x2="73" y2="75.5" stroke="#C8953C" strokeWidth="1.5" strokeLinecap="round"/>
-              {/* Ears */}
-              <rect x="13" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
-              <rect x="96" y="42" width="11" height="18" rx="5.5" fill="#1A1816" stroke="#C8953C" strokeWidth="1.5"/>
-            </svg>
+            <img src="/robot.png" alt="" aria-hidden="true" width={36} height={32} style={{ display: 'block', height: 32, width: 'auto', flexShrink: 0 }} />
             <span style={styles.logoWordmark}>
               <span style={styles.logoText}>Snappy</span>
               <span style={styles.logoGold}>Gold</span>
@@ -3609,7 +3580,6 @@ const styles = {
   logoWordmark: { display: 'flex', alignItems: 'baseline', gap: '0.26em' },
   logoMark: { width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${gold}, ${goldLight})`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 18 },
   logoText: { fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 22, color: '#2A2015', letterSpacing: '0.01em', textShadow: '0 0 10px rgba(212,163,68,0.4), 0 0 20px rgba(212,163,68,0.2), 0 0 3px rgba(212,163,68,0.15)' },
-  logoDot: { fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 22, color: gold, margin: '0 0 0 -2px', textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25)' },
   logoGold: { fontFamily: '"EB Garamond", serif', fontWeight: 500, fontSize: 22, color: gold, letterSpacing: '0.01em', textShadow: '0 0 10px rgba(212,163,68,0.5), 0 0 20px rgba(212,163,68,0.25), 0 0 3px rgba(212,163,68,0.2)' },
   navLinks: { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 },
   navLink: { background: 'none', border: 'none', padding: '7px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: muted, fontFamily: 'inherit', transition: 'all 0.2s', whiteSpace: 'nowrap' },
