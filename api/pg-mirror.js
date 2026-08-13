@@ -155,6 +155,36 @@ export default async function handler(req, res) {
   if (!ALLOWED_TABLES.has(table)) {
     return res.status(400).json({ error: `unsupported table: ${table}` });
   }
+
+  // ── Fingerprint mode ────────────────────────────────────────────────
+  // Returns legacy_id plus a caller-chosen set of columns for every row, so
+  // Apps Script can diff Sheets against Postgres and mirror only what differs.
+  // Apps Script can't read Supabase directly (sb_secret_ keys reject
+  // browser-like User-Agents), so the read has to come through here too.
+  if (body.action === 'fingerprint') {
+    try {
+      const cols = await getColumns(table);
+      const want = Array.isArray(body.fields) ? body.fields.filter(f => cols.includes(f)) : [];
+      const select = ['legacy_id', ...want].join(',');
+      const out = [];
+      const pageSize = 1000;
+      for (let offset = 0; ; offset += pageSize) {
+        const url = `${SUPA_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}` +
+                    `&order=legacy_id&limit=${pageSize}&offset=${offset}`;
+        const r = await fetch(url, { headers: headers() });
+        if (!r.ok) throw new Error(`fingerprint ${r.status}: ${(await r.text()).slice(0, 200)}`);
+        const page = await r.json();
+        out.push(...page);
+        if (page.length < pageSize) break;
+        if (offset > 50000) break;               // guard against a runaway loop
+      }
+      return res.status(200).json({ ok: true, rows: out, fields: want });
+    } catch (err) {
+      console.error('pg-mirror fingerprint', err);
+      return res.status(500).json({ error: String(err.message || err) });
+    }
+  }
+
   const sheetRow = body.row;
   if (!sheetRow || typeof sheetRow !== 'object') {
     return res.status(400).json({ error: 'row required' });
