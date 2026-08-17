@@ -1526,12 +1526,12 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
           <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center",flexWrap:"wrap"}}>
             {shipment.stage==="ready_to_fulfill"
               ? <span style={{
-                  background: shipment.shipping_type==="usps" ? G.green+"18" : shipment.shipping_type==="label" ? G.blue+"18" : G.purple+"18",
-                  color:      shipment.shipping_type==="usps" ? G.green      : shipment.shipping_type==="label" ? G.blue      : G.purple,
-                  border:     `1px solid ${shipment.shipping_type==="usps" ? G.green+"33" : shipment.shipping_type==="label" ? G.blue+"33" : G.purple+"33"}`,
+                  background: shipType(shipment.shipping_type)==="usps" ? G.green+"18" : shipType(shipment.shipping_type)==="fedex" ? G.blue+"18" : G.purple+"18",
+                  color:      shipType(shipment.shipping_type)==="usps" ? G.green      : shipType(shipment.shipping_type)==="fedex" ? G.blue      : G.purple,
+                  border:     `1px solid ${shipType(shipment.shipping_type)==="usps" ? G.green+"33" : shipType(shipment.shipping_type)==="fedex" ? G.blue+"33" : G.purple+"33"}`,
                   borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"
                 }}>
-                  {shipment.shipping_type==="usps" ? "USPS Label" : shipment.shipping_type==="label" ? "FedEx Label" : shipment.shipping_type==="kit" ? "Kit" : "Ready to Fulfill"}
+                  {shipType(shipment.shipping_type)==="usps" ? "USPS Label" : shipType(shipment.shipping_type)==="fedex" ? "FedEx Label" : shipType(shipment.shipping_type)==="kit" ? "Kit" : "Ready to Fulfill"}
                 </span>
               : <Badge stage={shipment.stage} sm/>}
             {absStr&&<span title={ageStr?`${ageStr} ago`:""} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {absStr}</span>}
@@ -2249,13 +2249,13 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       //     var shippingType = String(data.shipping_type || '').trim() || 'usps';
       // so this guard was stricter than the server for no reason. Blank now
       // takes the label path too.
-      const _st = String(shipment.shipping_type || "").trim().toLowerCase();
-      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && (_st==="usps" || _st==="label" || _st==="")) {
+      const _st = shipType(shipment.shipping_type);
+      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && (_st==="usps" || _st==="fedex")) {
         if(!customer?.address || !customer?.email) {
           alert("Cannot generate label: customer is missing address or email.");
           return;
         }
-        const carrier = _st==="label" ? "FedEx" : "USPS";
+        const carrier = _st==="fedex" ? "FedEx" : "USPS";
         const confirmed = window.confirm("Generate and email " + carrier + " label to " + (customer?.name||"customer") + " at " + customer?.email + "?");
         if(!confirmed) return;
         try {
@@ -2305,7 +2305,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       // AUG 17: last line of defence. If anything ever reaches here with
       // outbound_complete on a shipment that should have had a label, stop —
       // don't repeat the silent-advance failure in a new form.
-      if (stage === "outbound_complete" && String(shipment.shipping_type||"").trim().toLowerCase() !== "kit"
+      if (stage === "outbound_complete" && shipType(shipment.shipping_type) !== "kit"
           && !shipment.outbound_tracking) {
         alert("Not moving to Outbound: no tracking number on this shipment.\n\n"
             + "A label was never generated, so the customer has nothing to ship with. "
@@ -3590,8 +3590,8 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
     const batchSource = selectedIds.size > 0
       ? filtered.filter(s => selectedIds.has(s.shipment_id))
       : filtered;
-    const fedexCustomers=batchSource.filter(s=>s.shipping_type==="label");
-    const uspsCustomers=batchSource.filter(s=>s.shipping_type==="usps");
+    const fedexCustomers=batchSource.filter(s=>shipType(s.shipping_type)==="fedex");
+    const uspsCustomers=batchSource.filter(s=>shipType(s.shipping_type)==="usps");
     const allLabelCustomers=[...fedexCustomers,...uspsCustomers];
 
     // 1. FedEx return labels CSV
@@ -3612,7 +3612,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
           const c=custById[s.customer_id]||{};
           const firstName=(c.name||"").trim().split(" ")[0]||"there";
           const item=s.item||"your item";
-          const isFedex=s.shipping_type==="label";
+          const isFedex=shipType(s.shipping_type)==="fedex";
           const carrierName=isFedex?"FedEx":"USPS";
           const dropText=isFedex?"drop it at any FedEx location":"hand it to your postman or drop it at any post office";
           doc+=`[${i+1}] ${s.shipment_id} | ${s.customer_id} | ${carrierName}\n`;
@@ -4755,7 +4755,7 @@ function AnalyticsTab({shipments, customers}) {
     const returned   = filtered.filter(s => s.stage === "returned");
     const received   = filtered.filter(s => ["received","inspected","pending_response"].includes(s.stage));
     const outbound   = filtered.filter(s => s.stage === "outbound_complete");
-    const kits       = filtered.filter(s => s.stage === "outbound_complete" && s.shipping_type === "kit");
+    const kits       = filtered.filter(s => s.stage === "outbound_complete" && shipType(s.shipping_type) === "kit");
 
     const revenue    = purchased.reduce((sum,s) => sum + (parseFloat(s.appraised_value)||0), 0);
     const projectedOutbound = outbound.reduce((sum,s) => {
@@ -5575,6 +5575,25 @@ const scanBtnStyle={
   fontSize:15,lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center",
   padding:0,fontFamily:"inherit",
 };
+
+// ═══════════════════════════════════════════════════════════════
+//  AUG 17: shipping_type has TWO vocabularies and the CRM only knew one.
+//  Sheets uses 'label' to mean FedEx. Postgres can't — its shipping_carrier
+//  enum has no 'label' — so the Aug 10 migration mapped label → 'fedex'.
+//  Once PG_TABLES included shipments, the CRM started reading 'fedex' and
+//  every comparison in this file silently failed: labels wouldn't generate,
+//  the FedEx filter chip read 0 while fedex rows sat in the list, and batch
+//  printing skipped them. Normalise once, compare against this everywhere.
+//  Blank is treated as USPS, matching Code.gs:
+//      var shippingType = String(data.shipping_type || '').trim() || 'usps';
+// ═══════════════════════════════════════════════════════════════
+function shipType(v){
+  const t = String(v||"").trim().toLowerCase();
+  if(t==="label"||t==="fedex") return "fedex";
+  if(t==="kit") return "kit";
+  if(t==="usps"||t==="") return "usps";
+  return t;
+}
 
 export default function SnappyGoldCRM() {
   const isMobile=useIsMobile();
