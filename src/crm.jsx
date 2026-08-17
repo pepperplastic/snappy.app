@@ -2241,12 +2241,21 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     try {
       // Special case: USPS label shipment moving to outbound_complete
       // Generate Shippo label automatically before changing stage
-      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && (shipment.shipping_type==="usps" || shipment.shipping_type==="label")) {
+      // AUG 17 FIX: a BLANK shipping_type used to fall straight past this block
+      // to the generic stage change at the bottom — the shipment moved to
+      // outbound_complete with no label, no tracking, no error, and the customer
+      // sat in Outbound looking fulfilled while waiting for a label that was
+      // never created. Code.gs already treats blank as USPS:
+      //     var shippingType = String(data.shipping_type || '').trim() || 'usps';
+      // so this guard was stricter than the server for no reason. Blank now
+      // takes the label path too.
+      const _st = String(shipment.shipping_type || "").trim().toLowerCase();
+      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && (_st==="usps" || _st==="label" || _st==="")) {
         if(!customer?.address || !customer?.email) {
           alert("Cannot generate label: customer is missing address or email.");
           return;
         }
-        const carrier = shipment.shipping_type==="label" ? "FedEx" : "USPS";
+        const carrier = _st==="label" ? "FedEx" : "USPS";
         const confirmed = window.confirm("Generate and email " + carrier + " label to " + (customer?.name||"customer") + " at " + customer?.email + "?");
         if(!confirmed) return;
         try {
@@ -2265,7 +2274,11 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             alert("Label generation failed: " + (labelResult.error||"unknown error"));
             return;
           }
-          onUpdate({...shipment, stage:"outbound_complete", return_tracking: labelResult.tracking});
+          // outbound_tracking is the customer→us leg (legacy field name);
+          // return_tracking is us→customer. Writing the wrong one here meant the
+          // resend-label button — which keys off outbound_tracking — didn't
+          // appear until a refresh pulled the correct field from the server.
+          onUpdate({...shipment, stage:"outbound_complete", outbound_tracking: labelResult.tracking});
           return;
         } catch(e) {
           alert("Label generation error: " + e.message);
@@ -2287,6 +2300,16 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         const stamp = new Date().toISOString();
         await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage, paid_at: stamp}});
         onUpdate({...shipment, stage, paid_at: stamp});
+        return;
+      }
+      // AUG 17: last line of defence. If anything ever reaches here with
+      // outbound_complete on a shipment that should have had a label, stop —
+      // don't repeat the silent-advance failure in a new form.
+      if (stage === "outbound_complete" && String(shipment.shipping_type||"").trim().toLowerCase() !== "kit"
+          && !shipment.outbound_tracking) {
+        alert("Not moving to Outbound: no tracking number on this shipment.\n\n"
+            + "A label was never generated, so the customer has nothing to ship with. "
+            + "Generate the label from Fulfill, or set shipping type to \"kit\" if you're mailing a kit by hand.");
         return;
       }
       await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{stage}}); onUpdate({...shipment,stage});
