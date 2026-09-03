@@ -24,6 +24,36 @@ const JUNK_KEY   = "sg_crm_junk_emails";
 function getJunkList() { try { return JSON.parse(localStorage.getItem(JUNK_KEY)||"[]"); } catch { return []; } }
 function addToJunkList(email) { try { const j=getJunkList(); if(!j.includes(email)) { j.push(email); localStorage.setItem(JUNK_KEY,JSON.stringify(j)); } } catch {} }
 
+// ── Search matching ───────────────────────────────────────
+// SEP 3: search was a raw substring test, so it only matched if the query was
+// character-for-character inside the field. "David Wright" failed to find
+// "David  Wright" (two spaces in the record) — you had to type the double space
+// yourself. Same class of miss hid Jahnaleigh Aykes behind a name search.
+//
+// Now: both sides are normalised (lowercased, punctuation stripped, runs of
+// whitespace collapsed) and the query is matched TOKEN-WISE — every word in the
+// query must appear somewhere across the fields. So "wright david" works,
+// "jahnaleigh" alone works, and stray spacing stops mattering.
+function _norm(v) {
+  return String(v == null ? "" : v)
+    .toLowerCase()
+    .replace(/[.,'"`\-_/\\()]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function matchesQuery(query, ...fields) {
+  const q = _norm(query);
+  if (!q) return true;
+  const hay = fields.map(_norm).join(" ");
+  const digits = String(query || "").replace(/\D/g, "");
+  // a mostly-numeric query (phone, tracking, zip) matches on digits alone
+  if (digits.length >= 4) {
+    const hayDigits = fields.map(f => String(f == null ? "" : f).replace(/\D/g, "")).join(" ");
+    if (hayDigits.includes(digits)) return true;
+  }
+  return q.split(" ").every(tok => hay.includes(tok));
+}
+
 // ── Brand ─────────────────────────────────────────────────
 const G = {
   gold:   "#C8953C", goldLt: "#E8B86D",
@@ -2988,7 +3018,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>RECEIVED_STAGES.includes(s.stage));
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
+    if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
 
@@ -3106,7 +3136,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>COMPLETE_STAGES.includes(s.stage));
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
+    if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById]);
 
@@ -3312,7 +3342,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>FULFILL_STAGES.includes(s.stage));
     list=list.filter(s=>showDeferred?isDeferred(s):!isDeferred(s)); // active vs deferred view
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
+    if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById,showDeferred]);
 
@@ -3738,7 +3768,7 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage));
     if(stageFilter) list=list.filter(s=>s.stage===stageFilter);
-    if(search){const q=search.toLowerCase();list=list.filter(s=>{const c=custById[s.customer_id]||{};return String(s.item||"").toLowerCase().includes(q)||String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").replace(/\D/g,"").includes(q)||String(c.address||"").toLowerCase().includes(q)||String(s.shipment_id||"").toLowerCase().includes(q)||String(s.return_tracking||"").toLowerCase().includes(q)||String(s.outbound_tracking||"").toLowerCase().includes(q);});}
+    if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,stageFilter,custById]);
 
@@ -3869,7 +3899,7 @@ function LeadsTab({activeCustomerEmails,onCountChange}) {
 
   const filtered=useMemo(()=>{
     let list=leads.filter(l=>!activeCustomerEmails.has(String(l.email).toLowerCase())&&!junkEmails.has(String(l.email).toLowerCase()));
-    if(search){const q=search.toLowerCase();list=list.filter(l=>String(l.name||"").toLowerCase().includes(q)||String(l.email||"").toLowerCase().includes(q)||String(l.item||"").toLowerCase().includes(q)||String(l.phone||"").toLowerCase().includes(q)||String(l.address||"").toLowerCase().includes(q));}
+    if(search){list=list.filter(l=>matchesQuery(search,l.name,l.email,l.item,l.phone,l.address));}
     return [...list].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
   },[leads,search,activeCustomerEmails,junkEmails]);
 
@@ -4003,8 +4033,7 @@ function CustomersTab({customers,shipments,contactLogs,onUpdate,onNewShipment}) 
 
   const filtered=useMemo(()=>{
     if(!search) return customers;
-    const q=search.toLowerCase();
-    return customers.filter(c=>String(c.name||"").toLowerCase().includes(q)||String(c.email||"").toLowerCase().includes(q)||String(c.phone||"").toLowerCase().includes(q)||String(c.customer_id||"").toLowerCase().includes(q)||String(c.address||"").toLowerCase().includes(q));
+    return customers.filter(c=>matchesQuery(search,c.name,c.email,c.phone,c.customer_id,c.address));
   },[customers,search]);
 
   const selCustomer=selected?custById[selected]:null;
@@ -5634,10 +5663,23 @@ useEffect(()=>{
     try {
       // PERF PATCH (May 19): use getShipmentsLite to skip attribution join on initial load.
       // Cuts load from ~5-6s → ~1s. Attribution loads lazily when a shipment detail opens.
-      const [cr,sr,lr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipmentsLite"}),apiFetch({action:"getContactLog"})]);
-      const c=Array.isArray(cr)?cr:[]; const s=Array.isArray(sr)?sr:[]; const l=Array.isArray(lr)?lr:[];
-      setCustomers(c); setShipments(s); setContactLogs(l); setLastLoaded(Date.now());
-      if(c.length||s.length) setCache({customers:c,shipments:s,contactLogs:l});
+      // SEP 3 PERF: getContactLog returns the ENTIRE log — every entry for every
+      // customer — and it was blocking the first paint. But it's only ever read
+      // per-customer, when a detail pane opens. So the two things the queues
+      // actually need are awaited, and the log streams in behind them.
+      const [cr,sr]=await Promise.all([apiFetch({action:"getCustomers"}),apiFetch({action:"getShipmentsLite"})]);
+      const c=Array.isArray(cr)?cr:[]; const s=Array.isArray(sr)?sr:[];
+      setCustomers(c); setShipments(s); setLastLoaded(Date.now());
+      setLoading(false);   // queues are usable now; don't hold the spinner for the log
+
+      apiFetch({action:"getContactLog"}).then(lr=>{
+        const l=Array.isArray(lr)?lr:[];
+        setContactLogs(l);
+        if(c.length||s.length) setCache({customers:c,shipments:s,contactLogs:l});
+      }).catch(()=>{
+        // Log failed: the CRM still works, detail panes just show no history.
+        if(c.length||s.length) setCache({customers:c,shipments:s,contactLogs:[]});
+      });
     } catch(e){setError("Failed to load: "+e.message);}
     setLoading(false);
   }
