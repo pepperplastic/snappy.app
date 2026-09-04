@@ -531,7 +531,11 @@ function isUnlocked() {
 // ── UTM / Ad tracking ──
 function captureUtmParams() {
   const params = new URLSearchParams(window.location.search)
-  const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ref']
+  // 'refid' is FlexOffers' click id — they append it on landing when the
+  // Subtracking Variable is left blank. It rides the same 30-day cookie as
+  // everything else here, which matters because the conversion is reported
+  // when the package ARRIVES — often weeks after the click.
+  const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ref', 'refid']
   const utm = {}
   let hasAny = false
   utmKeys.forEach(key => {
@@ -546,6 +550,10 @@ function captureUtmParams() {
   if (!utm.utm_source && utm.fbclid) {
     utm.utm_source = 'facebook'
     utm.utm_medium = utm.utm_medium || 'paid'
+  }
+  if (!utm.utm_source && utm.refid) {
+    utm.utm_source = 'flexoffers'
+    utm.utm_medium = utm.utm_medium || 'affiliate'
   }
   if (hasAny) {
     setCookie('snappy_utm', encodeURIComponent(JSON.stringify(utm)), 30)
@@ -1447,6 +1455,9 @@ export default function App() {
       source: directQuote ? 'direct_quote' : limitGated ? 'limit_gate' : 'photo_flow',
       variant: variant,
       ...utm,
+      // Code.gs stores this on the shipment as flex_click_id, so the arrival
+      // postback can find it long after this browser session is gone.
+      flex_click_id: utm.refid || '',
       ip: getIP(),
       sessionId: getSessionId(),
       image: compressedImage,
