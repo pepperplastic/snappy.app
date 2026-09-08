@@ -5400,12 +5400,13 @@ function RoiTab({shipments}) {
   const [data,setData]       = useState(null);
   const [loading,setLoading] = useState(true);
   const [err,setErr]         = useState("");
-  const [preset,setPreset]   = useState("90d");        // 30d | 90d | ytd | all | custom
-  const [from,setFrom]       = useState(()=>{ const d=new Date(); d.setDate(d.getDate()-90); return roiDateStr(d); });
+  const [preset,setPreset]   = useState("all");        // 30d | 90d | ytd | all | custom
+  const [from,setFrom]       = useState("2026-01-01");
   const [to,setTo]           = useState(()=>roiDateStr(new Date()));
-  const [view,setView]       = useState("mature");     // mature | all
+  const [view,setView]       = useState("all");        // mature | all
   const [matureDays,setMatureDays] = useState(30);
-  const [excludeOn,setExcludeOn]   = useState(false);   // outlier guard
+  const [channel,setChannel] = useState("");           // source filter: "" = all
+  const [excludeOn,setExcludeOn]   = useState(true);    // outlier guard — on by default, $5k
   const [excludeOver,setExcludeOver] = useState(5000);
   const [open,setOpen]       = useState({});           // channel key → expanded
   const [syncing,setSyncing] = useState(false);
@@ -5472,7 +5473,9 @@ function RoiTab({shipments}) {
 
   // ── derived ──
   const V = view;
-  const tot = data ? data.totals[V] : null;
+  const chanSel = data && channel ? data.channels.find(c=>c.key===channel) : null;
+  const tot = data ? (chanSel ? chanSel[V] : data.totals[V]) : null;
+  const visibleChannels = data ? (chanSel ? [chanSel] : data.channels) : [];
   const per = (m)=>({
     costReg:      m.regs      ? m.spend/m.regs      : null,
     costArrival:  m.arrived   ? m.spend/m.arrived   : null,
@@ -5484,7 +5487,11 @@ function RoiTab({shipments}) {
   });
   const pct = v => v==null ? "—" : Math.round(v)+"%";
   const cost = v => v==null ? "—" : money(v);
-  const weeks = data ? data.weekly.filter(w=>V==="all"||w.mature) : [];
+  const weeks = data ? data.weekly.filter(w=>V==="all"||w.mature).map(w=>{
+    if(!channel) return w;
+    const b=(w.by&&w.by[channel])||{spend:0,regs:0,arrived:0,purchased:0,paid:0};
+    return {...w, ...b};
+  }) : [];
 
   const th = {padding:"9px 10px",textAlign:"right",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"};
   const td = {padding:"9px 10px",textAlign:"right",fontSize:13,borderTop:`1px solid ${G.border}`,whiteSpace:"nowrap"};
@@ -5524,6 +5531,11 @@ function RoiTab({shipments}) {
         <input type="number" value={excludeOver} onChange={e=>setExcludeOver(e.target.value)} onBlur={()=>load()} onKeyDown={e=>{if(e.key==="Enter")load();}}
           style={{width:76,fontSize:12,padding:"4px 6px",border:`1px solid ${G.border}`,borderRadius:6}}/>
       </>}
+      {data && data.channels.length>1 && <div style={{flexBasis:"100%",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:4}}>
+        <span style={{fontSize:12,fontWeight:700,color:G.text}}>Source:</span>
+        {chip(!channel,"All sources",()=>setChannel(""))}
+        {data.channels.map(c=>chip(channel===c.key, c.label + (c.all.regs?` · ${c.all.regs}`:""), ()=>setChannel(channel===c.key?"":c.key)))}
+      </div>}
       <div style={{flexBasis:"100%",fontSize:11,color:G.muted,lineHeight:1.5,marginTop:2}}>
         Spend is charged to the week it was spent; registrations, arrivals and purchases are credited to the week the person <b>registered</b>.
         Packages land 7–20 days after registration, so "Everything" always makes the last two weeks look like money on fire. <b>Mature</b> drops
@@ -5576,7 +5588,7 @@ function RoiTab({shipments}) {
       return <>
       <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
         <span style={{fontSize:12,fontWeight:700,color:G.text}}>Appraised</span>
-        <span style={{fontSize:11,color:G.muted}}>this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid · splits by channel below</span>
+        <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
         {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
@@ -5603,7 +5615,7 @@ function RoiTab({shipments}) {
         return <>
           <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
             <span style={{fontSize:12,fontWeight:700,color:G.text}}>Realized</span>
-            <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · not splittable by channel or date (refiner lots carry no attribution)
+            <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · whole business regardless of the source/date filters (refiner lots carry no attribution)
               {r.excludedSales>0 && ` · ${r.excludedSales} outlier sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded`}</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
@@ -5629,8 +5641,8 @@ function RoiTab({shipments}) {
             <th style={th}>Net</th><th style={th}>$/reg</th><th style={th}>$/arrival</th><th style={th}>$/purchase</th>
           </tr></thead>
           <tbody>
-            {data.channels.map(c=>{
-              const m=c[V]; const p=per(m); const isOpen=!!open[c.key];
+            {visibleChannels.map(c=>{
+              const m=c[V]; const p=per(m); const isOpen=!!open[c.key] || !!chanSel;
               const sub=c.adsets.filter(a=>a[V].spend>0||a[V].regs>0);
               const row=(label,m,p,indent,key)=><tr key={key} style={{background:indent?"#FBF8F3":"#fff"}}>
                 <td style={{...td,textAlign:"left",fontWeight:indent?400:600,paddingLeft:indent?28:10,fontSize:indent?12:13,color:indent?G.muted:G.text,whiteSpace:"normal"}}>{label}</td>
