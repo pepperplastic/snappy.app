@@ -5347,7 +5347,55 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
 
 function roiDateStr(d){ return d.toISOString().slice(0,10); }
 
-function RoiTab() {
+
+// ── Realized margin (business-level, all-time) ─────────────────────────
+// DW's formula: gross sales − fees + expected + inventory on hand − what was paid.
+// Mirrors the Sales tab's rules exactly (15% eBay fee on gross, `expected` rows
+// counted here, `loss` rows contribute cost only, inventory from the Sales
+// tab's hand-entered estimate) so the two tabs never disagree.
+// Not attributable by channel/window — a refiner lot doesn't know which ad it
+// came from — so this is one figure for the whole business.
+function computeRealizedMargin(sales, shipments, excludeOver) {
+  const EBAY_FEE_PCT = 15;
+  const PURCHASED = ["complete","pending_payment","pending_leadsonline"];
+  const shipById = {}; shipments.forEach(s=>{ shipById[s.shipment_id]=s; });
+  const isExcluded = s => excludeOver>0 && (parseFloat(s.purchase_price)||0) > excludeOver;
+  const typeOf = sale => { const t=String(sale.sale_type||"").toLowerCase().trim(); return (t==="loss"||t==="expected")?t:"sale"; };
+
+  let gross=0, fees=0, expected=0, lossCost=0, excludedSales=0;
+  sales.forEach(sale=>{
+    const ids = String(sale.shipment_ids||"").split(",").map(x=>x.trim()).filter(Boolean);
+    const linked = ids.map(id=>shipById[id]).filter(Boolean);
+    if (linked.length && linked.every(isExcluded)) { excludedSales++; return; }   // outlier's resale drops with his cost
+    const amt = parseFloat(sale.amount)||0;
+    const t = typeOf(sale);
+    if (t==="expected") { expected += amt; return; }
+    if (t==="loss") {
+      // cost of a loss with no SHP lives only in manual_cost; linked losses are already in paid
+      if (!linked.length) lossCost += parseFloat(sale.manual_cost)||0;
+      return;
+    }
+    gross += amt;
+    if (/ebay/i.test(String(sale.buyer_name||""))) fees += amt*(EBAY_FEE_PCT/100);
+  });
+
+  let paid=0, purchases=0, excludedPaid=0;
+  shipments.forEach(s=>{
+    if (!PURCHASED.includes(String(s.stage||"").toLowerCase())) return;
+    const p = parseFloat(s.purchase_price)||0;
+    if (isExcluded(s)) { excludedPaid += p; return; }
+    paid += p; purchases++;
+  });
+
+  let inventory=0, inventoryUpdated="";
+  try { const raw=JSON.parse(localStorage.getItem(INVENTORY_EST_KEY)||"null"); if(raw){ inventory=parseFloat(raw.value)||0; inventoryUpdated=raw.updated||""; } } catch {}
+
+  const cost = paid + lossCost;
+  const margin = gross - fees + expected + inventory - cost;
+  return { gross, fees, expected, inventory, inventoryUpdated, paid, lossCost, cost, purchases, margin, excludedSales, excludedPaid };
+}
+
+function RoiTab({shipments}) {
   const isMobile = useIsMobile();
   const [data,setData]       = useState(null);
   const [loading,setLoading] = useState(true);
@@ -5364,6 +5412,14 @@ function RoiTab() {
   const [ledger,setLedger]   = useState([]);
   const [showLedger,setShowLedger] = useState(false);
   const [entry,setEntry]     = useState({date:roiDateStr(new Date()),channel:"cfd_flyer",campaign:"",spend:"",notes:""});
+  const [sales,setSales]     = useState(null);        // all Sales rows, for realized margin
+  const [allSpend,setAllSpend] = useState(null);      // all-time spend, for realized net
+
+  useEffect(()=>{ (async()=>{
+    try{ const r=await apiPost({action:"getSales"}); if(r&&r.success) setSales(r.sales||[]); }catch{}
+    try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setAllSpend((r.rows||[]).reduce((sum,x)=>sum+(parseFloat(x.spend)||0),0)); }catch{}
+  })(); },[]);
+  const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0) : null, [sales,shipments,excludeOn,excludeOver]);
 
   function applyPreset(p){
     setPreset(p);
@@ -5524,6 +5580,28 @@ function RoiTab() {
           {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
         </div>)}
       </div>;})()}
+
+      {/* Realized margin — business-level, all-time, from the Sales tab */}
+      {realized && (()=>{ const r=realized; const net = allSpend==null ? null : r.margin-allSpend;
+        const roi = allSpend ? (r.margin-allSpend)/allSpend*100 : null;
+        const line = (l,v,neg)=><span key={l} style={{whiteSpace:"nowrap"}}><span style={{color:G.muted}}>{l}</span> <b style={{color:neg?G.red:G.text}}>{neg?"−":""}{money(Math.abs(v))}</b></span>;
+        return <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:14,flexWrap:"wrap"}}>
+            <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Realized margin · all-time · from Sales tab</div>
+            <div style={{fontSize:22,fontWeight:700,color:r.margin>=0?G.green:G.red}}>{money(r.margin)}</div>
+            {net!=null && <div style={{fontSize:13,color:net>=0?G.green:G.red,fontWeight:600}}>Net {money(net)} after {money(allSpend)} all-time spend{roi!=null?` · ${Math.round(roi)}% ROI`:""}</div>}
+          </div>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,marginTop:6}}>
+            {line("Gross sales",r.gross)}{line("Fees",r.fees,true)}{line("Expected",r.expected)}{line("Inventory on hand",r.inventory)}
+            {line(`Paid (${r.purchases} purchases)`,r.paid,true)}{r.lossCost>0&&line("Unlinked losses",r.lossCost,true)}
+          </div>
+          <div style={{fontSize:11,color:G.muted,marginTop:6}}>
+            Appraised margin above is per-cohort and splits by channel; this one is the whole business and can't be split — refiner lots don't carry attribution.
+            {!r.inventory && " Inventory on hand is $0 — set it in the Sales tab (Inventory Estimate panel) on this device."}
+            {r.inventory>0 && r.inventoryUpdated && ` Inventory estimate last set ${String(r.inventoryUpdated).slice(0,10)}.`}
+            {r.excludedSales>0 && ` ${r.excludedSales} sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded as outliers.`}
+          </div>
+        </div>;})()}
 
       {/* Weekly trend */}
       {weeks.length>1 && <RoiWeeklyChart weeks={weeks}/>}
@@ -6038,7 +6116,7 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="sales"    &&<SalesTab     shipments={shipments} customers={customers}/>}
       {tab==="marketing"&&<MarketingTab/>}
-      {tab==="roi"      &&<RoiTab/>}
+      {tab==="roi"      &&<RoiTab shipments={shipments}/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
     </div>
   </div>;
