@@ -5337,6 +5337,278 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
   </div>;
 }
 
+// ══════════════════════════════════════════════════════════
+// ROI TAB (Sep 8) — spend vs. what it actually produced.
+// Everything here comes from ONE server call (getMarketingRoi) that joins the
+// Ad Spend ledger against first-touch attribution and shipment outcomes.
+// Spend lands in the ledger automatically (Meta Insights daily trigger,
+// Google Ads Script daily); flyers/FlexOffers/etc. are entered by hand below.
+// ══════════════════════════════════════════════════════════
+
+function roiDateStr(d){ return d.toISOString().slice(0,10); }
+
+function RoiTab() {
+  const isMobile = useIsMobile();
+  const [data,setData]       = useState(null);
+  const [loading,setLoading] = useState(true);
+  const [err,setErr]         = useState("");
+  const [preset,setPreset]   = useState("90d");        // 30d | 90d | ytd | all | custom
+  const [from,setFrom]       = useState(()=>{ const d=new Date(); d.setDate(d.getDate()-90); return roiDateStr(d); });
+  const [to,setTo]           = useState(()=>roiDateStr(new Date()));
+  const [view,setView]       = useState("mature");     // mature | all
+  const [matureDays,setMatureDays] = useState(30);
+  const [open,setOpen]       = useState({});           // channel key → expanded
+  const [syncing,setSyncing] = useState(false);
+  const [ledger,setLedger]   = useState([]);
+  const [showLedger,setShowLedger] = useState(false);
+  const [entry,setEntry]     = useState({date:roiDateStr(new Date()),channel:"cfd_flyer",campaign:"",spend:"",notes:""});
+
+  function applyPreset(p){
+    setPreset(p);
+    const t=new Date(); const f=new Date();
+    if(p==="30d") f.setDate(t.getDate()-30);
+    else if(p==="90d") f.setDate(t.getDate()-90);
+    else if(p==="ytd") { f.setMonth(0,1); }
+    else if(p==="all") { f.setFullYear(2026,0,1); }
+    else return;
+    setFrom(roiDateStr(f)); setTo(roiDateStr(t));
+  }
+
+  const load = useCallback(async (nocache=false)=>{
+    setLoading(true); setErr("");
+    try{
+      const r = await apiPost({action:"getMarketingRoi", from, to, mature_days:matureDays, nocache:nocache||undefined});
+      if(r && r.success) setData(r); else setErr((r&&r.error)||"Couldn't load ROI");
+    }catch(e){ setErr(e.message||String(e)); }
+    setLoading(false);
+  },[from,to,matureDays]);
+
+  const loadLedger = useCallback(async ()=>{
+    try{ const r=await apiPost({action:"getAdSpend", from, to}); if(r&&r.success) setLedger(r.rows||[]); }catch{}
+  },[from,to]);
+
+  useEffect(()=>{ load(); },[load]);
+  useEffect(()=>{ if(showLedger) loadLedger(); },[showLedger,loadLedger]);
+
+  async function syncMeta(){
+    setSyncing(true);
+    try{
+      const r=await apiPost({action:"syncMetaSpend", days_back:7});
+      if(!(r&&r.success)) alert("Meta sync failed: "+((r&&r.error)||"unknown"));
+      await load(true); if(showLedger) loadLedger();
+    }catch(e){ alert("Meta sync failed: "+(e.message||e)); }
+    setSyncing(false);
+  }
+
+  async function addEntry(){
+    if(!entry.date||!entry.channel||!(parseFloat(entry.spend)>=0)){ alert("Date, channel and a spend amount are required."); return; }
+    const r=await apiPost({action:"addAdSpend", data:{...entry, spend:parseFloat(entry.spend)}});
+    if(r&&r.success){ setEntry(e=>({...e,spend:"",notes:""})); loadLedger(); load(true); }
+    else alert("Save failed: "+((r&&r.error)||"unknown"));
+  }
+  async function delEntry(row){
+    if(!confirm(`Delete ${row.date} · ${row.channel} · ${money(row.spend)}?`)) return;
+    const r=await apiPost({action:"deleteAdSpend", spend_id:row.spend_id});
+    if(r&&r.success){ loadLedger(); load(true); } else alert("Delete failed");
+  }
+
+  // ── derived ──
+  const V = view;
+  const tot = data ? data.totals[V] : null;
+  const per = (m)=>({
+    costReg:      m.regs      ? m.spend/m.regs      : null,
+    costArrival:  m.arrived   ? m.spend/m.arrived   : null,
+    costPurchase: m.purchased ? m.spend/m.purchased : null,
+    shipPct:      m.regs      ? m.arrived/m.regs*100 : null,
+    buyPct:       m.arrived   ? m.purchased/m.arrived*100 : null,
+    net:          m.margin - m.spend,
+    roi:          m.spend     ? (m.margin - m.spend)/m.spend*100 : null,
+  });
+  const pct = v => v==null ? "—" : Math.round(v)+"%";
+  const cost = v => v==null ? "—" : money(v);
+  const weeks = data ? data.weekly.filter(w=>V==="all"||w.mature) : [];
+
+  const th = {padding:"9px 10px",textAlign:"right",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"};
+  const td = {padding:"9px 10px",textAlign:"right",fontSize:13,borderTop:`1px solid ${G.border}`,whiteSpace:"nowrap"};
+  const chip = (on,label,onClick,dark)=><button key={label} onClick={onClick} style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+    background:on?(dark?G.dark:G.gold):"transparent",color:on?(dark?G.cream:"#fff"):G.muted,border:`1px solid ${on?(dark?G.dark:G.gold):G.border}`}}>{label}</button>;
+
+  const freshness = data ? Object.keys(data.spend_freshness||{}).map(k=>`${k==="facebook"?"Meta":k==="google"?"Google":k} through ${data.spend_freshness[k]}`).join(" · ") : "";
+
+  return <div style={{flex:1,overflow:"auto",padding:isMobile?12:24,background:G.bg}}>
+    <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14,flexWrap:"wrap"}}>
+      <h2 style={{margin:0,fontSize:22,color:G.text}}>ROI</h2>
+      <div style={{fontSize:11,color:G.muted}}>{freshness ? `Spend: ${freshness}` : "No spend in the ledger yet"}{data&&data.cached?" · cached":""}</div>
+      <div style={{flex:1}}/>
+      <Btn v="ghost" small onClick={()=>load(true)} disabled={loading}>{loading?"…":"⟳ Recompute"}</Btn>
+      <Btn v="blue" small onClick={syncMeta} disabled={syncing}>{syncing?"Pulling Meta…":"⇣ Pull Meta spend"}</Btn>
+      <Btn v={showLedger?"dark":"gold"} small onClick={()=>setShowLedger(s=>!s)}>{showLedger?"Hide ledger":"Spend ledger"}</Btn>
+    </div>
+
+    {/* Controls */}
+    <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <span style={{fontSize:12,fontWeight:700,color:G.text}}>Registered:</span>
+      {[["30d","Last 30d"],["90d","Last 90d"],["ytd","This year"],["all","All time"],["custom","Custom"]].map(([p,l])=>chip(preset===p,l,()=>applyPreset(p)))}
+      {preset==="custom"&&<>
+        <input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={{fontSize:12,padding:"4px 6px",border:`1px solid ${G.border}`,borderRadius:6}}/>
+        <span style={{fontSize:12,color:G.muted}}>to</span>
+        <input type="date" value={to} onChange={e=>setTo(e.target.value)} style={{fontSize:12,padding:"4px 6px",border:`1px solid ${G.border}`,borderRadius:6}}/>
+      </>}
+      <span style={{width:1,height:22,background:G.border,margin:"0 4px"}}/>
+      {chip(view==="mature","Mature only",()=>setView("mature"),true)}
+      {chip(view==="all","Everything",()=>setView("all"),true)}
+      {view==="mature"&&[14,30,60,90].map(d=><button key={d} onClick={()=>setMatureDays(d)} style={{padding:"3px 9px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
+        background:matureDays===d?G.dark:"transparent",color:matureDays===d?G.cream:G.muted,border:`1px solid ${matureDays===d?G.dark:G.border}`}}>{d}d</button>)}
+      <div style={{flexBasis:"100%",fontSize:11,color:G.muted,lineHeight:1.5,marginTop:2}}>
+        Spend is charged to the week it was spent; registrations, arrivals and purchases are credited to the week the person <b>registered</b>.
+        Packages land 7–20 days after registration, so "Everything" always makes the last two weeks look like money on fire. <b>Mature</b> drops
+        registrations (and spend) newer than {matureDays} days so cohorts are judged only once they've had time to ship.
+      </div>
+    </div>
+
+    {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+
+    {showLedger && <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:16,marginBottom:16}}>
+      <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Spend ledger — add a manual entry</div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"140px 150px 1fr 110px 1fr auto",gap:8,alignItems:"end",marginBottom:14}}>
+        <Inp label="Date" type="date" value={entry.date} onChange={e=>setEntry(x=>({...x,date:e.target.value}))}/>
+        <Inp label="Channel" value={entry.channel} onChange={e=>setEntry(x=>({...x,channel:e.target.value}))} placeholder="cfd_flyer, flexoffers…"/>
+        <Inp label="Campaign / note" value={entry.campaign} onChange={e=>setEntry(x=>({...x,campaign:e.target.value}))} placeholder="1,000 flyers in CFD kits"/>
+        <Inp label="Spend $" type="number" value={entry.spend} onChange={e=>setEntry(x=>({...x,spend:e.target.value}))}/>
+        <Inp label="Notes" value={entry.notes} onChange={e=>setEntry(x=>({...x,notes:e.target.value}))}/>
+        <Btn v="gold" onClick={addEntry}>+ Add</Btn>
+      </div>
+      <div style={{fontSize:11,color:G.muted,marginBottom:10}}>Channel must match the <code>?ref=</code> code people land with (e.g. <code>cfd_flyer</code>, <code>flexoffers</code>) so the spend joins to its registrations. <code>facebook</code> and <code>google</code> rows are written automatically — don't hand-enter those.</div>
+      <div style={{maxHeight:260,overflow:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr>{["Date","Channel","Campaign","Ad set","Spend","Source",""].map((h,i)=><th key={i} style={{...th,textAlign:i>=4&&i<5?"right":"left"}}>{h}</th>)}</tr></thead>
+          <tbody>{ledger.length===0
+            ? <tr><td colSpan={7} style={{...td,textAlign:"left",color:G.muted}}>No spend rows in this window.</td></tr>
+            : ledger.slice(0,200).map(r=><tr key={r.spend_id}>
+              <td style={{...td,textAlign:"left"}}>{r.date}</td>
+              <td style={{...td,textAlign:"left"}}>{r.channel}</td>
+              <td style={{...td,textAlign:"left",whiteSpace:"normal"}}>{r.campaign}</td>
+              <td style={{...td,textAlign:"left",whiteSpace:"normal"}}>{r.adset}</td>
+              <td style={td}>{money(r.spend)}</td>
+              <td style={{...td,textAlign:"left",fontSize:11,color:G.muted}}>{r.source}</td>
+              <td style={td}>{r.source==="manual"&&<Btn v="ghost" small onClick={()=>delEntry(r)}>✕</Btn>}</td>
+            </tr>)}</tbody>
+        </table>
+      </div>
+    </div>}
+
+    {loading && !data ? <div style={{color:G.muted}}>Loading…</div> : data && <>
+      {/* Headline numbers */}
+      {(()=>{ const p=per(tot); const cards=[
+        ["Spend", money(tot.spend), null],
+        ["Registrations", tot.regs, cost(p.costReg)+" each"],
+        ["Arrived", tot.arrived, pct(p.shipPct)+" ship · "+cost(p.costArrival)+" each"],
+        ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each"],
+        ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null],
+        ["Margin", money(tot.margin), tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
+        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend"],
+      ];
+      return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
+        {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
+          <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
+          <div style={{fontSize:22,fontWeight:700,color:l==="Net"?(p.net>=0?G.green:G.red):G.text,marginTop:2}}>{v}</div>
+          {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
+        </div>)}
+      </div>;})()}
+
+      {/* Weekly trend */}
+      {weeks.length>1 && <RoiWeeklyChart weeks={weeks}/>}
+
+      {/* Channel table */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:10,overflow:"hidden",border:`1px solid ${G.border}`}}>
+          <thead><tr style={{background:"#1A1816",color:G.gold}}>
+            <th style={{...th,textAlign:"left"}}>Channel</th>
+            <th style={th}>Spend</th><th style={th}>Regs</th><th style={th}>Arrived</th><th style={th}>Ship %</th>
+            <th style={th}>Bought</th><th style={th}>Buy %</th><th style={th}>Paid</th><th style={th}>Margin</th>
+            <th style={th}>Net</th><th style={th}>$/reg</th><th style={th}>$/arrival</th><th style={th}>$/purchase</th>
+          </tr></thead>
+          <tbody>
+            {data.channels.map(c=>{
+              const m=c[V]; const p=per(m); const isOpen=!!open[c.key];
+              const sub=c.adsets.filter(a=>a[V].spend>0||a[V].regs>0);
+              const row=(label,m,p,indent,key)=><tr key={key} style={{background:indent?"#FBF8F3":"#fff"}}>
+                <td style={{...td,textAlign:"left",fontWeight:indent?400:600,paddingLeft:indent?28:10,fontSize:indent?12:13,color:indent?G.muted:G.text,whiteSpace:"normal"}}>{label}</td>
+                <td style={td}>{m.spend?money(m.spend):<span style={{color:G.muted}}>—</span>}</td>
+                <td style={td}>{m.regs}</td><td style={td}>{m.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
+                <td style={td}>{m.purchased}</td><td style={td}>{pct(p.buyPct)}</td>
+                <td style={td}>{money(m.paid)}</td><td style={td}>{money(m.margin)}</td>
+                <td style={{...td,fontWeight:600,color:m.spend?(p.net>=0?G.green:G.red):G.muted}}>{m.spend?money(p.net):"—"}</td>
+                <td style={td}>{cost(p.costReg)}</td><td style={td}>{cost(p.costArrival)}</td><td style={td}>{cost(p.costPurchase)}</td>
+              </tr>;
+              return [
+                row(<span style={{cursor:sub.length?"pointer":"default"}} onClick={()=>sub.length&&setOpen(o=>({...o,[c.key]:!o[c.key]}))}>
+                  {sub.length>0&&<span style={{display:"inline-block",width:14,color:G.muted}}>{isOpen?"▾":"▸"}</span>}{c.label}
+                  {sub.length>0&&<span style={{marginLeft:6,fontSize:10,color:G.muted}}>{sub.length} ad set{sub.length>1?"s":""}</span>}
+                </span>, m, p, false, c.key),
+                ...(isOpen ? sub.map(a=>row(a.label,a[V],per(a[V]),true,c.key+"/"+a.key)) : [])
+              ];
+            })}
+            {(()=>{ const p=per(tot); return <tr style={{background:"#F5EFE6",fontWeight:700}}>
+              <td style={{...td,textAlign:"left"}}>Total</td>
+              <td style={td}>{money(tot.spend)}</td><td style={td}>{tot.regs}</td><td style={td}>{tot.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
+              <td style={td}>{tot.purchased}</td><td style={td}>{pct(p.buyPct)}</td><td style={td}>{money(tot.paid)}</td><td style={td}>{money(tot.margin)}</td>
+              <td style={{...td,color:p.net>=0?G.green:G.red}}>{money(p.net)}</td>
+              <td style={td}>{cost(p.costReg)}</td><td style={td}>{cost(p.costArrival)}</td><td style={td}>{cost(p.costPurchase)}</td>
+            </tr>;})()}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{fontSize:11,color:G.muted,lineHeight:1.6,marginTop:12}}>
+        {data.unmatched_spend[V]>0 && <div>{money(data.unmatched_spend[V])} of spend has a channel with no campaign or ad set name — it counts toward the channel total but not any sub-row.</div>}
+        <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
+        <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
+      </div>
+    </>}
+  </div>;
+}
+
+// Spend bars + arrivals/purchases lines, by week. Plain SVG — no chart library in this bundle.
+function RoiWeeklyChart({weeks}) {
+  const W=Math.max(weeks.length*28,480), H=170, padL=44, padR=36, padT=12, padB=28;
+  const iw=W-padL-padR, ih=H-padT-padB;
+  const maxSpend=Math.max(1,...weeks.map(w=>w.spend));
+  const maxN=Math.max(1,...weeks.map(w=>Math.max(w.regs,w.arrived,w.purchased)));
+  const bw=iw/weeks.length;
+  const x=i=>padL+i*bw+bw/2;
+  const ySpend=v=>padT+ih-(v/maxSpend)*ih;
+  const yN=v=>padT+ih-(v/maxN)*ih;
+  const path=(key)=>weeks.map((w,i)=>(i?"L":"M")+x(i).toFixed(1)+","+yN(w[key]).toFixed(1)).join(" ");
+  const lbl=d=>{ const m=+d.slice(5,7), day=+d.slice(8,10); return `${m}/${day}`; };
+  return <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16,overflowX:"auto"}}>
+    <div style={{display:"flex",gap:14,fontSize:11,color:G.muted,marginBottom:6,alignItems:"center"}}>
+      <span style={{fontWeight:700,color:G.text,fontSize:12}}>By week</span>
+      <span><span style={{display:"inline-block",width:10,height:10,background:G.gold+"66",borderRadius:2,verticalAlign:-1,marginRight:4}}/>Spend</span>
+      <span><span style={{display:"inline-block",width:14,height:2,background:G.blue,verticalAlign:3,marginRight:4}}/>Registrations</span>
+      <span><span style={{display:"inline-block",width:14,height:2,background:G.teal,verticalAlign:3,marginRight:4}}/>Arrived</span>
+      <span><span style={{display:"inline-block",width:14,height:2,background:G.green,verticalAlign:3,marginRight:4}}/>Purchased</span>
+    </div>
+    <svg width={W} height={H} style={{display:"block",fontFamily:"inherit"}}>
+      <text x={padL-6} y={padT+8} textAnchor="end" fontSize="10" fill={G.muted}>{money(maxSpend)}</text>
+      <text x={padL-6} y={padT+ih} textAnchor="end" fontSize="10" fill={G.muted}>$0</text>
+      <text x={W-padR+6} y={padT+8} fontSize="10" fill={G.muted}>{maxN}</text>
+      <text x={W-padR+6} y={padT+ih} fontSize="10" fill={G.muted}>0</text>
+      <line x1={padL} x2={W-padR} y1={padT+ih} y2={padT+ih} stroke={G.border}/>
+      {weeks.map((w,i)=><g key={w.week}>
+        <rect x={x(i)-bw*0.32} y={ySpend(w.spend)} width={bw*0.64} height={padT+ih-ySpend(w.spend)} fill={G.gold} opacity={w.mature?0.45:0.2}>
+          <title>{`Week of ${w.week}\nSpend ${money(w.spend)} · ${w.regs} regs · ${w.arrived} arrived · ${w.purchased} bought · ${money(w.paid)} paid`}</title>
+        </rect>
+        {(i%Math.ceil(weeks.length/10)===0)&&<text x={x(i)} y={H-8} textAnchor="middle" fontSize="10" fill={G.muted}>{lbl(w.week)}</text>}
+      </g>)}
+      <path d={path("regs")} fill="none" stroke={G.blue} strokeWidth="1.5"/>
+      <path d={path("arrived")} fill="none" stroke={G.teal} strokeWidth="2"/>
+      <path d={path("purchased")} fill="none" stroke={G.green} strokeWidth="2"/>
+    </svg>
+    <div style={{fontSize:11,color:G.muted,marginTop:4}}>Lighter bars are weeks still inside the maturity window.</div>
+  </div>;
+}
+
 function MarketingTab() {
   const [stats,setStats]     = useState(null);
   const [loading,setLoading] = useState(true);
@@ -5708,7 +5980,7 @@ useEffect(()=>{
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"analytics",label:"Analytics",color:G.gold}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -5756,6 +6028,7 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="sales"    &&<SalesTab     shipments={shipments} customers={customers}/>}
       {tab==="marketing"&&<MarketingTab/>}
+      {tab==="roi"      &&<RoiTab/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
     </div>
   </div>;
