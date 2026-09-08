@@ -5573,35 +5573,48 @@ function RoiTab({shipments}) {
         ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
         ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend"],
       ];
-      return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
+      return <>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
+        <span style={{fontSize:12,fontWeight:700,color:G.text}}>Appraised</span>
+        <span style={{fontSize:11,color:G.muted}}>this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid · splits by channel below</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
         {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
           <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
           <div style={{fontSize:22,fontWeight:700,color:l==="Net"?(p.net>=0?G.green:G.red):G.text,marginTop:2}}>{v}</div>
           {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
         </div>)}
-      </div>;})()}
+      </div>
+      </>;})()}
 
-      {/* Realized margin — business-level, all-time, from the Sales tab */}
+      {/* Realized margin — business-level, all-time, from the Sales tab. Same card
+          strip as the appraised row above so the two bases read side by side. */}
       {realized && (()=>{ const r=realized; const net = allSpend==null ? null : r.margin-allSpend;
         const roi = allSpend ? (r.margin-allSpend)/allSpend*100 : null;
-        const line = (l,v,neg)=><span key={l} style={{whiteSpace:"nowrap"}}><span style={{color:G.muted}}>{l}</span> <b style={{color:neg?G.red:G.text}}>{neg?"−":""}{money(Math.abs(v))}</b></span>;
-        return <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16}}>
-          <div style={{display:"flex",alignItems:"baseline",gap:14,flexWrap:"wrap"}}>
-            <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Realized margin · all-time · from Sales tab</div>
-            <div style={{fontSize:22,fontWeight:700,color:r.margin>=0?G.green:G.red}}>{money(r.margin)}</div>
-            {net!=null && <div style={{fontSize:13,color:net>=0?G.green:G.red,fontWeight:600}}>Net {money(net)} after {money(allSpend)} all-time spend{roi!=null?` · ${Math.round(roi)}% ROI`:""}</div>}
+        const cards=[
+          ["Gross sales", money(r.gross), "Sales tab, recorded gross"],
+          ["Fees", "−"+money(r.fees), "15% on eBay sales"],
+          ["Expected", money(r.expected), "expected-type sale rows"],
+          ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab"],
+          ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":"")],
+          ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid"],
+          ["Net", net==null?"—":money(net), net==null?"":pct(roi)+" ROI on "+money(allSpend)+" spend"],
+        ];
+        return <>
+          <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
+            <span style={{fontSize:12,fontWeight:700,color:G.text}}>Realized</span>
+            <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · not splittable by channel or date (refiner lots carry no attribution)
+              {r.excludedSales>0 && ` · ${r.excludedSales} outlier sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded`}</span>
           </div>
-          <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,marginTop:6}}>
-            {line("Gross sales",r.gross)}{line("Fees",r.fees,true)}{line("Expected",r.expected)}{line("Inventory on hand",r.inventory)}
-            {line(`Paid (${r.purchases} purchases)`,r.paid,true)}{r.lossCost>0&&line("Unlinked losses",r.lossCost,true)}
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
+            {cards.map(([l,v,sub],i)=>{ const isMargin=i===5, isNet=i===6; const val=isMargin?r.margin:isNet?net:null;
+              return <div key={l} style={{background:isMargin||isNet?"#FBF8F3":"#fff",border:`1px solid ${isMargin||isNet?G.gold+"66":G.border}`,borderRadius:10,padding:"12px 14px"}}>
+                <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
+                <div style={{fontSize:22,fontWeight:700,marginTop:2,color:val==null?G.text:(val>=0?G.green:G.red)}}>{v}</div>
+                {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
+              </div>;})}
           </div>
-          <div style={{fontSize:11,color:G.muted,marginTop:6}}>
-            Appraised margin above is per-cohort and splits by channel; this one is the whole business and can't be split — refiner lots don't carry attribution.
-            {!r.inventory && " Inventory on hand is $0 — set it in the Sales tab (Inventory Estimate panel) on this device."}
-            {r.inventory>0 && r.inventoryUpdated && ` Inventory estimate last set ${String(r.inventoryUpdated).slice(0,10)}.`}
-            {r.excludedSales>0 && ` ${r.excludedSales} sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded as outliers.`}
-          </div>
-        </div>;})()}
+        </>;})()}
 
       {/* Weekly trend */}
       {weeks.length>1 && <RoiWeeklyChart weeks={weeks}/>}
