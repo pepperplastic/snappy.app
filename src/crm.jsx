@@ -5357,6 +5357,8 @@ function RoiTab() {
   const [to,setTo]           = useState(()=>roiDateStr(new Date()));
   const [view,setView]       = useState("mature");     // mature | all
   const [matureDays,setMatureDays] = useState(30);
+  const [excludeOn,setExcludeOn]   = useState(false);   // outlier guard
+  const [excludeOver,setExcludeOver] = useState(5000);
   const [open,setOpen]       = useState({});           // channel key → expanded
   const [syncing,setSyncing] = useState(false);
   const [ledger,setLedger]   = useState([]);
@@ -5377,11 +5379,11 @@ function RoiTab() {
   const load = useCallback(async (nocache=false)=>{
     setLoading(true); setErr("");
     try{
-      const r = await apiPost({action:"getMarketingRoi", from, to, mature_days:matureDays, nocache:nocache||undefined});
+      const r = await apiPost({action:"getMarketingRoi", from, to, mature_days:matureDays, exclude_over: excludeOn ? (parseFloat(excludeOver)||0) : 0, nocache:nocache||undefined});
       if(r && r.success) setData(r); else setErr((r&&r.error)||"Couldn't load ROI");
     }catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
-  },[from,to,matureDays]);
+  },[from,to,matureDays,excludeOn,excludeOver]);
 
   const loadLedger = useCallback(async ()=>{
     try{ const r=await apiPost({action:"getAdSpend", from, to}); if(r&&r.success) setLedger(r.rows||[]); }catch{}
@@ -5459,6 +5461,13 @@ function RoiTab() {
       {chip(view==="all","Everything",()=>setView("all"),true)}
       {view==="mature"&&[14,30,60,90].map(d=><button key={d} onClick={()=>setMatureDays(d)} style={{padding:"3px 9px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
         background:matureDays===d?G.dark:"transparent",color:matureDays===d?G.cream:G.muted,border:`1px solid ${matureDays===d?G.dark:G.border}`}}>{d}d</button>)}
+      <span style={{width:1,height:22,background:G.border,margin:"0 4px"}}/>
+      {chip(excludeOn,"Exclude outliers",()=>setExcludeOn(v=>!v),true)}
+      {excludeOn&&<>
+        <span style={{fontSize:12,color:G.muted}}>purchases over $</span>
+        <input type="number" value={excludeOver} onChange={e=>setExcludeOver(e.target.value)} onBlur={()=>load()} onKeyDown={e=>{if(e.key==="Enter")load();}}
+          style={{width:76,fontSize:12,padding:"4px 6px",border:`1px solid ${G.border}`,borderRadius:6}}/>
+      </>}
       <div style={{flexBasis:"100%",fontSize:11,color:G.muted,lineHeight:1.5,marginTop:2}}>
         Spend is charged to the week it was spent; registrations, arrivals and purchases are credited to the week the person <b>registered</b>.
         Packages land 7–20 days after registration, so "Everything" always makes the last two weeks look like money on fire. <b>Mature</b> drops
@@ -5505,7 +5514,7 @@ function RoiTab() {
         ["Arrived", tot.arrived, pct(p.shipPct)+" ship · "+cost(p.costArrival)+" each"],
         ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each"],
         ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null],
-        ["Margin", money(tot.margin), tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
+        ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
         ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend"],
       ];
       return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
@@ -5564,6 +5573,7 @@ function RoiTab() {
         {data.unmatched_spend[V]>0 && <div>{money(data.unmatched_spend[V])} of spend has a channel with no campaign or ad set name — it counts toward the channel total but not any sub-row.</div>}
         <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
         <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
+        {data.excluded&&data.excluded.count>0&&<div>Outliers excluded from the money columns (still counted as registrations, arrivals and purchases): {data.excluded.shipments.map(x=>`${x.shipment_id} ${money(x.paid)} paid / ${money(x.appraised)} appraised`).join(" · ")}.</div>}
       </div>
     </>}
   </div>;
