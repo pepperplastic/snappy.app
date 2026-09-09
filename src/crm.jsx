@@ -5424,11 +5424,15 @@ function RoiTab({shipments}) {
   const [entry,setEntry]     = useState({date:roiDateStr(new Date()),channel:"cfd_flyer",campaign:"",spend:"",notes:""});
   const [sales,setSales]     = useState(null);        // all Sales rows, for realized margin
   const [spendRows,setSpendRows] = useState(null);     // all-time spend rows, for realized net
+  const [sideErr,setSideErr]     = useState("");       // sales / spend fetch problems
 
-  useEffect(()=>{ (async()=>{
-    try{ const r=await apiPost({action:"getSales"}); if(r&&r.success) setSales(r.sales||[]); }catch{}
-    try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setSpendRows(r.rows||[]); }catch{}
-  })(); },[]);
+  const loadSide = useCallback(async ()=>{
+    const errs=[];
+    try{ const r=await apiPost({action:"getSales"}); if(r&&r.success) setSales(r.sales||[]); else errs.push("sales: "+((r&&r.error)||"no response")); }catch(e){ errs.push("sales: "+(e.message||e)); }
+    try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setSpendRows(r.rows||[]); else errs.push("spend: "+((r&&r.error)||"no response")); }catch(e){ errs.push("spend: "+(e.message||e)); }
+    setSideErr(errs.join(" · "));
+  },[]);
+  useEffect(()=>{ loadSide(); },[loadSide]);
   // Spend charged against realized margin follows the maturity toggle: in Mature
   // mode, spend newer than the cutoff is excluded (its results haven't landed yet).
   const allSpend = useMemo(()=>{
@@ -5549,7 +5553,7 @@ function RoiTab({shipments}) {
       <h2 style={{margin:0,fontSize:22,color:G.text}}>ROI</h2>
       <div style={{fontSize:11,color:G.muted}}>{freshness ? `Spend: ${freshness}` : "No spend in the ledger yet"}{data&&data.cached?" · cached":""}</div>
       <div style={{flex:1}}/>
-      <Btn v="ghost" small onClick={()=>load(true)} disabled={loading}>{loading?"…":"⟳ Recompute"}</Btn>
+      <Btn v="ghost" small onClick={()=>{load(true);loadSide();}} disabled={loading}>{loading?"…":"⟳ Recompute"}</Btn>
       <Btn v="blue" small onClick={syncMeta} disabled={syncing}>{syncing?"Pulling Meta…":"⇣ Pull Meta spend"}</Btn>
       <Btn v={showLedger?"dark":"gold"} small onClick={()=>setShowLedger(s=>!s)}>{showLedger?"Hide ledger":"Spend ledger"}</Btn>
     </div>
@@ -5595,6 +5599,7 @@ function RoiTab({shipments}) {
     </div>
 
     {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+    {sideErr && <div style={{background:"#FFF8E6",border:`1px solid ${G.gold}66`,borderRadius:8,padding:"8px 12px",fontSize:12,color:G.muted,marginBottom:12}}>Realized strip is missing data ({sideErr}). Recompute retries.</div>}
 
     {showLedger && <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:16,marginBottom:16}}>
       <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10}}>Spend ledger — add a manual entry</div>
@@ -5664,7 +5669,7 @@ function RoiTab({shipments}) {
           ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":"")],
           ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid"],
           ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`],
-          ["Net", net==null?"—":money(net), net==null?"":pct(roi)+" ROI on "+money(allSpend)+" spend"],
+          ["Net", net==null?"—":money(net), net==null?"all-time spend didn't load — hit Recompute":pct(roi)+" ROI on "+money(allSpend)+" spend"],
         ];
         return <>
           <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
@@ -5861,6 +5866,7 @@ function MarketingTab() {
     </div>
 
     {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+    {sideErr && <div style={{background:"#FFF8E6",border:`1px solid ${G.gold}66`,borderRadius:8,padding:"8px 12px",fontSize:12,color:G.muted,marginBottom:12}}>Realized strip is missing data ({sideErr}). Recompute retries.</div>}
 
     {loading && !stats ? <div style={{color:G.muted}}>Loading…</div> :
      rows.length === 0 ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
