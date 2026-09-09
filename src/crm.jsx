@@ -3137,7 +3137,10 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>COMPLETE_STAGES.includes(s.stage));
     if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
-    return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    // Most recently PURCHASED first — created_at is the registration date, which
+    // for a buy can be months earlier. Fall back through the later stamps.
+    const doneAt=s=>new Date(s.purchased_at||s.paid_at||s.received_at||s.created_at||0);
+    return [...list].sort((a,b)=>doneAt(b)-doneAt(a));
   },[shipments,search,custById]);
 
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
