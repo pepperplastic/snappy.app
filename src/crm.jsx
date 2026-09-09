@@ -5423,12 +5423,19 @@ function RoiTab({shipments}) {
   const [showLedger,setShowLedger] = useState(false);
   const [entry,setEntry]     = useState({date:roiDateStr(new Date()),channel:"cfd_flyer",campaign:"",spend:"",notes:""});
   const [sales,setSales]     = useState(null);        // all Sales rows, for realized margin
-  const [allSpend,setAllSpend] = useState(null);      // all-time spend, for realized net
+  const [spendRows,setSpendRows] = useState(null);     // all-time spend rows, for realized net
 
   useEffect(()=>{ (async()=>{
     try{ const r=await apiPost({action:"getSales"}); if(r&&r.success) setSales(r.sales||[]); }catch{}
-    try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setAllSpend((r.rows||[]).reduce((sum,x)=>sum+(parseFloat(x.spend)||0),0)); }catch{}
+    try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setSpendRows(r.rows||[]); }catch{}
   })(); },[]);
+  // Spend charged against realized margin follows the maturity toggle: in Mature
+  // mode, spend newer than the cutoff is excluded (its results haven't landed yet).
+  const allSpend = useMemo(()=>{
+    if(!spendRows) return null;
+    const cutoff = view==="mature" ? roiDateStr(new Date(Date.now()-matureDays*86400000)) : null;
+    return spendRows.reduce((sum,x)=> (cutoff && String(x.date)>cutoff) ? sum : sum+(parseFloat(x.spend)||0), 0);
+  },[spendRows,view,matureDays]);
   const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0) : null, [sales,shipments,excludeOn,excludeOver]);
   const allShipping = useMemo(()=>{
     const ARR=["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"];
@@ -5662,7 +5669,7 @@ function RoiTab({shipments}) {
         return <>
           <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
             <span style={{fontSize:12,fontWeight:700,color:G.text}}>Realized</span>
-            <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · whole business regardless of the source/date filters (refiner lots carry no attribution)
+            <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · whole business regardless of the source/date filters (refiner lots carry no attribution){view==="mature"?` · spend from the last ${matureDays} days excluded, matching Mature`:""}
               {r.excludedSales>0 && ` · ${r.excludedSales} outlier sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded`}</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(8,1fr)",gap:10,marginBottom:16}}>
