@@ -5697,6 +5697,16 @@ function RoiTab({shipments}) {
         <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
         <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
         <div><b>Fulfilled</b> = a prepaid label went out. Ship % is arrived ÷ fulfilled — the real ship rate — not arrived ÷ registrations.</div>
+        {custType==="repeat" && data.repeat_sources && data.repeat_sources.length>0 && <div style={{margin:"10px 0 6px"}}>
+          <div style={{fontSize:12,fontWeight:700,color:G.text,marginBottom:6}}>What brought repeaters back <span style={{fontWeight:400,color:G.muted}}>— the registration touch nearest each repeat label · {data.repeat_registrations} re-registrations all-time</span></div>
+          <table style={{borderCollapse:"collapse",background:"#fff",border:`1px solid ${G.border}`,borderRadius:8}}>
+            <thead><tr>{["Return touch","Fulfilled","Arrived","Bought","Paid"].map((h,i)=><th key={h} style={{...th,textAlign:i?"right":"left"}}>{h}</th>)}</tr></thead>
+            <tbody>{data.repeat_sources.map(r=><tr key={r.key}>
+              <td style={{...td,textAlign:"left",whiteSpace:"normal"}}>{r.label}</td>
+              <td style={td}>{r.fulfilled}</td><td style={td}>{r.arrived}</td><td style={td}>{r.purchased}</td><td style={td}>{money(r.paid)}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
         <div>A shipment counts as <b>repeat</b> when the same customer already had an earlier shipment arrive. Registrations and spend aren't split — a repeat seller's later packages are credited to the channel that first acquired them.</div>
         {tot&&tot.inferred>0&&<div>{tot.inferred} registration{tot.inferred>1?"s":""} attributed by following the person's earlier untagged session or IP back to a tagged visit, rather than a tag on their own row.</div>}
         {data.excluded&&data.excluded.count>0&&<div>Outliers excluded from the money columns (still counted as registrations, arrivals and purchases): {data.excluded.shipments.map(x=>`${x.shipment_id} ${money(x.paid)} paid / ${money(x.appraised)} appraised`).join(" · ")}.</div>}
