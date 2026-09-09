@@ -5478,8 +5478,8 @@ function RoiTab({shipments}) {
   // first-time = total − repeat. Registrations and spend are never split.
   const slice = (m)=>{
     if(!m) return m;
-    if(custType==="repeat") return {...m, arrived:m.rep_arrived||0, purchased:m.rep_purchased||0, paid:m.rep_paid||0, appraised:m.rep_appraised||0, margin:m.rep_margin||0, missingAppr:m.rep_missingAppr||0};
-    if(custType==="first")  return {...m, arrived:m.arrived-(m.rep_arrived||0), purchased:m.purchased-(m.rep_purchased||0), paid:m.paid-(m.rep_paid||0), appraised:m.appraised-(m.rep_appraised||0), margin:m.margin-(m.rep_margin||0), missingAppr:m.missingAppr-(m.rep_missingAppr||0)};
+    if(custType==="repeat") return {...m, fulfilled:m.rep_fulfilled||0, arrived:m.rep_arrived||0, purchased:m.rep_purchased||0, paid:m.rep_paid||0, appraised:m.rep_appraised||0, margin:m.rep_margin||0, missingAppr:m.rep_missingAppr||0};
+    if(custType==="first")  return {...m, fulfilled:(m.fulfilled||0)-(m.rep_fulfilled||0), arrived:m.arrived-(m.rep_arrived||0), purchased:m.purchased-(m.rep_purchased||0), paid:m.paid-(m.rep_paid||0), appraised:m.appraised-(m.rep_appraised||0), margin:m.margin-(m.rep_margin||0), missingAppr:m.missingAppr-(m.rep_missingAppr||0)};
     return m;
   };
   const chanSel0 = data && channel ? data.channels.find(c=>c.key===channel) : null;
@@ -5489,9 +5489,11 @@ function RoiTab({shipments}) {
   const visibleChannels = data ? (chanSel ? [chanSel] : data.channels.map(sliceChan)) : [];
   const per = (m)=>({
     costReg:      m.regs      ? m.spend/m.regs      : null,
+    costFulfilled:(m.fulfilled||0) ? m.spend/m.fulfilled : null,
     costArrival:  m.arrived   ? m.spend/m.arrived   : null,
     costPurchase: m.purchased ? m.spend/m.purchased : null,
-    shipPct:      m.regs      ? m.arrived/m.regs*100 : null,
+    fulfilledPct: m.regs      ? (m.fulfilled||0)/m.regs*100 : null,
+    shipPct:      (m.fulfilled||0) ? m.arrived/m.fulfilled*100 : null,
     buyPct:       m.arrived   ? m.purchased/m.arrived*100 : null,
     net:          m.margin - m.spend,
     roi:          m.spend     ? (m.margin - m.spend)/m.spend*100 : null,
@@ -5593,7 +5595,8 @@ function RoiTab({shipments}) {
       {(()=>{ const p=per(tot); const cards=[
         ["Spend", money(tot.spend), null],
         ["Registrations", tot.regs, cost(p.costReg)+" each"],
-        ["Arrived", tot.arrived, pct(p.shipPct)+" ship · "+cost(p.costArrival)+" each"],
+        ["Fulfilled", tot.fulfilled||0, pct(p.fulfilledPct)+" of regs · "+cost(p.costFulfilled)+" each"],
+        ["Arrived", tot.arrived, pct(p.shipPct)+" of fulfilled · "+cost(p.costArrival)+" each"],
         ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each"],
         ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null],
         ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
@@ -5604,7 +5607,7 @@ function RoiTab({shipments}) {
         <span style={{fontSize:12,fontWeight:700,color:G.text}}>Appraised</span>
         <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"}{custType!=="all"?` · ${custType==="first"?"first-time":"repeat"} shipments only`:""} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(8,1fr)",gap:10,marginBottom:16}}>
         {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
           <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
           <div style={{fontSize:22,fontWeight:700,color:l==="Net"?(p.net>=0?G.green:G.red):G.text,marginTop:2}}>{v}</div>
@@ -5650,7 +5653,7 @@ function RoiTab({shipments}) {
         <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:10,overflow:"hidden",border:`1px solid ${G.border}`}}>
           <thead><tr style={{background:"#1A1816",color:G.gold}}>
             <th style={{...th,textAlign:"left"}}>Channel</th>
-            <th style={th}>Spend</th><th style={th}>Regs</th><th style={th}>Arrived</th><th style={th}>Ship %</th>
+            <th style={th}>Spend</th><th style={th}>Regs</th><th style={th}>Fulfilled</th><th style={th}>Arrived</th><th style={th}>Ship %</th>
             <th style={th}>Bought</th><th style={th}>Buy %</th><th style={th}>Paid</th><th style={th}>Margin</th>
             <th style={th}>Net</th><th style={th}>$/reg</th><th style={th}>$/arrival</th><th style={th}>$/purchase</th>
           </tr></thead>
@@ -5661,7 +5664,7 @@ function RoiTab({shipments}) {
               const row=(label,m,p,indent,key)=><tr key={key} style={{background:indent?"#FBF8F3":"#fff"}}>
                 <td style={{...td,textAlign:"left",fontWeight:indent?400:600,paddingLeft:indent?28:10,fontSize:indent?12:13,color:indent?G.muted:G.text,whiteSpace:"normal"}}>{label}</td>
                 <td style={td}>{m.spend?money(m.spend):<span style={{color:G.muted}}>—</span>}</td>
-                <td style={td}>{m.regs}</td><td style={td}>{m.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
+                <td style={td}>{m.regs}</td><td style={td}>{m.fulfilled||0}</td><td style={td}>{m.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
                 <td style={td}>{m.purchased}</td><td style={td}>{pct(p.buyPct)}</td>
                 <td style={td}>{money(m.paid)}</td><td style={td}>{money(m.margin)}</td>
                 <td style={{...td,fontWeight:600,color:m.spend?(p.net>=0?G.green:G.red):G.muted}}>{m.spend?money(p.net):"—"}</td>
@@ -5677,7 +5680,7 @@ function RoiTab({shipments}) {
             })}
             {(()=>{ const p=per(tot); return <tr style={{background:"#F5EFE6",fontWeight:700}}>
               <td style={{...td,textAlign:"left"}}>Total</td>
-              <td style={td}>{money(tot.spend)}</td><td style={td}>{tot.regs}</td><td style={td}>{tot.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
+              <td style={td}>{money(tot.spend)}</td><td style={td}>{tot.regs}</td><td style={td}>{tot.fulfilled||0}</td><td style={td}>{tot.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
               <td style={td}>{tot.purchased}</td><td style={td}>{pct(p.buyPct)}</td><td style={td}>{money(tot.paid)}</td><td style={td}>{money(tot.margin)}</td>
               <td style={{...td,color:p.net>=0?G.green:G.red}}>{money(p.net)}</td>
               <td style={td}>{cost(p.costReg)}</td><td style={td}>{cost(p.costArrival)}</td><td style={td}>{cost(p.costPurchase)}</td>
@@ -5690,6 +5693,7 @@ function RoiTab({shipments}) {
         {data.unmatched_spend[V]>0 && <div>{money(data.unmatched_spend[V])} of spend has a channel with no campaign or ad set name — it counts toward the channel total but not any sub-row.</div>}
         <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
         <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
+        <div><b>Fulfilled</b> = a prepaid label went out. Ship % is arrived ÷ fulfilled — the real ship rate — not arrived ÷ registrations.</div>
         <div>A shipment counts as <b>repeat</b> when the same customer already had an earlier shipment arrive. Registrations and spend aren't split — a repeat seller's later packages are credited to the channel that first acquired them.</div>
         {tot&&tot.inferred>0&&<div>{tot.inferred} registration{tot.inferred>1?"s":""} attributed by following the person's earlier untagged session or IP back to a tagged visit, rather than a tag on their own row.</div>}
         {data.excluded&&data.excluded.count>0&&<div>Outliers excluded from the money columns (still counted as registrations, arrivals and purchases): {data.excluded.shipments.map(x=>`${x.shipment_id} ${money(x.paid)} paid / ${money(x.appraised)} appraised`).join(" · ")}.</div>}
