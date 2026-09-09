@@ -5426,13 +5426,22 @@ function RoiTab({shipments}) {
   })(); },[]);
   const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0) : null, [sales,shipments,excludeOn,excludeOver]);
 
+  const PRESETS = [
+    ["yesterday","Yesterday"],["t7","Trailing 7 days"],["t14","Trailing 14 days"],["30d","Last 30 days"],
+    ["90d","Last 90 days"],["mtd","Month to date"],["ytd","Year to date"],["all","All time"],["custom","Custom range"],
+  ];
   function applyPreset(p){
     setPreset(p);
     const t=new Date(); const f=new Date();
-    if(p==="30d") f.setDate(t.getDate()-30);
+    const y=new Date(); y.setDate(y.getDate()-1);           // yesterday = last full day
+    if(p==="yesterday"){ f.setTime(y.getTime()); t.setTime(y.getTime()); }
+    else if(p==="t7") { f.setTime(y.getTime()); f.setDate(f.getDate()-6); t.setTime(y.getTime()); }   // 7 days ending yesterday
+    else if(p==="t14"){ f.setTime(y.getTime()); f.setDate(f.getDate()-13); t.setTime(y.getTime()); }
+    else if(p==="30d") f.setDate(t.getDate()-30);
     else if(p==="90d") f.setDate(t.getDate()-90);
-    else if(p==="ytd") { f.setMonth(0,1); }
-    else if(p==="all") { f.setFullYear(2026,0,1); }
+    else if(p==="mtd") f.setDate(1);
+    else if(p==="ytd") f.setMonth(0,1);
+    else if(p==="all") f.setFullYear(2026,0,1);
     else return;
     setFrom(roiDateStr(f)); setTo(roiDateStr(t));
   }
@@ -5529,7 +5538,11 @@ function RoiTab({shipments}) {
     {/* Controls */}
     <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <span style={{fontSize:12,fontWeight:700,color:G.text}}>Registered:</span>
-      {[["30d","Last 30d"],["90d","Last 90d"],["ytd","This year"],["all","All time"],["custom","Custom"]].map(([p,l])=>chip(preset===p,l,()=>applyPreset(p)))}
+      <select value={preset} onChange={e=>applyPreset(e.target.value)}
+        style={{padding:"5px 10px",borderRadius:8,fontSize:12,fontWeight:600,border:`1px solid ${G.gold}`,background:"#fff",color:G.text,cursor:"pointer"}}>
+        {PRESETS.map(([p,l])=><option key={p} value={p}>{l}</option>)}
+      </select>
+      {preset!=="custom"&&<span style={{fontSize:11,color:G.muted}}>{from}{to!==from?` → ${to}`:""}</span>}
       {preset==="custom"&&<>
         <input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={{fontSize:12,padding:"4px 6px",border:`1px solid ${G.border}`,borderRadius:6}}/>
         <span style={{fontSize:12,color:G.muted}}>to</span>
