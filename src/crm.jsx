@@ -5406,6 +5406,7 @@ function RoiTab({shipments}) {
   const [view,setView]       = useState("all");        // mature | all
   const [matureDays,setMatureDays] = useState(30);
   const [channel,setChannel] = useState("");           // source filter: "" = all
+  const [custType,setCustType] = useState("all");      // all | first | repeat
   const [excludeOn,setExcludeOn]   = useState(true);    // outlier guard — on by default, $5k
   const [excludeOver,setExcludeOver] = useState(5000);
   const [open,setOpen]       = useState({});           // channel key → expanded
@@ -5473,9 +5474,19 @@ function RoiTab({shipments}) {
 
   // ── derived ──
   const V = view;
-  const chanSel = data && channel ? data.channels.find(c=>c.key===channel) : null;
-  const tot = data ? (chanSel ? chanSel[V] : data.totals[V]) : null;
-  const visibleChannels = data ? (chanSel ? [chanSel] : data.channels) : [];
+  // First-time vs repeat: server sends totals plus the repeat share (rep_*);
+  // first-time = total − repeat. Registrations and spend are never split.
+  const slice = (m)=>{
+    if(!m) return m;
+    if(custType==="repeat") return {...m, arrived:m.rep_arrived||0, purchased:m.rep_purchased||0, paid:m.rep_paid||0, appraised:m.rep_appraised||0, margin:m.rep_margin||0, missingAppr:m.rep_missingAppr||0};
+    if(custType==="first")  return {...m, arrived:m.arrived-(m.rep_arrived||0), purchased:m.purchased-(m.rep_purchased||0), paid:m.paid-(m.rep_paid||0), appraised:m.appraised-(m.rep_appraised||0), margin:m.margin-(m.rep_margin||0), missingAppr:m.missingAppr-(m.rep_missingAppr||0)};
+    return m;
+  };
+  const chanSel0 = data && channel ? data.channels.find(c=>c.key===channel) : null;
+  const sliceChan = c=>({...c, all:slice(c.all), mature:slice(c.mature), adsets:(c.adsets||[]).map(a=>({...a, all:slice(a.all), mature:slice(a.mature)}))});
+  const chanSel = chanSel0 ? sliceChan(chanSel0) : null;
+  const tot = data ? (chanSel ? chanSel[V] : slice(data.totals[V])) : null;
+  const visibleChannels = data ? (chanSel ? [chanSel] : data.channels.map(sliceChan)) : [];
   const per = (m)=>({
     costReg:      m.regs      ? m.spend/m.regs      : null,
     costArrival:  m.arrived   ? m.spend/m.arrived   : null,
@@ -5535,6 +5546,9 @@ function RoiTab({shipments}) {
         <span style={{fontSize:12,fontWeight:700,color:G.text}}>Source:</span>
         {chip(!channel,"All sources",()=>setChannel(""))}
         {data.channels.map(c=>chip(channel===c.key, c.label + (c.all.regs?` · ${c.all.regs}`:""), ()=>setChannel(channel===c.key?"":c.key)))}
+        <span style={{width:1,height:22,background:G.border,margin:"0 4px"}}/>
+        <span style={{fontSize:12,fontWeight:700,color:G.text}}>Shipments:</span>
+        {[["all","All"],["first","First-time"],["repeat","Repeat"]].map(([v,l])=>chip(custType===v,l,()=>setCustType(v),true))}
       </div>}
       <div style={{flexBasis:"100%",fontSize:11,color:G.muted,lineHeight:1.5,marginTop:2}}>
         Spend is charged to the week it was spent; registrations, arrivals and purchases are credited to the week the person <b>registered</b>.
@@ -5588,7 +5602,7 @@ function RoiTab({shipments}) {
       return <>
       <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
         <span style={{fontSize:12,fontWeight:700,color:G.text}}>Appraised</span>
-        <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
+        <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"}{custType!=="all"?` · ${custType==="first"?"first-time":"repeat"} shipments only`:""} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
         {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
@@ -5676,6 +5690,8 @@ function RoiTab({shipments}) {
         {data.unmatched_spend[V]>0 && <div>{money(data.unmatched_spend[V])} of spend has a channel with no campaign or ad set name — it counts toward the channel total but not any sub-row.</div>}
         <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
         <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
+        <div>A shipment counts as <b>repeat</b> when the same customer already had an earlier shipment arrive. Registrations and spend aren't split — a repeat seller's later packages are credited to the channel that first acquired them.</div>
+        {tot&&tot.inferred>0&&<div>{tot.inferred} registration{tot.inferred>1?"s":""} attributed by following the person's earlier untagged session or IP back to a tagged visit, rather than a tag on their own row.</div>}
         {data.excluded&&data.excluded.count>0&&<div>Outliers excluded from the money columns (still counted as registrations, arrivals and purchases): {data.excluded.shipments.map(x=>`${x.shipment_id} ${money(x.paid)} paid / ${money(x.appraised)} appraised`).join(" · ")}.</div>}
       </div>
     </>}
