@@ -5349,6 +5349,11 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
 // ══════════════════════════════════════════════════════════
 
 function roiDateStr(d){ return d.toISOString().slice(0,10); }
+// Shipping cost assumptions (DW, Sep 9): every arrived package costs ~$12 inbound
+// (pay-on-scan label), and every return (arrived but not purchased) costs ~$5 to send back.
+const ROI_SHIP_IN  = 12;
+const ROI_SHIP_RET = 5;
+const roiShipping = (arrived, purchased) => (arrived||0)*ROI_SHIP_IN + Math.max(0,(arrived||0)-(purchased||0))*ROI_SHIP_RET;
 
 
 // ── Realized margin (business-level, all-time) ─────────────────────────
@@ -5425,6 +5430,12 @@ function RoiTab({shipments}) {
     try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setAllSpend((r.rows||[]).reduce((sum,x)=>sum+(parseFloat(x.spend)||0),0)); }catch{}
   })(); },[]);
   const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0) : null, [sales,shipments,excludeOn,excludeOver]);
+  const allShipping = useMemo(()=>{
+    const ARR=["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"];
+    const PUR=["complete","pending_payment","pending_leadsonline"];
+    let a=0,pu=0; (shipments||[]).forEach(s=>{ const st=String(s.stage||"").toLowerCase(); const arrived=ARR.includes(st)||!!String(s.received_at||"").trim(); if(arrived){a++; if(PUR.includes(st)) pu++;} });
+    return { arrived:a, purchased:pu, cost:roiShipping(a,pu) };
+  },[shipments]);
 
   const PRESETS = [
     ["yesterday","Yesterday"],["t7","Trailing 7 days"],["t14","Trailing 14 days"],["30d","Last 30 days"],
@@ -5507,8 +5518,9 @@ function RoiTab({shipments}) {
     fulfilledPct: m.regs      ? (m.fulfilled||0)/m.regs*100 : null,
     shipPct:      (m.fulfilled||0) ? m.arrived/m.fulfilled*100 : null,
     buyPct:       m.arrived   ? m.purchased/m.arrived*100 : null,
-    net:          m.margin - m.spend,
-    roi:          m.spend     ? (m.margin - m.spend)/m.spend*100 : null,
+    shipping:     roiShipping(m.arrived, m.purchased),
+    net:          m.margin - m.spend - roiShipping(m.arrived, m.purchased),
+    roi:          (m.spend + roiShipping(m.arrived, m.purchased)) ? (m.margin - m.spend - roiShipping(m.arrived, m.purchased))/(m.spend + roiShipping(m.arrived, m.purchased))*100 : null,
   });
   const pct = v => v==null ? "—" : Math.round(v)+"%";
   const cost = v => v==null ? "—" : money(v);
@@ -5615,15 +5627,16 @@ function RoiTab({shipments}) {
         ["Arrived", tot.arrived, pct(p.shipPct)+" of fulfilled · "+cost(p.costArrival)+" each"],
         ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each"],
         ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null],
+        ["Shipping", money(p.shipping), `${tot.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,tot.arrived-tot.purchased)} returns × $${ROI_SHIP_RET}`],
         ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
-        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend"],
+        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend + shipping"],
       ];
       return <>
       <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
         <span style={{fontSize:12,fontWeight:700,color:G.text}}>Appraised</span>
         <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"}{custType!=="all"?` · ${custType==="first"?"first-time":"repeat"} shipments only`:""} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(8,1fr)",gap:10,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(9,1fr)",gap:10,marginBottom:16}}>
         {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
           <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
           <div style={{fontSize:22,fontWeight:700,color:l==="Net"?(p.net>=0?G.green:G.red):G.text,marginTop:2}}>{v}</div>
@@ -5634,8 +5647,8 @@ function RoiTab({shipments}) {
 
       {/* Realized margin — business-level, all-time, from the Sales tab. Same card
           strip as the appraised row above so the two bases read side by side. */}
-      {realized && (()=>{ const r=realized; const net = allSpend==null ? null : r.margin-allSpend;
-        const roi = allSpend ? (r.margin-allSpend)/allSpend*100 : null;
+      {realized && (()=>{ const r=realized; const costs = allSpend==null ? null : allSpend+allShipping.cost; const net = costs==null ? null : r.margin-costs;
+        const roi = costs ? (r.margin-costs)/costs*100 : null;
         const cards=[
           ["Gross sales", money(r.gross), "Sales tab, recorded gross"],
           ["Fees", "−"+money(r.fees), "15% on eBay sales"],
@@ -5643,7 +5656,8 @@ function RoiTab({shipments}) {
           ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab"],
           ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":"")],
           ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid"],
-          ["Net", net==null?"—":money(net), net==null?"":pct(roi)+" ROI on "+money(allSpend)+" spend"],
+          ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`],
+          ["Net", net==null?"—":money(net), net==null?"":pct(roi)+" ROI on "+money(allSpend)+" spend + "+money(allShipping.cost)+" shipping"],
         ];
         return <>
           <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
@@ -5651,8 +5665,8 @@ function RoiTab({shipments}) {
             <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · whole business regardless of the source/date filters (refiner lots carry no attribution)
               {r.excludedSales>0 && ` · ${r.excludedSales} outlier sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded`}</span>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(7,1fr)",gap:10,marginBottom:16}}>
-            {cards.map(([l,v,sub],i)=>{ const isMargin=i===5, isNet=i===6; const val=isMargin?r.margin:isNet?net:null;
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(8,1fr)",gap:10,marginBottom:16}}>
+            {cards.map(([l,v,sub],i)=>{ const isMargin=i===5, isNet=i===7; const val=isMargin?r.margin:isNet?net:null;
               return <div key={l} style={{background:isMargin||isNet?"#FBF8F3":"#fff",border:`1px solid ${isMargin||isNet?G.gold+"66":G.border}`,borderRadius:10,padding:"12px 14px"}}>
                 <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
                 <div style={{fontSize:22,fontWeight:700,marginTop:2,color:val==null?G.text:(val>=0?G.green:G.red)}}>{v}</div>
@@ -5671,7 +5685,7 @@ function RoiTab({shipments}) {
             <th style={{...th,textAlign:"left"}}>Channel</th>
             <th style={th}>Spend</th><th style={th}>Regs</th><th style={th}>Fulfilled</th><th style={th}>Arrived</th><th style={th}>Ship %</th>
             <th style={th}>Bought</th><th style={th}>Buy %</th><th style={th}>Paid</th><th style={th}>Margin</th>
-            <th style={th}>Net</th><th style={th}>$/reg</th><th style={th}>$/arrival</th><th style={th}>$/purchase</th>
+            <th style={th}>Shipping</th><th style={th}>Net</th><th style={th}>$/reg</th><th style={th}>$/arrival</th><th style={th}>$/purchase</th>
           </tr></thead>
           <tbody>
             {visibleChannels.map(c=>{
@@ -5683,7 +5697,8 @@ function RoiTab({shipments}) {
                 <td style={td}>{m.regs}</td><td style={td}>{m.fulfilled||0}</td><td style={td}>{m.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
                 <td style={td}>{m.purchased}</td><td style={td}>{pct(p.buyPct)}</td>
                 <td style={td}>{money(m.paid)}</td><td style={td}>{money(m.margin)}</td>
-                <td style={{...td,fontWeight:600,color:m.spend?(p.net>=0?G.green:G.red):G.muted}}>{m.spend?money(p.net):"—"}</td>
+                <td style={td}>{p.shipping?money(p.shipping):<span style={{color:G.muted}}>—</span>}</td>
+                <td style={{...td,fontWeight:600,color:(m.spend||p.shipping)?(p.net>=0?G.green:G.red):G.muted}}>{(m.spend||p.shipping)?money(p.net):"—"}</td>
                 <td style={td}>{cost(p.costReg)}</td><td style={td}>{cost(p.costArrival)}</td><td style={td}>{cost(p.costPurchase)}</td>
               </tr>;
               return [
@@ -5698,6 +5713,7 @@ function RoiTab({shipments}) {
               <td style={{...td,textAlign:"left"}}>Total</td>
               <td style={td}>{money(tot.spend)}</td><td style={td}>{tot.regs}</td><td style={td}>{tot.fulfilled||0}</td><td style={td}>{tot.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
               <td style={td}>{tot.purchased}</td><td style={td}>{pct(p.buyPct)}</td><td style={td}>{money(tot.paid)}</td><td style={td}>{money(tot.margin)}</td>
+              <td style={td}>{money(p.shipping)}</td>
               <td style={{...td,color:p.net>=0?G.green:G.red}}>{money(p.net)}</td>
               <td style={td}>{cost(p.costReg)}</td><td style={td}>{cost(p.costArrival)}</td><td style={td}>{cost(p.costPurchase)}</td>
             </tr>;})()}
@@ -5709,6 +5725,7 @@ function RoiTab({shipments}) {
         {data.unmatched_spend[V]>0 && <div>{money(data.unmatched_spend[V])} of spend has a channel with no campaign or ad set name — it counts toward the channel total but not any sub-row.</div>}
         <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
         <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
+        <div><b>Shipping</b> is an assumption, not a ledger: ${ROI_SHIP_IN} per arrived package (inbound label) plus ${ROI_SHIP_RET} per return (arrived but not bought). Net subtracts spend and shipping.</div>
         <div><b>Fulfilled</b> = a prepaid label went out. Ship % is arrived ÷ fulfilled — the real ship rate — not arrived ÷ registrations.</div>
         {custType==="repeat" && data.repeat_sources && data.repeat_sources.length>0 && <div style={{margin:"10px 0 6px"}}>
           <div style={{fontSize:12,fontWeight:700,color:G.text,marginBottom:6}}>What brought repeaters back <span style={{fontWeight:400,color:G.muted}}>— the registration touch nearest each repeat label · {data.repeat_registrations} re-registrations all-time</span></div>
