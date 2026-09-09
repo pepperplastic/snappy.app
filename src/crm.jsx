@@ -2995,8 +2995,9 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
 // RECEIVED TAB
 // ══════════════════════════════════════════════════════════
 
-function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
-  const [selected,setSelected]=useState(null);
+function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment,initialSelected}) {
+  const [selected,setSelected]=useState(initialSelected||null);
+  useEffect(()=>{ if(initialSelected) setSelected(initialSelected); },[initialSelected]);
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
@@ -3124,8 +3125,9 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 // PURCHASED TAB
 // ══════════════════════════════════════════════════════════
 
-function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
-  const [selected,setSelected]=useState(null);
+function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment,initialSelected}) {
+  const [selected,setSelected]=useState(initialSelected||null);
+  useEffect(()=>{ if(initialSelected) setSelected(initialSelected); },[initialSelected]);
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
@@ -3319,8 +3321,9 @@ function UploadModal({onProcess, onClose, results, uploading}) {
 // FULFILL TAB
 // ══════════════════════════════════════════════════════════
 
-function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
-  const [selected,setSelected]=useState(null);
+function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,initialSelected}) {
+  const [selected,setSelected]=useState(initialSelected||null);
+  useEffect(()=>{ if(initialSelected) setSelected(initialSelected); },[initialSelected]);
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [selectedIds,setSelectedIds]=useState(new Set());
@@ -3752,8 +3755,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
 // PROCESS TAB
 // ══════════════════════════════════════════════════════════
 
-function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment}) {
-  const [selected,setSelected]=useState(null);
+function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment,initialSelected}) {
+  const [selected,setSelected]=useState(initialSelected||null);
+  useEffect(()=>{ if(initialSelected) setSelected(initialSelected); },[initialSelected]);
   const isMobile=useIsMobile();
   const [search,setSearch]=useState("");
   const [stageFilter,setStageFilter]=useState(null);
@@ -6104,6 +6108,20 @@ useEffect(()=>{
   const [error,setError]=useState(null);
   const [tab,setTab]=useState("fulfill");
   const [showManualEntry,setShowManualEntry]=useState(false);
+  // Deep link: /crm?shp=SHP-1234 opens that shipment in whichever queue holds it
+  // (used by the new-registration SMS/email alerts).
+  const [deepLink,setDeepLink]=useState(()=>{ try{ return new URLSearchParams(window.location.search).get("shp")||null; }catch{ return null; } });
+  useEffect(()=>{
+    if(!deepLink||!shipments.length) return;
+    const s=shipments.find(x=>x.shipment_id===deepLink);
+    if(!s) return;
+    const st=String(s.stage||"").toLowerCase();
+    if(FULFILL_STAGES.includes(st)) setTab("fulfill");
+    else if(OUTBOUND_STAGES.includes(st)) setTab("outbound");
+    else if(RECEIVED_STAGES.includes(st)) setTab("received");
+    else if(COMPLETE_STAGES.includes(st)) setTab("complete");
+    try{ window.history.replaceState(null,"",window.location.pathname); }catch{}
+  },[deepLink,shipments]);
   const [tsFlash,setTsFlash]=useState(false);
 
   // Auto-refresh every 5 minutes when tab is visible
@@ -6208,10 +6226,10 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
 
     {/* Tab content */}
     <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-      {tab==="fulfill"  &&<FulfillTab   shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="outbound" &&<OutboundTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="received" &&<ReceivedTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
-      {tab==="complete" &&<CompleteTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
+      {tab==="fulfill"  &&<FulfillTab   shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment} initialSelected={deepLink}/>}
+      {tab==="outbound" &&<OutboundTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment} initialSelected={deepLink}/>}
+      {tab==="received" &&<ReceivedTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment} initialSelected={deepLink}/>}
+      {tab==="complete" &&<CompleteTab  shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment} initialSelected={deepLink}/>}
       {tab==="urgent"   &&<UrgentTab    shipments={shipments} customers={customers} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
       {tab==="leads"    &&<LeadsTab     activeCustomerEmails={activeCustomerEmails} onCountChange={setFollowUpCount}/>}
       {tab==="customers"&&<CustomersTab customers={customers} shipments={shipments} contactLogs={contactLogs} onUpdate={handleUpdate} onNewShipment={handleNewShipment}/>}
