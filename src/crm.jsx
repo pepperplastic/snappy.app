@@ -5527,7 +5527,7 @@ function RoiTab({shipments}) {
     buyPct:       m.arrived   ? m.purchased/m.arrived*100 : null,
     shipping:     roiShipping(m.arrived, m.purchased),
     net:          m.margin - m.spend - roiShipping(m.arrived, m.purchased),
-    roi:          (m.spend + roiShipping(m.arrived, m.purchased)) ? (m.margin - m.spend - roiShipping(m.arrived, m.purchased))/(m.spend + roiShipping(m.arrived, m.purchased))*100 : null,
+    roi:          m.spend ? (m.margin - m.spend - roiShipping(m.arrived, m.purchased))/m.spend*100 : null,
   });
   const pct = v => v==null ? "—" : Math.round(v)+"%";
   const cost = v => v==null ? "—" : money(v);
@@ -5636,7 +5636,7 @@ function RoiTab({shipments}) {
         ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null],
         ["Shipping", money(p.shipping), `${tot.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,tot.arrived-tot.purchased)} returns × $${ROI_SHIP_RET}`],
         ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
-        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend + shipping"],
+        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend"],
       ];
       return <>
       <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
@@ -5655,7 +5655,7 @@ function RoiTab({shipments}) {
       {/* Realized margin — business-level, all-time, from the Sales tab. Same card
           strip as the appraised row above so the two bases read side by side. */}
       {realized && (()=>{ const r=realized; const costs = allSpend==null ? null : allSpend+allShipping.cost; const net = costs==null ? null : r.margin-costs;
-        const roi = costs ? (r.margin-costs)/costs*100 : null;
+        const roi = allSpend ? (r.margin-costs)/allSpend*100 : null;
         const cards=[
           ["Gross sales", money(r.gross), "Sales tab, recorded gross"],
           ["Fees", "−"+money(r.fees), "15% on eBay sales"],
@@ -5664,7 +5664,7 @@ function RoiTab({shipments}) {
           ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":"")],
           ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid"],
           ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`],
-          ["Net", net==null?"—":money(net), net==null?"":pct(roi)+" ROI on "+money(allSpend)+" spend + "+money(allShipping.cost)+" shipping"],
+          ["Net", net==null?"—":money(net), net==null?"":pct(roi)+" ROI on "+money(allSpend)+" spend"],
         ];
         return <>
           <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
@@ -5732,7 +5732,7 @@ function RoiTab({shipments}) {
         {data.unmatched_spend[V]>0 && <div>{money(data.unmatched_spend[V])} of spend has a channel with no campaign or ad set name — it counts toward the channel total but not any sub-row.</div>}
         <div>Direct / unknown is the untagged share; on past reads it's been ~22% of arrivals and mostly paid traffic that lost its click id. Every paid channel's real cost per arrival is a little lower than shown.</div>
         <div>Margin uses appraised value, which is blank on some purchases — those show up in the "missing appraisal" count and drag Net down until they're graded.</div>
-        <div><b>Shipping</b> is an assumption, not a ledger: ${ROI_SHIP_IN} per arrived package (inbound label) plus ${ROI_SHIP_RET} per return (arrived but not bought). Net subtracts spend and shipping.</div>
+        <div><b>Shipping</b> is an assumption, not a ledger: ${ROI_SHIP_IN} per arrived package (inbound label) plus ${ROI_SHIP_RET} per return (arrived but not bought). Net subtracts spend and shipping; ROI % is net ÷ marketing spend only.</div>
         <div><b>Fulfilled</b> = a prepaid label went out. Ship % is arrived ÷ fulfilled — the real ship rate — not arrived ÷ registrations.</div>
         {custType==="repeat" && data.repeat_sources && data.repeat_sources.length>0 && <div style={{margin:"10px 0 6px"}}>
           <div style={{fontSize:12,fontWeight:700,color:G.text,marginBottom:6}}>What brought repeaters back <span style={{fontWeight:400,color:G.muted}}>— the registration touch nearest each repeat label · {data.repeat_registrations} re-registrations all-time</span></div>
