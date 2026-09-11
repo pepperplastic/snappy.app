@@ -4462,19 +4462,31 @@ function InventoryEstimatePanel({totalProfit, totalLost, totalExpected, totalCos
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
+  // Stored server-side (Script Property) so every device sees the same number;
+  // localStorage is only a cache for the instant before the fetch returns.
   useEffect(()=>{
     try {
       const raw = JSON.parse(localStorage.getItem(INVENTORY_EST_KEY) || "null");
       if (raw) { setVal(String(raw.value ?? "")); setUpdated(raw.updated || ""); }
     } catch {}
+    (async()=>{
+      try {
+        const r = await apiPost({action:"getSetting", key_name:"inventory_estimate"});
+        if (r && r.success && r.value) {
+          setVal(String(r.value.value ?? "")); setUpdated(r.value.updated || "");
+          try { localStorage.setItem(INVENTORY_EST_KEY, JSON.stringify(r.value)); } catch {}
+        }
+      } catch {}
+    })();
   },[]);
 
-  function save(){
+  async function save(){
     const n = parseFloat(String(draft).replace(/[^0-9.]/g,""));
     if (isNaN(n) || n < 0) { alert("Enter a dollar amount, e.g. 12500"); return; }
-    const rec = { value: n, updated: new Date().toISOString() };
-    try { localStorage.setItem(INVENTORY_EST_KEY, JSON.stringify(rec)); } catch {}
-    setVal(String(n)); setUpdated(rec.updated); setEditing(false);
+    const r = await apiPost({action:"setSetting", key_name:"inventory_estimate", value:n});
+    if (!(r && r.success)) { alert("Save failed: " + ((r && r.error) || "no response")); return; }
+    try { localStorage.setItem(INVENTORY_EST_KEY, JSON.stringify(r.value)); } catch {}
+    setVal(String(n)); setUpdated(r.value.updated); setEditing(false);
   }
 
   const inv = parseFloat(val) || 0;
@@ -5367,7 +5379,7 @@ const roiShipping = (arrived, purchased) => (arrived||0)*ROI_SHIP_IN + Math.max(
 // tab's hand-entered estimate) so the two tabs never disagree.
 // Not attributable by channel/window — a refiner lot doesn't know which ad it
 // came from — so this is one figure for the whole business.
-function computeRealizedMargin(sales, shipments, excludeOver) {
+function computeRealizedMargin(sales, shipments, excludeOver, inventoryRec) {
   const EBAY_FEE_PCT = 15;
   const PURCHASED = ["complete","pending_payment","pending_leadsonline"];
   const shipById = {}; shipments.forEach(s=>{ shipById[s.shipment_id]=s; });
@@ -5400,7 +5412,8 @@ function computeRealizedMargin(sales, shipments, excludeOver) {
   });
 
   let inventory=0, inventoryUpdated="";
-  try { const raw=JSON.parse(localStorage.getItem(INVENTORY_EST_KEY)||"null"); if(raw){ inventory=parseFloat(raw.value)||0; inventoryUpdated=raw.updated||""; } } catch {}
+  if (inventoryRec) { inventory=parseFloat(inventoryRec.value)||0; inventoryUpdated=inventoryRec.updated||""; }
+  else { try { const raw=JSON.parse(localStorage.getItem(INVENTORY_EST_KEY)||"null"); if(raw){ inventory=parseFloat(raw.value)||0; inventoryUpdated=raw.updated||""; } } catch {} }
 
   const cost = paid + lossCost;
   const margin = gross - fees + expected + inventory - cost;
@@ -5429,9 +5442,11 @@ function RoiTab({shipments}) {
   const [sales,setSales]     = useState(null);        // all Sales rows, for realized margin
   const [spendRows,setSpendRows] = useState(null);     // all-time spend rows, for realized net
   const [sideErr,setSideErr]     = useState("");       // sales / spend fetch problems
+  const [invRec,setInvRec]       = useState(null);     // inventory estimate (server-side setting)
 
   const loadSide = useCallback(async ()=>{
     const errs=[];
+    try{ const r=await apiPost({action:"getSetting", key_name:"inventory_estimate"}); if(r&&r.success) setInvRec(r.value||{value:0,updated:""}); else errs.push("inventory: "+((r&&r.error)||"no response")); }catch(e){ errs.push("inventory: "+(e.message||e)); }
     try{ const r=await apiPost({action:"getSales"}); if(r&&r.success) setSales(r.sales||[]); else errs.push("sales: "+((r&&r.error)||"no response")); }catch(e){ errs.push("sales: "+(e.message||e)); }
     try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setSpendRows(r.rows||[]); else errs.push("spend: "+((r&&r.error)||"no response")); }catch(e){ errs.push("spend: "+(e.message||e)); }
     setSideErr(errs.join(" · "));
@@ -5444,7 +5459,7 @@ function RoiTab({shipments}) {
     const cutoff = view==="mature" ? roiDateStr(new Date(Date.now()-matureDays*86400000)) : null;
     return spendRows.reduce((sum,x)=> (cutoff && String(x.date)>cutoff) ? sum : sum+(parseFloat(x.spend)||0), 0);
   },[spendRows,view,matureDays]);
-  const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0) : null, [sales,shipments,excludeOn,excludeOver]);
+  const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0, invRec) : null, [sales,shipments,excludeOn,excludeOver,invRec]);
   const allShipping = useMemo(()=>{
     const ARR=["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"];
     const PUR=["complete","pending_payment","pending_leadsonline"];
@@ -5669,7 +5684,7 @@ function RoiTab({shipments}) {
           ["Gross sales", money(r.gross), "Sales tab, recorded gross"],
           ["Fees", "−"+money(r.fees), "15% on eBay sales"],
           ["Expected", money(r.expected), "expected-type sale rows"],
-          ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab"],
+          ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab (shared across devices)"],
           ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":"")],
           ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid"],
           ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`],
