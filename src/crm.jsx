@@ -5428,8 +5428,8 @@ function RoiTab({shipments}) {
   const [preset,setPreset]   = useState("all");        // 30d | 90d | ytd | all | custom
   const [from,setFrom]       = useState("2026-01-01");
   const [to,setTo]           = useState(()=>roiDateStr(new Date()));
-  const [view,setView]       = useState("all");        // mature | all
-  const [matureDays,setMatureDays] = useState(30);
+  const [view,setView]       = useState("mature");     // mature | all — default Mature 14 (DW, Sep 11)
+  const [matureDays,setMatureDays] = useState(14);
   const [channel,setChannel] = useState("");           // source filter: "" = all
   const [custType,setCustType] = useState("all");      // all | first | repeat
   const [excludeOn,setExcludeOn]   = useState(true);    // outlier guard — on by default, $5k
