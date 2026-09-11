@@ -70,7 +70,7 @@ const WRITE_ACTIONS = new Set([
   'pushToLeadsOnline', 'uploadLeadsOnlinePhotos',
   'manualCustomerShipment', 'getAffiliates', 'addAffiliate', 'updateAffiliate',
   'deleteAffiliate', 'getAffiliateStats',
-  'getMarketingRoi', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend',
+  'getMarketingRoi', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend','getSetting','setSetting',
 ]);
 
 const UPSTREAM_TIMEOUT_MS = 55_000;
