@@ -271,7 +271,7 @@ function doPost(e) {
       'getCommsDashboard','addDoNotContact','getLabelUrl',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
-      if ((parsed.key || '') !== CRM_SECRET_KEY) {
+      if (!CRM_SECRET_KEY || (parsed.key || '') !== CRM_SECRET_KEY) {
         return jsonResponse({ success: false, error: 'Unauthorized' });
       }
     }
@@ -743,7 +743,7 @@ function doGet(e) {
     'getShipmentAttribution','getContactLog','getPhotos','getSales'];
   if (READ_ACTIONS.indexOf(action) !== -1) {
     var key = (e && e.parameter && e.parameter.key) || '';
-    if (key !== CRM_SECRET_KEY) {
+    if (!CRM_SECRET_KEY || key !== CRM_SECRET_KEY) {
       return jsonResponse({ status: 'error', message: 'Unauthorized' });
     }
   }
@@ -801,11 +801,13 @@ function getRecentQuotes() {
 //  GET: CRM inbox sync (Lead Intake tab)
 // ═══════════════════════════════════════════════
 
-var CRM_SECRET_KEY = '776f54575f1ebbb84daaf89146f26c21d6e6d288a7eeff4d';
+// Script Property CRM_SECRET_KEY — must match CRM_SECRET_KEY in Vercel. Missing → every
+// keyed check below fails closed (an empty key never authorizes anything).
+var CRM_SECRET_KEY = PropertiesService.getScriptProperties().getProperty('CRM_SECRET_KEY') || '';
 
 function getCRMLeads(e) {
   var key = (e && e.parameter && e.parameter.key) || '';
-  if (key !== CRM_SECRET_KEY) {
+  if (!CRM_SECRET_KEY || key !== CRM_SECRET_KEY) {
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'error', message: 'Unauthorized' }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -1146,6 +1148,17 @@ function upsertCustomer(data) {
 //  SHIPMENTS
 // ═══════════════════════════════════════════════
 
+// ── Shipping type (Sep 14) ────────────────────────────────
+// The site's three choices: 'fedex' = emailed FedEx label (stored as 'label'
+// before Sep 14), 'usps' = emailed USPS label, 'kit' = FedEx kit. Lower-cases,
+// trims, and reads legacy 'label' as 'fedex'. Blank stays '' and anything else
+// comes back as-is, so callers refuse it instead of guessing a carrier.
+// Existing rows are not rewritten. src/crm.jsx has the same helper.
+function normalizeShipType(v) {
+  var t = String(v == null ? '' : v).trim().toLowerCase();
+  return t === 'label' ? 'fedex' : t;
+}
+
 function createShipment(data) {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.SHIPMENTS);
@@ -1153,6 +1166,7 @@ function createShipment(data) {
   var row = COLS.SHIPMENTS.map(function(col) {
     if (col === 'shipment_id') return shipId;
     if (col === 'created_at')  return new Date().toISOString();
+    if (col === 'shipping_type' && data[col] !== undefined) return normalizeShipType(data[col]);
     return data[col] !== undefined ? data[col] : '';
   });
   sheet.appendRow(row);
@@ -2553,8 +2567,9 @@ function testDigest() { sendDailyPhotoDigest(); }
 
 function handleGenerateUSPSLabel(data) {
   try {
-    var shippingType = String(data.shipping_type || '').trim() || 'usps';
-    Logger.log('handleGenerateUSPSLabel: shipping_type=[' + shippingType + '] id=' + data.shipment_id);
+    // Sep 14: no blank → usps default any more; generateAndSendLabel refuses anything but usps / fedex.
+    var shippingType = normalizeShipType(data.shipping_type);
+    Logger.log('handleGenerateUSPSLabel: shipping_type=[' + (data.shipping_type || '') + ' → ' + shippingType + '] id=' + data.shipment_id);
     return generateAndSendLabel(
       data.customer_id, data.shipment_id, shippingType,
       data.address, data.name || '', data.email,
@@ -2578,7 +2593,7 @@ function handleGenerateUSPSLabel(data) {
 
 var _SP = PropertiesService.getScriptProperties();
 var EASYPOST_API_KEY = _SP.getProperty('EASYPOST_API_KEY') || '';
-var SHIPPO_API_KEY   = _SP.getProperty('SHIPPO_API_KEY') || '';
+var SHIPPO_API_KEY   = _SP.getProperty('SHIPPO_API_TOKEN') || '';   // the only definition — shippoUSPS.gs uses this too
 var QUO_API_KEY      = _SP.getProperty('QUO_API_KEY') || '';
 var LABEL_PROVIDER = 'shippo';  // 'shippo' or 'easypost'
 var QUO_FROM_NUMBER  = '8666130704';
@@ -2681,7 +2696,7 @@ function _stateFromZip(zip) {
 //  is the correct orientation for an outbound package.
 // ═══════════════════════════════════════════════════════════════════════
 function _buyOutboundLabel(address, customerName, customerPhone, shipmentId, customerEmail, shippingType, dims) {
-  shippingType = shippingType || 'usps';
+  shippingType = normalizeShipType(shippingType) || 'usps';
   dims = dims || {};
   // Package size/weight vary for returns (whatever the customer originally sent),
   // so these are passed in per-label. Fall back to a small default if missing.
@@ -2835,6 +2850,7 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
   var street1 = addr.street1, city = addr.city, state = addr.state, zip = addr.zip;
   if (!street1 || !city || !state || !zip) throw new Error('Incomplete address for Shippo: ' + JSON.stringify(addr));
 
+  shippingType = normalizeShipType(shippingType);
   var carrierToken = shippingType === 'usps' ? 'usps' : 'fedex';
   // USPS GroundAdvantage = "usps_ground_advantage", FedEx Ground = "fedex_ground"
   var preferredService = shippingType === 'usps' ? 'usps_ground_advantage' : 'fedex_ground';
@@ -2889,7 +2905,7 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
   // creation instead of pay-on-scan). Never cross carriers.
   var rates = shipData.rates || [];
   var rate = null;
-  // 1) exact preferred service (e.g. usps_ground_advantage)
+  // 1) exact preferred service (usps_ground_advantage / fedex_ground)
   for (var i = 0; i < rates.length; i++) {
     if (rates[i].servicelevel && rates[i].servicelevel.token === preferredService) { rate = rates[i]; break; }
   }
@@ -2904,7 +2920,9 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
   //    (USPS or FedEx only) rather than failing to EasyPost. This keeps Shippo
   //    working (pay-on-scan) even when it only returns one carrier for an
   //    address. We still avoid unregistered carriers like UPS.
-  if (!rate) {
+  //    Sep 14: USPS requests only. A FedEx request never becomes a USPS label —
+  //    with no FedEx rate it throws below (and has no EasyPost fallback).
+  if (!rate && carrierToken === 'usps') {
     var okCarriers = ['usps', 'fedex'];
     var usable = rates.filter(function(r) { return r.provider && okCarriers.indexOf(r.provider.toLowerCase()) !== -1; });
     usable.sort(function(a, b) { return parseFloat(a.amount) - parseFloat(b.amount); });
@@ -2913,7 +2931,7 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
   }
   if (!rate) {
     var avail = rates.map(function(r){ return r.provider + '/' + (r.servicelevel && r.servicelevel.token); }).join(', ');
-    throw new Error('Shippo: no usable USPS/FedEx rate (got: ' + avail + ')');
+    throw new Error('Shippo: no usable ' + (carrierToken === 'fedex' ? 'FedEx' : 'USPS/FedEx') + ' rate (got: ' + avail + ')');
   }
 
   // Purchase the label via Transactions endpoint
@@ -2962,7 +2980,13 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
 
 function generateAndSendLabel(custId, shipmentId, shippingType, address, customerName, customerEmail, customerPhone, item) {
   try {
-    Logger.log('generateAndSendLabel: ' + shipmentId + ' type=' + shippingType + ' provider=' + LABEL_PROVIDER);
+    var rawShippingType = shippingType;
+    shippingType = normalizeShipType(shippingType);
+    Logger.log('generateAndSendLabel: ' + shipmentId + ' type=' + rawShippingType + ' → ' + shippingType + ' provider=' + LABEL_PROVIDER);
+    // Sep 14: only usps and fedex get labels. Never guess USPS for anything else.
+    if (shippingType !== 'usps' && shippingType !== 'fedex') {
+      return { success: false, error: 'Unrecognized shipping type "' + (rawShippingType || '') + '" — set it to USPS or FedEx before generating a label.' };
+    }
 
     // MAY 31 PATCH: try Shippo first (pay-on-use billing). If anything goes
     // wrong, fall back to EasyPost so we never fail to send a label.
@@ -2985,6 +3009,12 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
         };
         Logger.log('Shippo label success: ' + sr.trackingNumber + ' ($' + sr.shipping_cost + ')');
       } catch (shippoErr) {
+        // Sep 14: FedEx has no EasyPost fallback — it's Shippo FedEx Ground
+        // pay-on-use or an error the CRM shows. Only USPS falls through below.
+        if (shippingType === 'fedex') {
+          Logger.log('✗ Shippo FedEx failed for ' + shipmentId + ': ' + shippoErr.toString());
+          return { success: false, error: 'FedEx label failed (Shippo): ' + shippoErr.toString() };
+        }
         Logger.log('⚠ SHIPPO FAILED for ' + shipmentId + ', falling back to EasyPost (BILLED ON CREATION): ' + shippoErr.toString());
         // ALERT: every EasyPost fallback is a label charged on creation — the
         // exact cost leak Shippo is meant to eliminate. Email so it's never silent.
@@ -3000,7 +3030,7 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
     }
 
     // EasyPost path: runs if (a) LABEL_PROVIDER is 'easypost', OR
-    // (b) Shippo failed above.
+    // (b) Shippo failed above for a USPS label (FedEx returned an error instead).
     if (!labelData) {
     var epAddr = _parseUsAddress(address);
     var street1 = epAddr.street1, city = epAddr.city, state = epAddr.state, zip = epAddr.zip;
@@ -3188,10 +3218,12 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
     // USPS label was attached (Laurie Plumley bug). Source of truth = labelData.
     var actualSvc = String((labelData && labelData.shipping_service) || '').toLowerCase();
     var isUspsLabel;
-    if (actualSvc.indexOf('usps') !== -1 || actualSvc.indexOf('ground advantage') !== -1 || actualSvc.indexOf('groundadvantage') !== -1 || actualSvc.indexOf('priority') !== -1 || actualSvc.indexOf('first class') !== -1 || actualSvc.indexOf('firstclass') !== -1) {
-      isUspsLabel = true;
-    } else if (actualSvc.indexOf('fedex') !== -1) {
+    // Sep 14: FedEx is checked first — "FedEx Priority Overnight" would otherwise
+    // match 'priority' below and get USPS copy.
+    if (actualSvc.indexOf('fedex') !== -1) {
       isUspsLabel = false;
+    } else if (actualSvc.indexOf('usps') !== -1 || actualSvc.indexOf('ground advantage') !== -1 || actualSvc.indexOf('groundadvantage') !== -1 || actualSvc.indexOf('priority') !== -1 || actualSvc.indexOf('first class') !== -1 || actualSvc.indexOf('firstclass') !== -1) {
+      isUspsLabel = true;
     } else {
       // Unknown/blank service string → fall back to the requested shippingType.
       isUspsLabel = (shippingType === 'usps');
@@ -5987,7 +6019,7 @@ function handleResendLabelEmail(parsed) {
     var labelExt = labelUrl.toLowerCase().indexOf('.pdf') >= 0 ? 'pdf' : 'png';
     var labelMimeType = labelExt === 'pdf' ? 'application/pdf' : 'image/png';
 
-    var shippingType = String(shipment.shipping_type || 'usps').toLowerCase();
+    var shippingType = normalizeShipType(shipment.shipping_type) || 'usps';
     var carrierName = shippingType === 'usps' ? 'USPS' : 'FedEx';
     var dropText = shippingType === 'usps' ? 'hand it to your postman or drop it at any post office' : 'drop it at any FedEx location';
     var firstName = String(customer.name || '').split(/\s+/)[0] || 'there';
@@ -8396,7 +8428,7 @@ function diagnoseShipmentCarrier(shipmentId) {
   if (!s) { Logger.log('Not found: ' + shipmentId); return; }
   Logger.log('─── ' + shipmentId + ' ───');
   Logger.log('shipping_type (raw): "' + (s.shipping_type||'') + '"');
-  Logger.log('→ interpreted as: ' + (String(s.shipping_type||'').trim() === 'usps' ? 'USPS' : 'FEDEX (anything not exactly "usps" = fedex!)'));
+  Logger.log('→ interpreted as: ' + (normalizeShipType(s.shipping_type) || '(blank — Fulfill refuses to generate a label)'));
 
   var c = sheetToObjects(ss.getSheetByName(TAB.CUSTOMERS)).filter(function(r){ return String(r.customer_id)===String(s.customer_id); })[0];
   var addr = c ? (c.address||'') : '';

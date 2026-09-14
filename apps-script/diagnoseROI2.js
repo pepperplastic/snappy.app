@@ -42,7 +42,7 @@ function diagnoseROI2() {
 
   for (var j = 1; j < shipData.length; j++) {
     var stage    = String(shipData[j][stageIdx]    || '').trim();
-    var shipType = String(shipData[j][shipTypeIdx] || '').trim().toLowerCase() || 'other';
+    var shipType = normalizeShipType(shipData[j][shipTypeIdx]) || 'other';
     var cid      = String(shipData[j][custIdIdx]   || '').trim();
     var source   = custSource[cid] || 'other';
 
@@ -53,7 +53,7 @@ function diagnoseROI2() {
 
     // Normalize ship type
     var typeBucket = shipType === 'kit' ? 'kit'
-                   : shipType === 'label' ? 'label'
+                   : shipType === 'fedex' ? 'label'   // bucket "label" = FedEx label (incl. legacy 'label')
                    : shipType === 'usps' ? 'usps'
                    : 'other';
 

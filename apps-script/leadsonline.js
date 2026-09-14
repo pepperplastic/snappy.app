@@ -21,14 +21,14 @@ var LO_SANDBOX = {
   url:      'https://w3apisandbox.leadsonline.com/ticketWS.asmx',
   storeId:  '55365',
   username: 'snapgtest01',
-  password: 'test01snapg',
+  password: PropertiesService.getScriptProperties().getProperty('LEADSONLINE_TEST_PASSWORD') || '',
 };
 
 var LO_PRODUCTION = {
   url:      'https://w3api.leadsonline.com/ticketWS.asmx',
   storeId:  '97921',
   username: 'snappygold01',
-  password: '01snappygold',
+  password: PropertiesService.getScriptProperties().getProperty('LEADSONLINE_PASSWORD') || '',
 };
 
 function _loCfg() {

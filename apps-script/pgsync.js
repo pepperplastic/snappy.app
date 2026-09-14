@@ -39,15 +39,16 @@
 //  credentials it already holds. Supabase keys live in exactly one place, and
 //  Apps Script only needs the CRM_SECRET_KEY it already has.
 //
-//  SETUP — nothing to configure. CRM_SECRET_KEY is already a global in Code.gs
-//  and must match the value in Vercel (it does; the proxy uses it today).
+//  SETUP — nothing extra to configure. CRM_SECRET_KEY is a global in Code.gs,
+//  read from Script Property CRM_SECRET_KEY (Sep 14), and must match the value
+//  in Vercel.
 //  Optional kill switch: Script Property PG_MIRROR_ENABLED = false
 // ═══════════════════════════════════════════════════════════════════════
 
 var PG_MIRROR_ENDPOINT = 'https://snappy.gold/api/pg-mirror';
 
-// CRM_SECRET_KEY is a global var declared in Code.gs, not a Script Property —
-// Apps Script shares globals across files, so we read it straight from there.
+// CRM_SECRET_KEY is a global var declared in Code.gs (loaded from Script Property
+// CRM_SECRET_KEY) — Apps Script shares globals across files, so we read it from there.
 // That also means it can never drift from what doGet/doPost check.
 function _pgCfg() {
   var key = (typeof CRM_SECRET_KEY !== 'undefined') ? String(CRM_SECRET_KEY || '') : '';

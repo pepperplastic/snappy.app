@@ -418,7 +418,7 @@ function EditModal({shipment,customer,onSave,onClose}) {
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Shipment · {s.shipment_id}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <Sel label="Stage" value={s.stage} onChange={e=>updS("stage",e.target.value)} options={STAGES.map(v=>({value:v,label:SL[v]||v}))}/>
-            <Sel label="Shipping Type" value={s.shipping_type} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
+            <Sel label="Shipping Type" value={normalizeShipType(s.shipping_type)} onChange={e=>updS("shipping_type",e.target.value)} options={[{value:"",label:"—"},{value:"kit",label:"Kit"},{value:"fedex",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
           </div>
           <div style={{marginTop:12}}><Inp label="Item Description" value={s.item} onChange={e=>updS("item",e.target.value)}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
@@ -507,7 +507,7 @@ function AddShipmentModal({customer,onSave,onClose}) {
       <div style={{fontWeight:700,fontSize:16,marginBottom:4,color:G.text}}>New Shipment</div>
       <div style={{fontSize:12,color:G.muted,marginBottom:20}}>{customer?.name||customer?.email}</div>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"label",label:"FedEx Label (email label)"},{value:"usps",label:"USPS Label (email via Shippo)"}]}/>
+        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"kit",label:"Kit (mail kit to customer)"},{value:"fedex",label:"FedEx Label (email label)"},{value:"usps",label:"USPS Label (email via Shippo)"}]}/>
         <Inp label="Item Description" value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. 14K Yellow Gold Chain"/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)} placeholder="e.g. $1,200 – $1,800"/>
         <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Optional"/>
@@ -567,7 +567,7 @@ function ManualEntryModal({onSaved,onClose}) {
           {value:"ready_to_fulfill",label:"Fulfill queue (needs a label)"},
           {value:"received",label:"Received (already have items)"},
         ]}/>
-        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"usps",label:"USPS"},{value:"label",label:"FedEx"},{value:"kit",label:"Kit"}]}/>
+        <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)} options={[{value:"usps",label:"USPS"},{value:"fedex",label:"FedEx"},{value:"kit",label:"Kit"}]}/>
         <Inp label="Outbound Tracking" value={tracking} onChange={e=>setTracking(e.target.value)} placeholder="Tracking # (if label already created)" mono/>
         <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Insured $7,500 via Secursus"/>
       </div>
@@ -1556,12 +1556,12 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
           <div style={{display:"flex",gap:6,marginTop:5,alignItems:"center",flexWrap:"wrap"}}>
             {shipment.stage==="ready_to_fulfill"
               ? <span style={{
-                  background: shipType(shipment.shipping_type)==="usps" ? G.green+"18" : shipType(shipment.shipping_type)==="fedex" ? G.blue+"18" : G.purple+"18",
-                  color:      shipType(shipment.shipping_type)==="usps" ? G.green      : shipType(shipment.shipping_type)==="fedex" ? G.blue      : G.purple,
-                  border:     `1px solid ${shipType(shipment.shipping_type)==="usps" ? G.green+"33" : shipType(shipment.shipping_type)==="fedex" ? G.blue+"33" : G.purple+"33"}`,
+                  background: normalizeShipType(shipment.shipping_type)==="usps" ? G.green+"18" : normalizeShipType(shipment.shipping_type)==="fedex" ? G.blue+"18" : G.purple+"18",
+                  color:      normalizeShipType(shipment.shipping_type)==="usps" ? G.green      : normalizeShipType(shipment.shipping_type)==="fedex" ? G.blue      : G.purple,
+                  border:     `1px solid ${normalizeShipType(shipment.shipping_type)==="usps" ? G.green+"33" : normalizeShipType(shipment.shipping_type)==="fedex" ? G.blue+"33" : G.purple+"33"}`,
                   borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"
                 }}>
-                  {shipType(shipment.shipping_type)==="usps" ? "USPS Label" : shipType(shipment.shipping_type)==="fedex" ? "FedEx Label" : shipType(shipment.shipping_type)==="kit" ? "Kit" : "Ready to Fulfill"}
+                  {normalizeShipType(shipment.shipping_type)==="usps" ? "USPS Label" : normalizeShipType(shipment.shipping_type)==="fedex" ? "FedEx Label" : normalizeShipType(shipment.shipping_type)==="kit" ? "Kit" : "Ready to Fulfill"}
                 </span>
               : <Badge stage={shipment.stage} sm/>}
             {absStr&&<span title={ageStr?`${ageStr} ago`:""} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {absStr}</span>}
@@ -2302,17 +2302,17 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
 
   async function quickStage(stage){
     try {
-      // Special case: USPS label shipment moving to outbound_complete
-      // Generate Shippo label automatically before changing stage
-      // AUG 17 FIX: a BLANK shipping_type used to fall straight past this block
-      // to the generic stage change at the bottom — the shipment moved to
-      // outbound_complete with no label, no tracking, no error, and the customer
-      // sat in Outbound looking fulfilled while waiting for a label that was
-      // never created. Code.gs already treats blank as USPS:
-      //     var shippingType = String(data.shipping_type || '').trim() || 'usps';
-      // so this guard was stricter than the server for no reason. Blank now
-      // takes the label path too.
-      const _st = shipType(shipment.shipping_type);
+      // Fulfill: moving ready_to_fulfill → outbound_complete generates the label first.
+      // SEP 14: routed by carrier — usps → Shippo USPS; fedex (incl. legacy 'label')
+      // → Shippo FedEx Ground pay-on-use (_buyShippoLabel, no EasyPost fallback); kit →
+      // the plain stage change below. A blank or unrecognized type is refused
+      // rather than guessed as USPS (AUG 17 had defaulted blank to USPS; before
+      // that it silently advanced with no label — both are wrong).
+      const _st = normalizeShipType(shipment.shipping_type);
+      if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && _st!=="usps" && _st!=="fedex" && _st!=="kit") {
+        alert("Can't fulfill: shipping type is " + (shipment.shipping_type ? "\"" + shipment.shipping_type + "\" (not recognized)" : "not set") + ".\n\nEdit the shipment and choose USPS, FedEx or Kit first.");
+        return;
+      }
       if(stage==="outbound_complete" && shipment.stage==="ready_to_fulfill" && (_st==="usps" || _st==="fedex")) {
         if(!customer?.address || !customer?.email) {
           alert("Cannot generate label: customer is missing address or email.");
@@ -2326,7 +2326,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             action: "generateUSPSLabel",
             shipment_id: shipment.shipment_id,
             customer_id: shipment.customer_id,
-            shipping_type: shipment.shipping_type,
+            shipping_type: _st,
             address: customer.address,
             name: customer.name||"",
             email: customer.email,
@@ -2368,7 +2368,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       // AUG 17: last line of defence. If anything ever reaches here with
       // outbound_complete on a shipment that should have had a label, stop —
       // don't repeat the silent-advance failure in a new form.
-      if (stage === "outbound_complete" && shipType(shipment.shipping_type) !== "kit"
+      if (stage === "outbound_complete" && normalizeShipType(shipment.shipping_type) !== "kit"
           && !shipment.outbound_tracking) {
         alert("Not moving to Outbound: no tracking number on this shipment.\n\n"
             + "A label was never generated, so the customer has nothing to ship with. "
@@ -3404,9 +3404,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
     return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
   },[shipments,search,custById,showDeferred]);
 
-  const kits=filtered.filter(s=>String(s.shipping_type||"").trim()==="kit");
-  const labels=filtered.filter(s=>String(s.shipping_type||"").trim()==="label");
-  const uspsLabels=filtered.filter(s=>String(s.shipping_type||"").trim()==="usps");
+  const kits=filtered.filter(s=>normalizeShipType(s.shipping_type)==="kit");
+  const labels=filtered.filter(s=>normalizeShipType(s.shipping_type)==="fedex");   // FedEx labels (incl. legacy 'label')
+  const uspsLabels=filtered.filter(s=>normalizeShipType(s.shipping_type)==="usps");
 
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
@@ -3678,8 +3678,8 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
     const batchSource = selectedIds.size > 0
       ? filtered.filter(s => selectedIds.has(s.shipment_id))
       : filtered;
-    const fedexCustomers=batchSource.filter(s=>shipType(s.shipping_type)==="fedex");
-    const uspsCustomers=batchSource.filter(s=>shipType(s.shipping_type)==="usps");
+    const fedexCustomers=batchSource.filter(s=>normalizeShipType(s.shipping_type)==="fedex");
+    const uspsCustomers=batchSource.filter(s=>normalizeShipType(s.shipping_type)==="usps");
     const allLabelCustomers=[...fedexCustomers,...uspsCustomers];
 
     // 1. FedEx return labels CSV
@@ -3700,7 +3700,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
           const c=custById[s.customer_id]||{};
           const firstName=(c.name||"").trim().split(" ")[0]||"there";
           const item=s.item||"your item";
-          const isFedex=shipType(s.shipping_type)==="fedex";
+          const isFedex=normalizeShipType(s.shipping_type)==="fedex";
           const carrierName=isFedex?"FedEx":"USPS";
           const dropText=isFedex?"drop it at any FedEx location":"hand it to your postman or drop it at any post office";
           doc+=`[${i+1}] ${s.shipment_id} | ${s.customer_id} | ${carrierName}\n`;
@@ -3917,7 +3917,7 @@ function ConvertLeadModal({lead, onSave, onClose}) {
           <Sel label="Stage" value={stage} onChange={e=>setStage(e.target.value)}
             options={STAGES.filter(s=>s!=="estimate_only").map(v=>({value:v,label:SL[v]||v}))}/>
           <Sel label="Shipping Type" value={shippingType} onChange={e=>setShippingType(e.target.value)}
-            options={[{value:"kit",label:"Kit"},{value:"label",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
+            options={[{value:"kit",label:"Kit"},{value:"fedex",label:"FedEx Label"},{value:"usps",label:"USPS Label"}]}/>
         </div>
         <Inp label="Item" value={item} onChange={e=>setItem(e.target.value)}/>
         <Inp label="Estimate" value={estimate} onChange={e=>setEstimate(e.target.value)}/>
@@ -4855,7 +4855,7 @@ function AnalyticsTab({shipments, customers}) {
     const returned   = filtered.filter(s => s.stage === "returned");
     const received   = filtered.filter(s => ["received","inspected","pending_response"].includes(s.stage));
     const outbound   = filtered.filter(s => s.stage === "outbound_complete");
-    const kits       = filtered.filter(s => s.stage === "outbound_complete" && shipType(s.shipping_type) === "kit");
+    const kits       = filtered.filter(s => s.stage === "outbound_complete" && normalizeShipType(s.shipping_type) === "kit");
 
     const revenue    = purchased.reduce((sum,s) => sum + (parseFloat(s.appraised_value)||0), 0);
     const projectedOutbound = outbound.reduce((sum,s) => {
@@ -5099,9 +5099,9 @@ function CohortComparison({shipments, fmt$, fmtN}) {
     // Group by shipping_type
     const groups = {kit: [], label: [], usps: []};
     inSentWindow.forEach(s => {
-      const type = String(s.shipping_type || "").toLowerCase().trim();
+      const type = normalizeShipType(s.shipping_type);
       if (type === "kit") groups.kit.push(s);
-      else if (type === "label") groups.label.push(s);
+      else if (type === "fedex") groups.label.push(s);   // group key "label" = FedEx label (incl. legacy 'label')
       else if (type === "usps") groups.usps.push(s);
     });
 
@@ -6323,22 +6323,18 @@ function CommsTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AUG 17: shipping_type has TWO vocabularies and the CRM only knew one.
-//  Sheets uses 'label' to mean FedEx. Postgres can't — its shipping_carrier
-//  enum has no 'label' — so the Aug 10 migration mapped label → 'fedex'.
-//  Once PG_TABLES included shipments, the CRM started reading 'fedex' and
-//  every comparison in this file silently failed: labels wouldn't generate,
-//  the FedEx filter chip read 0 while fedex rows sat in the list, and batch
-//  printing skipped them. Normalise once, compare against this everywhere.
-//  Blank is treated as USPS, matching Code.gs:
-//      var shippingType = String(data.shipping_type || '').trim() || 'usps';
+//  SEP 14: shipping_type is 'fedex' (emailed FedEx label), 'usps' (emailed USPS
+//  label) or 'kit' (FedEx kit). Before Sep 14 the site stored FedEx as 'label',
+//  and Postgres already maps label → 'fedex' (its shipping_carrier enum has no
+//  'label'), so legacy rows are read as fedex here — nothing is rewritten.
+//  Same helper as normalizeShipType() in Code.gs: lower-case + trim, 'label' →
+//  'fedex', blank stays '' and anything else is returned as-is. Blank is NOT
+//  treated as USPS any more (replaces the AUG 17 shipType default): Fulfill
+//  refuses to generate a label for a blank or unrecognized type.
 // ═══════════════════════════════════════════════════════════════
-function shipType(v){
-  const t = String(v||"").trim().toLowerCase();
-  if(t==="label"||t==="fedex") return "fedex";
-  if(t==="kit") return "kit";
-  if(t==="usps"||t==="") return "usps";
-  return t;
+function normalizeShipType(v){
+  const t = String(v==null?"":v).trim().toLowerCase();
+  return t==="label" ? "fedex" : t;
 }
 
 export default function SnappyGoldCRM() {

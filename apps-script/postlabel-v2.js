@@ -30,8 +30,8 @@ function _pl2IsUsps(s) {
   var svc = String(s.shipping_service || '').toLowerCase();
   if (/fedex/.test(svc)) return false;
   if (/usps|ground advantage|priority|first class/.test(svc)) return true;
-  var t = String(s.shipping_type || '').toLowerCase();
-  return t !== 'kit';   // kits ship FedEx; label/usps default to USPS
+  var t = normalizeShipType(s.shipping_type);
+  return t === 'usps' || t === '';   // Sep 14: fedex (incl. legacy 'label') and kits ship FedEx; blank defaults to USPS
 }
 function _pl2First(name) { var f = String(name || '').trim().split(/\s+/)[0] || ''; return f ? f.charAt(0).toUpperCase() + f.slice(1).toLowerCase() : 'there'; }
 function _pl2Days(v) { if (!v) return null; var d = v instanceof Date ? v : new Date(v); return isNaN(d.getTime()) ? null : (Date.now() - d.getTime()) / 86400000; }

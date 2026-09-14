@@ -20,7 +20,7 @@ function batchUSPSLabels() {
   // Find all ready_to_fulfill USPS shipments
   var pending = shipData.filter(function(s) {
     return s.stage === 'ready_to_fulfill' &&
-           String(s.shipping_type || '').toLowerCase() === 'usps';
+           normalizeShipType(s.shipping_type) === 'usps';
   });
 
   Logger.log('=== BATCH USPS LABELS ===');
@@ -97,7 +97,7 @@ function batchUSPSLabelsDryRun() {
 
   var pending = shipData.filter(function(s) {
     return s.stage === 'ready_to_fulfill' &&
-           String(s.shipping_type || '').toLowerCase() === 'usps';
+           normalizeShipType(s.shipping_type) === 'usps';
   });
 
   Logger.log('=== DRY RUN — USPS BATCH ===');

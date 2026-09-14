@@ -1240,7 +1240,7 @@ export default function App() {
 
       if (returnStep === 'shipping') {
         // They had an estimate but didn't finish shipping — drop them at shipping
-        setShippingData(prev => ({ ...prev, method: 'label' }))
+        setShippingData(prev => ({ ...prev, method: 'fedex' }))
         setStep(STEPS.SHIPPING)
         trackEvent('email_return', { step: 'shipping', item: returnItem })
       } else if (returnStep === 'capture') {
@@ -1410,7 +1410,7 @@ export default function App() {
     clearAnalysisLimit()
     setLimitReached(false)
     // FIX 2: Set label as visual default AFTER submitLead fires (so lead row gets method: '')
-    setShippingData(prev => ({ ...prev, method: 'label' }))
+    setShippingData(prev => ({ ...prev, method: 'fedex' }))
     setStep(STEPS.SHIPPING)
   }
 
@@ -3338,8 +3338,8 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
         <div style={styles.shippingOptions}>
           <button
             type="button"
-            onClick={() => setShippingData(prev => ({ ...prev, method: 'label' }))}
-            style={{ ...(shippingData.method === 'label' ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
+            onClick={() => setShippingData(prev => ({ ...prev, method: 'fedex' }))}
+            style={{ ...(shippingData.method === 'fedex' ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
           >
             <span style={{
               position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',

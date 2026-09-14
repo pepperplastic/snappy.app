@@ -4,17 +4,21 @@
 //  emails PDF to customer via Postmark
 // ═══════════════════════════════════════════════
 
-var SHIPPO_API_KEY = PropertiesService.getScriptProperties().getProperty('SHIPPO_API_TOKEN');
+// SHIPPO_API_KEY is defined once, in Code.gs (Script Property SHIPPO_API_TOKEN).
 var SHIPPO_API_URL = 'https://api.goshippo.com/shipments/';
 
 // ── Local constants (fallback if Code.gs vars not in scope) ──
-var SHIPPO_POSTMARK_TOKEN = 'b7fc73da-7ed0-4317-bbc3-60fd5b82fa38';
+var SHIPPO_POSTMARK_TOKEN = PropertiesService.getScriptProperties().getProperty('POSTMARK_API_TOKEN') || '';
 var SHIPPO_POSTMARK_URL   = 'https://api.postmarkapp.com/email';
 var SHIPPO_FROM_EMAIL     = 'hello@snappy.gold';
 var SHIPPO_FROM_NAME      = 'Snappy Gold';
 
+// NOTE: the CRM Fulfill path does NOT use this file's generateShippoLabel — it
+// goes generateAndSendLabel → _buyShippoLabel in Code.gs. This one is for
+// batchUSPSLabels and the test functions below.
 function generateShippoLabel(custId, shipmentId, shippingType, address, customerName, customerEmail, customerPhone, item) {
-  // shippingType: 'usps' or 'label' (fedex)
+  // shippingType: 'usps' or 'fedex' (legacy 'label' is read as fedex)
+  var isFedex = normalizeShipType(shippingType) === 'fedex';
   try {
     Logger.log('generateShippoUSPSLabel: ' + shipmentId);
 
@@ -104,24 +108,19 @@ function generateShippoLabel(custId, shipmentId, shippingType, address, customer
 
     // Select rate based on carrier preference
     var rate;
-    if (shippingType === 'label') {
-      // FedEx — prefer FedEx Ground, then Home Delivery, then cheapest FedEx
+    if (isFedex) {
+      // FedEx — same rule as _buyShippoLabel in Code.gs: FedEx Ground (fedex_ground),
+      // else the cheapest FedEx rate. Never another carrier.
       rate = rates.find(function(r) {
         var tok = r.servicelevel ? r.servicelevel.token : r.servicelevel_token;
-        return r.provider === 'FedEx' && tok === 'fedex_ground';
-      });
-      if (!rate) rate = rates.find(function(r) {
-        var tok2 = r.servicelevel ? r.servicelevel.token : r.servicelevel_token;
-        return r.provider === 'FedEx' && tok2 === 'fedex_home_delivery';
+        return String(r.provider || '').toLowerCase() === 'fedex' && tok === 'fedex_ground';
       });
       if (!rate) {
-        var fedexRates = rates.filter(function(r) { return r.provider === 'FedEx'; });
-        if (fedexRates.length > 0) {
-          rate = fedexRates.reduce(function(min, r) {
-            return parseFloat(r.amount) < parseFloat(min.amount) ? r : min;
-          });
-        }
+        var fedexRates = rates.filter(function(r) { return String(r.provider || '').toLowerCase() === 'fedex'; });
+        fedexRates.sort(function(a, b) { return parseFloat(a.amount) - parseFloat(b.amount); });
+        rate = fedexRates[0] || null;
       }
+      if (!rate) return { success: false, error: 'No FedEx rate available from Shippo' };
     } else {
       // USPS — prefer Ground Advantage
       rate = rates.find(function(r) {
@@ -129,9 +128,9 @@ function generateShippoLabel(custId, shipmentId, shippingType, address, customer
         return r.provider === 'USPS' && tok3 === 'usps_ground_advantage';
       });
       if (!rate) rate = rates.find(function(r) { return r.provider === 'USPS'; });
-    }
-    if (!rate) {
-      rate = rates[0]; // fallback to cheapest available
+      if (!rate) {
+        rate = rates[0]; // fallback to cheapest available
+      }
     }
     if (!rate) {
       return { success: false, error: 'No rates available from Shippo' };
@@ -200,17 +199,17 @@ function generateShippoLabel(custId, shipmentId, shippingType, address, customer
     var emailPayload = {
       From:          SHIPPO_FROM_NAME + ' <' + SHIPPO_FROM_EMAIL + '>',
       To:            customerEmail,
-      Subject:       'Your prepaid ' + (shippingType === 'label' ? 'FedEx' : 'USPS') + ' shipping label is attached, ' + firstName,
+      Subject:       'Your prepaid ' + (isFedex ? 'FedEx' : 'USPS') + ' shipping label is attached, ' + firstName,
       HtmlBody:      buildShippoEmail(firstName,
-        'Your prepaid ' + (shippingType === 'label' ? 'FedEx' : 'USPS') + ' return label is attached to this email.' +
-        '\n\nJust print it, pack ' + itemText + ' in any box or padded envelope, attach the label, and ' + (shippingType === 'label' ? 'drop it at any FedEx location.' : 'hand it to your postman or drop it at any post office.') +
+        'Your prepaid ' + (isFedex ? 'FedEx' : 'USPS') + ' return label is attached to this email.' +
+        '\n\nJust print it, pack ' + itemText + ' in any box or padded envelope, attach the label, and ' + (isFedex ? 'drop it at any FedEx location.' : 'hand it to your postman or drop it at any post office.') +
         '\n\nFree shipping, no commitment - if my offer isn\'t good enough I\'ll send everything back at no charge.' +
         '\n\nTracking number: ' + trackingNumber +
         '\n\nAny questions, just reply here or call/text 866-613-0704.' +
         '\n\nDavid\nSnappy Gold'
       ),
       Attachments: [{
-        Name:        'snappy_gold_' + (shippingType === 'label' ? 'fedex' : 'usps') + '_label_' + shipmentId + '.pdf',
+        Name:        'snappy_gold_' + (isFedex ? 'fedex' : 'usps') + '_label_' + shipmentId + '.pdf',
         Content:     labelBase64,
         ContentType: 'application/pdf',
       }],
@@ -277,7 +276,7 @@ function testShippoFedExLabel() {
   var result = generateShippoLabel(
     'CUST-TEST',
     'SHP-TEST',
-    'label',
+    'fedex',
     '966 Evergreen Dr, Delray Beach, FL, 33483',
     'David Weiss',
     'davidisaacweiss@yahoo.com',

@@ -63,7 +63,7 @@ function diagnoseAnalytics() {
 
   for (var j = 1; j < shipData.length; j++) {
     var stage    = String(shipData[j][stageIdx]    || '').trim();
-    var shipType = String(shipData[j][shipTypeIdx] || '').trim().toLowerCase();
+    var shipType = normalizeShipType(shipData[j][shipTypeIdx]);
     var cid      = String(shipData[j][custIdIdx]   || '').trim();
     var purchase = parseFloat(String(shipData[j][purchaseIdx] || '0').replace(/[^0-9.]/g,'')) || 0;
     var estimate = String(shipData[j][estimateIdx] || '').trim();
@@ -71,7 +71,7 @@ function diagnoseAnalytics() {
     var src     = custSource[cid] || '';
     var em      = custEmail[cid]  || '';
     var srcKey  = srcBucket(src);
-    var typeKey = shipType === 'kit' ? 'kit' : shipType === 'label' ? 'label' : shipType === 'usps' ? 'usps' : null;
+    var typeKey = shipType === 'kit' ? 'kit' : shipType === 'fedex' ? 'label' : shipType === 'usps' ? 'usps' : null;
     var varKey  = emailVariant[em] || 'unknown';
     if (!['A','B','C'].includes(varKey)) varKey = 'unknown';
 

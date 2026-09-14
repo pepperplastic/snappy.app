@@ -187,7 +187,7 @@ function notifyNewRegistrations() {
     var name = cu.name || '(no name)';
     var item = String(s.item || '').trim() || '(no item text)';
     var est  = String(s.estimate || '').trim();
-    var type = String(s.shipping_type || '').trim() || 'label';
+    var type = normalizeShipType(s.shipping_type) || 'no type set';
     var sms  = 'New reg: ' + name + ' — ' + item.slice(0, 60) + (est ? ' (' + est + ')' : '') + ' · ' + type +
                (s.customer_message ? ' · "' + String(s.customer_message).slice(0, 60) + '"' : '') + ' · ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
     try { sendSms(REG_ALERT_PHONE, 'David', sms); } catch (e) { Logger.log('reg alert sms: ' + e); }
