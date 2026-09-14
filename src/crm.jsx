@@ -2594,18 +2594,30 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
               you inspect before fulfilling. Over-prompting (multiple angles of
               one item) is harmless; missing an item is not. */}
           {(() => {
+            // Sep 14: dedupe identical uploads (same file twice) and treat up to
+            // 2 photos per item as "angles" (grey note), more than that as a real
+            // mismatch (orange). Two shots of one watch was tripping the alarm.
+            const seen = new Set();
             const itemPhotoCount = (photos || []).filter(p => {
               const src = String(p.source || "").toLowerCase();
-              return src !== "id" && src !== "customerid" && src !== "id_photo";
+              if (src === "id" || src === "customerid" || src === "id_photo") return false;
+              const key = String(p.url || p.file_id || p.drive_url || "").replace(/[?#].*$/, "").split("/").pop() || String(p.url || "");
+              if (key && seen.has(key)) return false;
+              if (key) seen.add(key);
+              return true;
             }).length;
+            const nItems = Math.max(items.length, 1);
+            const strong = itemPhotoCount > nItems * 2;
             if (itemPhotoCount > items.length) {
               return (
                 <div style={{
-                  background:"#FFF8EC", border:`1px solid ${G.orange}55`, borderRadius:6,
-                  padding:"8px 10px", fontSize:11.5, color:G.text, lineHeight:1.45
+                  background: strong ? "#FFF8EC" : "#F7F5F0", border:`1px solid ${strong ? G.orange+"55" : G.border}`, borderRadius:6,
+                  padding:"8px 10px", fontSize:11.5, color: strong ? G.text : G.muted, lineHeight:1.45
                 }}>
-                  <strong style={{color:G.orange}}>⚠ {itemPhotoCount} photos · {items.length} manifest item{items.length===1?"":"s"}.</strong>{" "}
-                  Customer may have sent items not on the manifest. Check the photos — any unlisted item won't be referenced in their offer/payment messages.
+                  <strong style={{color: strong ? G.orange : G.muted}}>{strong ? "⚠ " : ""}{itemPhotoCount} photos · {items.length} manifest item{items.length===1?"":"s"}.</strong>{" "}
+                  {strong
+                    ? "Customer may have sent items not on the manifest. Check the photos — any unlisted item won't be referenced in their offer/payment messages."
+                    : "Likely multiple angles of the same piece — skim the photos to confirm nothing's unlisted."}
                 </div>
               );
             }
