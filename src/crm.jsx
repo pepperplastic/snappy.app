@@ -2835,6 +2835,10 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
                 }
               }}>📧 Resend label email + text</Btn>
             )}
+            {shipment.label_url && <div>
+              <a href={shipment.label_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:G.blue,textDecoration:"none"}}>📄 Open label PDF</a>
+              <div style={{fontSize:11,color:G.muted,marginTop:2}}>No printer? Forward the PDF to printandgo@fedex.com from hello@, then text the customer the retrieval code FedEx sends back (any FedEx Office, self-serve, ~20¢/page).</div>
+            </div>}
           </div>
           {/* Inventory Photos — shown for received and later stages */}
           {["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"].includes(shipment.stage) && (
