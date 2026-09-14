@@ -22,6 +22,19 @@ var DNC_CACHE_KEY = 'DNC_SET_V1';
 function _dncNormEmail(v) { v = String(v || '').trim().toLowerCase(); return v.indexOf('@') !== -1 ? v : ''; }
 function _dncNormPhone(v) { var d = String(v || '').replace(/\D/g, ''); if (d.length === 11 && d.charAt(0) === '1') d = d.slice(1); return d.length === 10 ? d : ''; }
 
+// Returns the address to send to — lower-cased, common domain typos fixed — or ''
+// when it doesn't look like a real inbox (local part under 3 chars or no vowels).
+// Used by the drip and the recovery / re-engage / referral broadcast senders.
+var DNC_DOMAIN_FIXES = { 'gmail.con': 'gmail.com', 'gmal.com': 'gmail.com', 'yahoo.con': 'yahoo.com', 'aol.cim': 'aol.com', 'comcast.com': 'comcast.net' };
+function isPlausibleEmail(e) {
+  var m = String(e || '').trim().toLowerCase().match(/^([^\s@]+)@([^\s@]+\.[^\s@]{2,})$/);
+  if (!m) return '';
+  var local = m[1], domain = DNC_DOMAIN_FIXES[m[2]] || m[2];
+  if (local.length < 3) return '';
+  if (!/[aeiouy]/.test(local)) return '';   // y counts, so lynn@ / wynn@ still pass
+  return local + '@' + domain;
+}
+
 function _dncSheet() {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sh = ss.getSheetByName(DNC_TAB);

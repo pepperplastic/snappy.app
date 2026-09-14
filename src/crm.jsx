@@ -1629,6 +1629,7 @@ function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipmen
         const isThis = logShip && currentShipmentId && logShip === currentShipmentId;
         return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12,opacity:isOther?0.55:1}}>
         <span style={{background:G.bg,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700,color:G.muted,flexShrink:0,textTransform:"capitalize"}}>{log.type||"note"}</span>
+        {log.source==="auto"&&<span title={log.kind?"Automated send: "+log.kind:"Automated send"} style={{background:"#EEF4FF",color:G.blue,border:`1px solid ${G.blue}30`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,flexShrink:0}}>auto</span>}
         <div style={{flex:1}}>
           {editingIdx===i
             ? <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -1643,6 +1644,7 @@ function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipmen
                 <button onClick={()=>setEditingIdx(null)} style={{fontSize:11,padding:"2px 6px",background:"none",border:`1px solid ${G.border}`,borderRadius:4,cursor:"pointer",color:G.muted}}>Cancel</button>
               </div>
             : <span style={{color:G.text}}>
+                {log.source==="auto"&&log.kind&&<span style={{color:G.muted,marginRight:6}}>{log.kind}</span>}
                 {log.notes}
                 {logShip&&<span title={isOther?("From a different shipment: "+logShip):logShip} style={{marginLeft:6,background:isOther?"#FBEFEF":"#FFF8EE",color:isOther?"#A05A5A":G.gold,border:`1px solid ${isOther?"#A05A5A44":G.gold+"44"}`,borderRadius:4,padding:"0px 6px",fontSize:9,fontWeight:700,whiteSpace:"nowrap"}}>{isOther?"⤺ SHP-"+shipShort(logShip):"SHP-"+shipShort(logShip)}</span>}
               </span>
@@ -2785,6 +2787,12 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
 
     {/* Body */}
     <div style={{flex:1,overflow:"auto",padding:20}}>
+      {(()=>{
+        const autos=(localLogs||[]).filter(l=>l.source==="auto"&&l.timestamp);
+        if(!autos.length) return null;
+        const last=autos.reduce((a,b)=>new Date(b.timestamp)>new Date(a.timestamp)?b:a);
+        return <div style={{fontSize:12,color:G.muted,marginBottom:12}}>Last automated touch: <span style={{color:G.text,fontWeight:600}}>{last.kind||last.type}</span> · {fmtDateTime(last.timestamp)}</div>;
+      })()}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
         <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Shipment · <span style={{cursor:"pointer",userSelect:"all"}} title="Click to copy" onClick={()=>{navigator.clipboard?.writeText(shipment.shipment_id);}}>{shipment.shipment_id}</span></div>

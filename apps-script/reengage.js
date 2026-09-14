@@ -107,15 +107,17 @@ function _reengageCandidates() {
 
     var c = cust[sData[r][ix.customer_id]];
     if (!c || !c.email || c.email.indexOf('@') < 0) continue;
-    if (seen[c.email]) continue;                                         // one per person
-    seen[c.email] = true;
+    var to = isPlausibleEmail(c.email);                                  // Sep 14: typo domains fixed, junk addresses skipped
+    if (!to) continue;
+    if (seen[to]) continue;                                              // one per person
+    seen[to] = true;
 
     var sentRaw = sData[r][ix.sent_at] || sData[r][ix.created_at];
     var sent = sentRaw instanceof Date ? sentRaw : new Date(sentRaw);
     var days = isNaN(sent.getTime()) ? 9999 : Math.round((now - sent) / 86400000);
-    if (days < REENGAGE_MIN_DAYS) { delete seen[c.email]; continue; }   // still in flight
+    if (days < REENGAGE_MIN_DAYS) { delete seen[to]; continue; }   // still in flight
 
-    out.push({ email: c.email, name: c.name, shipmentId: sData[r][ix.shipment_id],
+    out.push({ email: to, raw: c.email, name: c.name, shipmentId: sData[r][ix.shipment_id],
                rowNum: r + 1, col: ix.reengage_sent_at + 1, days: days });
   }
 
@@ -210,7 +212,7 @@ function reengageSend(limit) {
 
   list.forEach(function (p) {
     // Sep 14: Do-Not-Contact guard (dnc.gs)
-    if (typeof isDoNotContact === 'function' && isDoNotContact(p.email)) { Logger.log('  ⛔ DNC: ' + p.email); return; }
+    if (typeof isDoNotContact === 'function' && (isDoNotContact(p.email) || isDoNotContact(p.raw))) { Logger.log('  ⛔ DNC: ' + p.email); return; }
     var fn = _firstName(p.name);
     var payload = {
       From: REENGAGE_FROM,
@@ -233,6 +235,7 @@ function reengageSend(limit) {
         // Stamp immediately so a mid-run timeout can't double-send on the retry.
         sheet.getRange(p.rowNum, p.col).setValue(new Date().toISOString());
         sent++;
+        COMMS_KIND = 'reengage'; logAutoSend(p.email, 'email', payload.Subject); COMMS_KIND = '';
       } else {
         failed.push(p.email + ' HTTP ' + code + ' ' + res.getContentText().slice(0, 120));
       }

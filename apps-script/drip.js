@@ -78,10 +78,15 @@ function _dripCore(dryRun) {
     }
     if (!emailType) { skipped++; continue; }
 
+    // Sep 14: never queue anyone on Do Not Contact or with an implausible address (typo domains are fixed, not skipped)
+    var sendTo = isPlausibleEmail(lead.email);
+    if (!sendTo) { skipped++; continue; }
+    if (isDoNotContact(lead.email) || isDoNotContact(sendTo) || (lead.phone && isDoNotContact(lead.phone))) { skipped++; continue; }
+
     var rawName = (lead.name || '').replace('(anonymous)', '').trim().split(' ')[0] || '';
     var firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() : '';
 
-    if (dryRun) { would.push({ stage: emailType, email: lead.email, hours: Math.round(minutesAgo / 60) }); sent++; touchedThisRun[lead.email] = true; continue; }
+    if (dryRun) { would.push({ stage: emailType, email: sendTo, hours: Math.round(minutesAgo / 60) }); sent++; touchedThisRun[lead.email] = true; continue; }
 
     var currentShipment = null;
     try {
@@ -95,7 +100,9 @@ function _dripCore(dryRun) {
     var template = getTemplate(emailType, firstName, lead.item, lead.estimate, lead.shipping, currentShipment);
     if (!template) { skipped++; continue; }
 
-    var result = sendViaPostmark(lead.email, template.subject, template.html);
+    COMMS_KIND = 'drip:' + emailType;
+    var result = sendViaPostmark(sendTo, template.subject, template.html);
+    COMMS_KIND = '';
     var tsStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
     var statusMsg = result.success ? tsStr + ' | ' + emailType + ' | ' + result.messageId
                                    : tsStr + ' | ERROR_' + emailType + ': ' + result.error;

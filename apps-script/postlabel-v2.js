@@ -91,16 +91,19 @@ function _pl2Core(dryRun, asData) {
     var cust = custs[s.customer_id]; if (!cust) continue;
     if (due.channel === 'sms' && !cust.phone) continue;
     if (due.channel === 'email' && !cust.email) continue;
+    if (isDoNotContact(cust.email) || isDoNotContact(cust.phone)) continue;   // Sep 14: Do Not Contact — skipped and kept out of the preview
     var first = _pl2First(cust.name);
     var item = (typeof itemPhrase === 'function') ? itemPhrase(s) : ('your ' + (s.item || 'items'));
     var content = _pl2Content(due.key, first, item, s);
     if (dryRun) { would.push({ key: due.key, channel: due.channel, carrier: _pl2IsUsps(s) ? 'USPS' : 'FedEx', shipment_id: s.shipment_id, first: first, day: Math.round(days) }); sent++; continue; }
     if (due.channel === 'sms' && !smsOk) { deferredSms++; continue; }
     var ok = false;
+    COMMS_KIND = 'postlabel:' + due.key;
     try {
       if (due.channel === 'sms') { var sr = sendSms(cust.phone, cust.name, content.sms); ok = !!(sr && sr.success); }
       else { var er = sendViaPostmark(cust.email, content.subject, buildPlainEmail(first, content.body)); ok = !!(er && er.success); }
     } catch (e) { Logger.log('post-label v2 ' + s.shipment_id + ': ' + e); }
+    COMMS_KIND = '';
     if (ok) {
       var cur = String(s.ship_followups_sent || '');
       sheet.getRange(r + 1, col.ship_followups_sent + 1).setValue(cur ? cur + ',' + due.key : due.key);

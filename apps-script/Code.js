@@ -60,7 +60,7 @@ var COLS = {
             'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent'
   ],
   CONTACT_LOG: [
-    'log_id','customer_id','timestamp','type','notes','shipment_id'
+    'log_id','customer_id','timestamp','type','notes','shipment_id','direction','source','kind'
   ],
   PHOTOS: [
     'photo_id','shipment_id','drive_url','uploaded_at','source','purchase_status'
@@ -1656,7 +1656,10 @@ function addContactLog(data) {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.CONTACT_LOG);
   var logId = nextId(sheet, 'LOG-', 0);
-  var row = COLS.CONTACT_LOG.map(function(col) {
+  // Sep 14: map by the live header row, so columns appended later
+  // (direction/source/kind) can never shift values into the wrong column.
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var row = headers.map(function(col) {
     if (col === 'log_id')    return logId;
     if (col === 'timestamp') return new Date().toISOString();
     return data[col] !== undefined ? data[col] : '';
@@ -2385,6 +2388,61 @@ function getTemplate(type, firstName, item, estimate, shipping, shipment) {
 //  POSTMARK SEND
 // ═══════════════════════════════════════════════
 
+// ── Automated-send logging (Sep 14) ──────────────────────────
+// Automated senders set COMMS_KIND (e.g. 'drip:INCOMPLETE_2') right before a
+// send and clear it after. sendSms / sendViaPostmark then append an "auto"
+// Contact Log row for the matching customer; senders that call Postmark
+// directly call logAutoSend themselves. Sends with no COMMS_KIND (label
+// emails, CRM-triggered offers, alerts to DW) are not logged here.
+var COMMS_KIND = '';
+var _commsCustIdx = null;   // per execution: normalised email / phone → customer_id
+
+function _commsCustomerId(to) {
+  if (!_commsCustIdx) {
+    _commsCustIdx = { emails: {}, phones: {} };
+    getCustomers().forEach(function(c) {
+      if (!c.customer_id) return;
+      var e = _dncNormEmail(c.email), fx = isPlausibleEmail(c.email), p = _dncNormPhone(c.phone);
+      if (e && !_commsCustIdx.emails[e]) _commsCustIdx.emails[e] = c.customer_id;
+      if (fx && !_commsCustIdx.emails[fx]) _commsCustIdx.emails[fx] = c.customer_id;   // typo-fixed sends still match
+      if (p && !_commsCustIdx.phones[p]) _commsCustIdx.phones[p] = c.customer_id;
+    });
+  }
+  var em = _dncNormEmail(to);
+  if (em) return _commsCustIdx.emails[em] || '';
+  var ph = _dncNormPhone(to);
+  return (ph && _commsCustIdx.phones[ph]) || '';
+}
+
+var _contactLogColsChecked = false;
+function _ensureContactLogColumns(sheet) {
+  if (_contactLogColsChecked) return;
+  var headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var needed = ['direction', 'source', 'kind'];
+  var toAdd = needed.filter(function(h) { return headerRow.indexOf(h) < 0; });
+  var startCol = sheet.getLastColumn() + 1;
+  for (var i = 0; i < toAdd.length; i++) {
+    sheet.getRange(1, startCol + i).setValue(toAdd[i])
+        .setFontWeight('bold')
+        .setBackground('#1A1816')
+        .setFontColor('#C8953C');
+  }
+  if (toAdd.length) Logger.log('_ensureContactLogColumns: added ' + toAdd.join(', '));
+  _contactLogColsChecked = true;
+}
+
+// channel: 'sms' | 'email'; summary: the email subject or the SMS text (first 80 chars kept)
+function logAutoSend(to, channel, summary) {
+  if (!COMMS_KIND) return;
+  try {
+    var customerId = _commsCustomerId(to);
+    if (!customerId) return;
+    _ensureContactLogColumns(SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.CONTACT_LOG));
+    addContactLog({ customer_id: customerId, type: channel, direction: 'out', source: 'auto', kind: COMMS_KIND,
+                    notes: String(summary || '').slice(0, 80) });
+  } catch (e) { Logger.log('logAutoSend ' + COMMS_KIND + ' → ' + to + ': ' + e); }
+}
+
 function sendViaPostmark(to, subject, htmlBody) {
   // Sep 14: Do-Not-Contact guard (dnc.gs) — every email in the system passes here
   if (typeof isDoNotContact === 'function' && isDoNotContact(to)) { Logger.log('sendViaPostmark: suppressed (do not contact) ' + to); return { success: false, error: 'suppressed (do not contact)' }; }
@@ -2407,6 +2465,7 @@ function sendViaPostmark(to, subject, htmlBody) {
     var code     = response.getResponseCode();
     var body     = JSON.parse(response.getContentText());
     if (code === 200 && body.ErrorCode === 0) {
+      logAutoSend(to, 'email', subject);
       return { success: true, messageId: body.MessageID };
     } else {
       return { success: false, error: code + ': ' + (body.Message || 'Unknown') };
@@ -3237,6 +3296,7 @@ function sendSms(toPhone, name, message) {
     // 200 or 202 = success. Anything else means the SMS did NOT send.
     if (code === 200 || code === 202) {
       Logger.log('sendSms OK → ' + (name||'?') + ' (+' + phone + ')');
+      logAutoSend(toPhone, 'sms', String(message || '').slice(0, 80));
       return { success: true };
     }
     // Common failure modes:
@@ -7552,11 +7612,12 @@ function _recoveryCore(daysBack, maxSend, dryRun, minEst) {
     if (e.hasAddress) return;          // completed — skip
     if (e.alreadyRecovered) return;    // already emailed — skip
     if (!e.inWindow) return;           // outside date window — skip
-    if (!_validEmail(email)) { skippedInvalid++; return; }   // malformed email — skip (would bounce)
+    var sendTo = _validEmail(email) ? isPlausibleEmail(email) : '';   // Sep 14: typo domains fixed, junk addresses skipped
+    if (!sendTo) { skippedInvalid++; return; }   // malformed or implausible email — skip (would bounce)
     var low = _estimateLow(e.estimate);
     if (minEst > 0 && low < minEst) { skippedLowEst++; return; }  // below value threshold — skip
     e._estLow = low;
-    candidates.push({ email: email, data: e });
+    candidates.push({ email: email, sendTo: sendTo, data: e });
   });
 
   // Recent-first (warmest leads first)
@@ -7587,17 +7648,18 @@ function _recoveryCore(daysBack, maxSend, dryRun, minEst) {
         ? ('Your gold is still worth ' + (estimate.indexOf('$')===0?estimate:('$'+estimate)) + ', ' + firstName)
         : ('Finish your Snappy Gold offer, ' + firstName);
       var body = _recoveryEmailBody(firstName, item, estimate, url);
-      if (typeof isDoNotContact === 'function' && isDoNotContact(cand.email)) { Logger.log('  ⛔ DNC: ' + cand.email); continue; }
+      if (typeof isDoNotContact === 'function' && (isDoNotContact(cand.email) || isDoNotContact(cand.sendTo))) { Logger.log('  ⛔ DNC: ' + cand.email); continue; }
       var pmRes = UrlFetchApp.fetch('https://api.postmarkapp.com/email', {
         method: 'post', contentType: 'application/json', muteHttpExceptions: true,
         headers: { 'X-Postmark-Server-Token': _reengageToken(), 'Accept': 'application/json' },
         payload: JSON.stringify({
-          From: FROM_NAME + ' <' + FROM_EMAIL + '>', To: cand.email, Subject: subject,
+          From: FROM_NAME + ' <' + FROM_EMAIL + '>', To: cand.sendTo, Subject: subject,
           HtmlBody: body, TextBody: _stripHtml(body),
           MessageStream: _reengageStream(), Tag: 'recovery'
         })
       });
       if (pmRes.getResponseCode() !== 200) throw new Error('Postmark ' + pmRes.getResponseCode() + ': ' + pmRes.getContentText().slice(0, 200));
+      COMMS_KIND = 'recovery'; logAutoSend(cand.sendTo, 'email', subject); COMMS_KIND = '';
       // stamp recovery flag in AUTO_REPLY col (append, don't overwrite)
       var existing = String(rows[d.rowIdx][COL.AUTO_REPLY] || '');
       var stamp = (existing ? existing + ' | ' : '') + 'RECOV:' + new Date().toISOString().slice(0,10);

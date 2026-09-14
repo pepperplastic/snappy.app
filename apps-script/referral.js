@@ -112,21 +112,25 @@ function _refInvitesCore(dryRun) {
     if (notes.indexOf('invited ') !== -1) continue;
     var email = String(data[r][col.contact] || '').trim();
     if (email.indexOf('@') === -1) continue;
+    var to = isPlausibleEmail(email);                                      // Sep 14: typo domains fixed, junk addresses skipped
+    if (!to) { Logger.log('  ✗ implausible email: ' + email); continue; }
     var first = String(data[r][col.name] || '').replace(/\(customer referral\)/, '').trim().split(/\s+/)[0] || 'there';
     var link = SITE_BASE_URL_SAFE() + '/?ref=' + code;
-    if (typeof isDoNotContact === 'function' && isDoNotContact(email)) { Logger.log('  ⛔ DNC: ' + email); continue; }
-    if (dryRun) { would.push(email + '  ' + link); sent++; continue; }
+    if (typeof isDoNotContact === 'function' && (isDoNotContact(email) || isDoNotContact(to))) { Logger.log('  ⛔ DNC: ' + email); continue; }
+    if (dryRun) { would.push(to + '  ' + link); sent++; continue; }
+    var subject = '$' + REFERRAL_BONUS + ' for every friend who sells with Snappy Gold, ' + first;
     var res = UrlFetchApp.fetch('https://api.postmarkapp.com/email', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { 'X-Postmark-Server-Token': _reengageToken(), 'Accept': 'application/json' },
-      payload: JSON.stringify({ From: FROM_NAME + ' <' + FROM_EMAIL + '>', To: email,
-        Subject: '$' + REFERRAL_BONUS + ' for every friend who sells with Snappy Gold, ' + first,
+      payload: JSON.stringify({ From: FROM_NAME + ' <' + FROM_EMAIL + '>', To: to,
+        Subject: subject,
         HtmlBody: _refInviteHtml(first, link), TextBody: _stripHtml(_refInviteHtml(first, link)),
         MessageStream: _reengageStream(), Tag: 'referral-invite' })
     });
     if (res.getResponseCode() === 200) {
       sh.getRange(r + 1, col.notes + 1).setValue(notes + (notes ? ' · ' : '') + 'invited ' + new Date().toISOString().slice(0, 10));
       sent++;
+      COMMS_KIND = 'referral-invite'; logAutoSend(to, 'email', subject); COMMS_KIND = '';
     } else Logger.log('  ✗ ' + email + ': ' + res.getContentText().slice(0, 150));
     Utilities.sleep(300);
   }
