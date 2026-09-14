@@ -81,7 +81,7 @@ function _dripCore(dryRun) {
     var rawName = (lead.name || '').replace('(anonymous)', '').trim().split(' ')[0] || '';
     var firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() : '';
 
-    if (dryRun) { would.push(emailType + ' → ' + lead.email + ' (' + Math.round(minutesAgo / 60) + 'h)'); sent++; touchedThisRun[lead.email] = true; continue; }
+    if (dryRun) { would.push({ stage: emailType, email: lead.email, hours: Math.round(minutesAgo / 60) }); sent++; touchedThisRun[lead.email] = true; continue; }
 
     var currentShipment = null;
     try {
@@ -111,9 +111,9 @@ function _dripCore(dryRun) {
   }
 
   if (yChanged && !dryRun) sheet.getRange(1, COL.AUTO_REPLY + 1, data.length, 1).setValues(yRange);
-  if (dryRun) { Logger.log('━━━ DRIP PREVIEW (no sends) — ' + would.length + ' would go out ━━━'); would.forEach(function (w) { Logger.log('  ' + w); }); }
+  if (dryRun) { Logger.log('━━━ DRIP PREVIEW (no sends) — ' + would.length + ' would go out ━━━'); would.forEach(function (w) { Logger.log('  ' + w.stage + ' → ' + w.email + ' (' + w.hours + 'h)'); }); }
   else Logger.log('sendFollowUpEmails_v3: sent=' + sent + ' skipped=' + skipped + ' errors=' + errors + (sent >= DRIP_MAX_SENDS ? '  (hit per-run cap)' : ''));
-  return { sent: sent, skipped: skipped, errors: errors };
+  return { sent: sent, skipped: skipped, errors: errors, would: would };   // would: dry-run list, read by the CRM Comms tab
 }
 
 function sendFollowUpEmails_v3() { return _dripCore(false); }

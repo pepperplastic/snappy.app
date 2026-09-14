@@ -268,6 +268,7 @@ function doPost(e) {
       'pushToLeadsOnline','uploadLeadsOnlinePhotos',
             'manualCustomerShipment','migrate','getAffiliates','addAffiliate','updateAffiliate','deleteAffiliate','getAffiliateStats',
       'getMarketingRoi','getAdSpend','addAdSpend','deleteAdSpend','syncMetaSpend','getSetting','setSetting',
+      'getCommsDashboard','addDoNotContact',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
       if ((parsed.key || '') !== CRM_SECRET_KEY) {
@@ -301,6 +302,9 @@ function doPost(e) {
     // ── Settings ──
     if (action === 'getSetting')      return jsonResponse(handleGetSetting(parsed));
     if (action === 'setSetting')      return jsonResponse(handleSetSetting(parsed));
+    // ── Comms dashboard (comms-dashboard.gs) ──
+    if (action === 'getCommsDashboard') return jsonResponse(handleGetCommsDashboard(parsed));
+    if (action === 'addDoNotContact')   return jsonResponse(handleAddDoNotContact(parsed));
     // ── Listing module ──
     if (action === 'createListing')      return jsonResponse({ success: true, listing: createListing(parsed.data) });
     if (action === 'updateListing')      return jsonResponse(updateListing(parsed.listing_id, parsed.updates));

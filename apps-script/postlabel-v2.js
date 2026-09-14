@@ -66,7 +66,8 @@ function _pl2Content(key, first, item, s) {
   }
 }
 
-function _pl2Core(dryRun) {
+// asData (dry run only): return { would: [...], sms_quiet_hours } instead of the count — used by the CRM Comms tab.
+function _pl2Core(dryRun, asData) {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.SHIPMENTS);
   var data = sheet.getDataRange().getValues(), h = data[0];
@@ -93,7 +94,7 @@ function _pl2Core(dryRun) {
     var first = _pl2First(cust.name);
     var item = (typeof itemPhrase === 'function') ? itemPhrase(s) : ('your ' + (s.item || 'items'));
     var content = _pl2Content(due.key, first, item, s);
-    if (dryRun) { would.push(due.key + ' ' + due.channel + ' (' + (_pl2IsUsps(s) ? 'USPS' : 'FedEx') + ') → ' + s.shipment_id + ' ' + first + ' day ' + Math.round(days)); sent++; continue; }
+    if (dryRun) { would.push({ key: due.key, channel: due.channel, carrier: _pl2IsUsps(s) ? 'USPS' : 'FedEx', shipment_id: s.shipment_id, first: first, day: Math.round(days) }); sent++; continue; }
     if (due.channel === 'sms' && !smsOk) { deferredSms++; continue; }
     var ok = false;
     try {
@@ -106,8 +107,9 @@ function _pl2Core(dryRun) {
       sent++; Utilities.sleep(250);
     }
   }
-  if (dryRun) { Logger.log('━━━ POST-LABEL V2 PREVIEW — ' + would.length + ' due now (SMS quiet hours ' + (smsOk ? 'off' : 'ON') + ') ━━━'); would.forEach(function (w) { Logger.log('  ' + w); }); }
+  if (dryRun) { Logger.log('━━━ POST-LABEL V2 PREVIEW — ' + would.length + ' due now (SMS quiet hours ' + (smsOk ? 'off' : 'ON') + ') ━━━'); would.forEach(function (w) { Logger.log('  ' + w.key + ' ' + w.channel + ' (' + w.carrier + ') → ' + w.shipment_id + ' ' + w.first + ' day ' + w.day); }); }
   else Logger.log('sendPostLabelFollowups_v2: sent ' + sent + (deferredSms ? ' · ' + deferredSms + ' SMS deferred to daytime' : ''));
+  if (dryRun && asData) return { would: would, sms_quiet_hours: !smsOk };
   return sent;
 }
 function sendPostLabelFollowups_v2() { return _pl2Core(false); }

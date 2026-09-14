@@ -6098,6 +6098,191 @@ const scanBtnStyle={
 };
 
 // ═══════════════════════════════════════════════════════════════
+//  SEP 14: Comms tab — sequence health, Postmark deliverability, Do Not
+//  Contact, and what the drip / post-label senders would send next.
+//  Data: getCommsDashboard (comms-dashboard.gs, cached 5 min server-side).
+// ═══════════════════════════════════════════════════════════════
+const COMMS_STALE_MS = 3*86400000;
+const COMMS_MANUAL_STALE_MS = 14*86400000;   // manual sends (offers, re-engage, recovery, referral) go out in batches
+function CommsTab() {
+  const isMobile = useIsMobile();
+  const [data,setData]       = useState(null);
+  const [loading,setLoading] = useState(true);
+  const [err,setErr]         = useState("");
+  const [dncVal,setDncVal]   = useState("");
+  const [dncReason,setDncReason] = useState("");
+  const [adding,setAdding]   = useState(false);
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr("");
+    try{
+      const r=await apiPost({action:"getCommsDashboard"});
+      if(r&&r.success) setData(r); else setErr((r&&r.error)||"Couldn't load comms dashboard");
+    }catch(e){ setErr(e.message||String(e)); }
+    setLoading(false);
+  },[]);
+  useEffect(()=>{ load(); },[load]);
+
+  async function addDnc(){
+    const value=dncVal.trim();
+    if(!value){ alert("Enter an email or phone number."); return; }
+    setAdding(true);
+    try{
+      const r=await apiPost({action:"addDoNotContact", value, reason:dncReason.trim()});
+      if(r&&r.success){ if(r.already) alert(value+" is already on the Do Not Contact list."); setDncVal(""); setDncReason(""); await load(); }
+      else alert("Add failed: "+((r&&r.error)||"unknown"));
+    }catch(e){ alert("Add failed: "+(e.message||e)); }
+    setAdding(false);
+  }
+
+  const num = v => v==null ? "—" : Number(v).toLocaleString();
+  const when = ts => ts ? (fmtDateTime(ts)||String(ts)) : "never";
+  const rate = (part,whole) => whole ? ` (${(part/whole*100).toFixed(part/whole<0.1?1:0)}%)` : "";
+  const isGrey = s => {
+    const age = s.last_send ? Date.now()-new Date(s.last_send).getTime() : Infinity;
+    if(s.manual) return age > COMMS_MANUAL_STALE_MS;
+    return !s.trigger_installed || age > COMMS_STALE_MS;
+  };
+
+  const box = {background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"14px 16px"};
+  const h3 = {margin:"0 0 10px",fontSize:14,color:G.text,fontWeight:700};
+  const th = {padding:"8px 10px",textAlign:"right",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"};
+  const td = {padding:"8px 10px",textAlign:"right",fontSize:13,borderTop:`1px solid ${G.border}`,whiteSpace:"nowrap"};
+  const errLine = msg => <div style={{color:G.red,fontSize:12}}>{msg}</div>;
+
+  const seqs = data && Array.isArray(data.sequences) ? data.sequences : [];
+  const pm = data && data.postmark;
+  const dnc = data && data.dnc;
+  const due = data && data.due;
+
+  const cards = <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(auto-fill,minmax(220px,1fr))",gap:isMobile?8:12}}>
+    {seqs.map(s=>{
+      const grey=isGrey(s);
+      return <div key={s.key} style={{...box,padding:isMobile?"10px 12px":"12px 14px",background:grey?"#EEEBE6":"#fff"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7}}>
+          <span style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:grey?G.muted:G.green}}/>
+          <div style={{fontWeight:700,fontSize:13,color:grey?G.muted:G.text}}>{s.label}</div>
+          {s.manual&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,letterSpacing:"0.04em",textTransform:"uppercase",color:G.blue,background:"#EEF4FF",border:`1px solid ${G.blue}30`,borderRadius:4,padding:"1px 6px"}}>manual</span>}
+        </div>
+        <div style={{fontSize:11,color:G.muted,marginTop:4}}>last send: {s.estimated&&s.last_send?"≈ ":""}{when(s.last_send)}</div>
+        {s.error ? <div style={{marginTop:8}}>{errLine(s.error)}</div> :
+          <div style={{display:"flex",gap:isMobile?10:16,marginTop:8}}>
+            {[["7d",s.sent_7d],["30d",s.sent_30d],["total",s.total]].map(([l,v])=><div key={l}>
+              <div style={{fontSize:isMobile?16:18,fontWeight:700,color:grey?G.muted:G.text}}>{num(v)}</div>
+              <div style={{fontSize:10,color:G.muted,textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</div>
+            </div>)}
+          </div>}
+        {(s.trigger_installed||!s.manual)&&<div style={{fontSize:11,marginTop:8,color:s.trigger_installed?G.green:G.red}}>
+          {s.trigger_installed ? `trigger: ${s.trigger_handlers.join(", ")}` : "trigger missing"}
+        </div>}
+        {s.note&&<div style={{fontSize:10,color:G.muted,marginTop:2}}>{s.note}</div>}
+      </div>;
+    })}
+  </div>;
+
+  const WIN = [["d7","Last 7 days"],["d30","Last 30 days"]];
+  const deliverability = <div style={box}>
+    <h3 style={h3}>Deliverability (Postmark)</h3>
+    {!pm ? null : pm.error ? errLine(pm.error) :
+      <div style={{overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",width:"100%"}}>
+          <thead>
+            <tr><th style={{...th,textAlign:"left"}}/>{WIN.map(([k,l])=><th key={k} colSpan={4} style={{...th,textAlign:"center",borderLeft:`1px solid ${G.border}`}}>{l}</th>)}</tr>
+            <tr><th style={{...th,textAlign:"left"}}>Stream / tag</th>{WIN.map(([k])=>["Sent","Bounced","Spam","Unique opens"].map((c,i)=><th key={k+c} style={{...th,...(i===0?{borderLeft:`1px solid ${G.border}`}:{})}}>{c}</th>))}</tr>
+          </thead>
+          <tbody>
+            {(pm.rows||[]).map(r=><tr key={r.key}>
+              <td style={{...td,textAlign:"left"}}><span style={{fontSize:10,color:G.muted,textTransform:"uppercase",marginRight:6}}>{r.kind}</span>{r.label}</td>
+              {WIN.map(([k])=>{
+                const w=r[k];
+                if(!w) return <td key={k} colSpan={4} style={{...td,borderLeft:`1px solid ${G.border}`}}>—</td>;
+                if(w.error) return <td key={k} colSpan={4} style={{...td,textAlign:"left",color:G.red,fontSize:11,borderLeft:`1px solid ${G.border}`,whiteSpace:"normal"}}>{w.error}</td>;
+                const sub = t => <span style={{color:G.muted,fontSize:11}}>{t}</span>;
+                return [
+                  <td key={k+"s"} style={{...td,borderLeft:`1px solid ${G.border}`,fontWeight:700}}>{num(w.sent)}</td>,
+                  <td key={k+"b"} style={{...td,color:w.sent&&w.bounced/w.sent>0.05?G.red:G.text}}>{num(w.bounced)}{sub(rate(w.bounced,w.sent))}</td>,
+                  <td key={k+"x"} style={{...td,color:w.spam?G.red:G.text}}>{num(w.spam)}{sub(rate(w.spam,w.sent))}</td>,
+                  <td key={k+"o"} style={td}>{num(w.unique_opens)}{sub(rate(w.unique_opens,w.sent))}</td>,
+                ];
+              })}
+            </tr>)}
+          </tbody>
+        </table>
+      </div>}
+  </div>;
+
+  const dncBlock = <div style={box}>
+    <h3 style={h3}>Do Not Contact</h3>
+    {!dnc ? null : dnc.error ? errLine(dnc.error) : <>
+      <div style={{display:"flex",gap:24,marginBottom:12}}>
+        <div><div style={{fontSize:20,fontWeight:700}}>{num(dnc.total)}</div><div style={{fontSize:10,color:G.muted,textTransform:"uppercase",letterSpacing:"0.05em"}}>total</div></div>
+        <div><div style={{fontSize:20,fontWeight:700}}>{num(dnc.added_7d)}</div><div style={{fontSize:10,color:G.muted,textTransform:"uppercase",letterSpacing:"0.05em"}}>added 7d</div></div>
+      </div>
+      <div style={{overflowX:"auto",marginBottom:14}}>
+        <table style={{borderCollapse:"collapse",width:"100%"}}>
+          <thead><tr>{["Added","Email / phone","Reason","Source"].map(c=><th key={c} style={{...th,textAlign:"left"}}>{c}</th>)}</tr></thead>
+          <tbody>
+            {(dnc.recent||[]).length===0&&<tr><td colSpan={4} style={{...td,textAlign:"left",color:G.muted}}>No entries yet</td></tr>}
+            {(dnc.recent||[]).map(r=><tr key={r.dnc_id||r.added_at}>
+              <td style={{...td,textAlign:"left",color:G.muted,fontSize:12}}>{when(r.added_at)}</td>
+              <td style={{...td,textAlign:"left"}}>{[r.email,fmtPhone(r.phone)].filter(Boolean).join(" · ")}</td>
+              <td style={{...td,textAlign:"left",whiteSpace:"normal",fontSize:12}}>{r.reason}</td>
+              <td style={{...td,textAlign:"left",color:G.muted,fontSize:12}}>{r.source}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </>}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr auto",gap:10,alignItems:"end"}}>
+      <Inp label="Email or phone" value={dncVal} onChange={e=>setDncVal(e.target.value)} placeholder="name@example.com or 561-555-0100"/>
+      <Inp label="Reason" value={dncReason} onChange={e=>setDncReason(e.target.value)} placeholder="e.g. asked to stop by phone"/>
+      <Btn v="danger" onClick={addDnc} disabled={adding||!dncVal.trim()}>{adding?"Adding…":"+ Add to Do Not Contact"}</Btn>
+    </div>
+    <div style={{fontSize:11,color:G.muted,marginTop:6}}>Also blocks the customer's other email/phone when they match a customer record.</div>
+  </div>;
+
+  const dueList = (title, d, row) => <div style={{marginBottom:18}}>
+    <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:6}}>
+      <div style={{fontWeight:700,fontSize:13}}>{title}</div>
+      {d&&!d.error&&<div style={{fontSize:11,color:G.muted}}>{d.items.length}{d.items.length>=d.cap?` (per-run cap ${d.cap})`:""}</div>}
+    </div>
+    {!d ? null : d.error ? errLine(d.error) : d.items.length===0 ? <div style={{fontSize:12,color:G.muted}}>Nothing due</div> :
+      <div style={{display:"flex",flexDirection:"column"}}>{d.items.map((it,i)=><div key={i} style={{fontSize:12,padding:"6px 0",borderTop:i?`1px solid ${G.border}`:"none"}}>{row(it)}</div>)}</div>}
+  </div>;
+
+  const rail = <div style={box}>
+    <h3 style={h3}>Due next</h3>
+    <div style={{fontSize:11,color:G.muted,marginBottom:12}}>What each sender would send on its next run (dry run, nothing sent).</div>
+    {due&&dueList("Pre-registration drip", due.drip, it=><>
+      <span style={{fontWeight:700,color:G.orange}}>{it.stage}</span> <span style={{wordBreak:"break-all"}}>{it.email}</span> <span style={{color:G.muted}}>· {it.hours}h</span>
+    </>)}
+    {due&&dueList("Post-label v2", due.post_label, it=><>
+      <span style={{fontWeight:700,color:G.purple}}>{it.key}</span> {it.channel} <span style={{color:G.muted}}>({it.carrier})</span> · {it.first} <span style={{color:G.muted}}>· {it.shipment_id} · day {it.day}</span>
+    </>)}
+    {due&&due.post_label&&due.post_label.sms_quiet_hours&&<div style={{fontSize:11,color:G.muted}}>SMS quiet hours now — SMS touches wait until 9am ET.</div>}
+  </div>;
+
+  return <div style={{flex:1,overflow:"auto",padding:isMobile?12:24,background:G.bg}}>
+    <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14,flexWrap:"wrap"}}>
+      <h2 style={{margin:0,fontSize:22,color:G.text}}>Comms</h2>
+      {data&&<div style={{fontSize:11,color:G.muted}}>As of {when(data.generated_at)}{data.cached?" · cached (5 min)":""}</div>}
+      <div style={{flex:1}}/>
+      <Btn v="ghost" small onClick={load} disabled={loading}>{loading?"…":"⟳ Reload"}</Btn>
+    </div>
+    {err&&<div style={{...box,borderColor:G.red+"55",color:G.red,fontSize:13,marginBottom:16}}>{err}</div>}
+    {loading&&!data&&<div style={{color:G.muted,fontSize:13}}>Loading comms dashboard…</div>}
+    {data&&<div style={{display:"flex",flexDirection:isMobile?"column":"row",gap:16,alignItems:isMobile?"stretch":"flex-start"}}>
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:16}}>
+        {data.sequences&&data.sequences.error ? <div style={box}>{errLine(data.sequences.error)}</div> : cards}
+        {deliverability}
+        {dncBlock}
+      </div>
+      <div style={{width:isMobile?"auto":320,flexShrink:0}}>{rail}</div>
+    </div>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  AUG 17: shipping_type has TWO vocabularies and the CRM only knew one.
 //  Sheets uses 'label' to mean FedEx. Postgres can't — its shipping_carrier
 //  enum has no 'label' — so the Aug 10 migration mapped label → 'fedex'.
@@ -6214,7 +6399,7 @@ useEffect(()=>{
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold},{id:"comms",label:"Comms",color:G.blue}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -6264,6 +6449,7 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
       {tab==="marketing"&&<MarketingTab/>}
       {tab==="roi"      &&<RoiTab shipments={shipments}/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
+      {tab==="comms"    &&<CommsTab/>}
     </div>
   </div>;
 }
