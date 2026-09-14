@@ -4294,7 +4294,7 @@ function SalesTab({shipments, customers}) {
   // hand-discounting the sale amount — which made the books impossible to
   // reconcile against eBay's own report — record GROSS "Sold For" as the sale
   // amount and subtract the fee here as its own line.
-  const EBAY_FEE_PCT = 15;
+  // EBAY_FEE_PCT: module-level (shared with computeRealizedMargin and the Rules tab).
   function isEbaySale(sale) {
     return /ebay/i.test(String(sale.buyer_name || ""));
   }
@@ -5419,6 +5419,8 @@ function AffiliateModal({affiliate, onSave, onCancel}) {
 function roiDateStr(d){ return d.toISOString().slice(0,10); }
 // Shipping cost assumptions (DW, Sep 9): every arrived package costs ~$12 inbound
 // (pay-on-scan label), and every return (arrived but not purchased) costs ~$5 to send back.
+// eBay takes a cut of gross — one value for the Sales tab, realized margin (ROI) and the Rules tab.
+const EBAY_FEE_PCT = 15;
 const ROI_SHIP_IN  = 12;
 const ROI_SHIP_RET = 5;
 const roiShipping = (arrived, purchased) => (arrived||0)*ROI_SHIP_IN + Math.max(0,(arrived||0)-(purchased||0))*ROI_SHIP_RET;
@@ -5432,7 +5434,6 @@ const roiShipping = (arrived, purchased) => (arrived||0)*ROI_SHIP_IN + Math.max(
 // Not attributable by channel/window — a refiner lot doesn't know which ad it
 // came from — so this is one figure for the whole business.
 function computeRealizedMargin(sales, shipments, excludeOver, inventoryRec) {
-  const EBAY_FEE_PCT = 15;
   const PURCHASED = ["complete","pending_payment","pending_leadsonline"];
   const shipById = {}; shipments.forEach(s=>{ shipById[s.shipment_id]=s; });
   const isExcluded = s => excludeOver>0 && (parseFloat(s.purchase_price)||0) > excludeOver;
@@ -6138,6 +6139,172 @@ const scanBtnStyle={
 };
 
 // ═══════════════════════════════════════════════════════════════
+//  SEP 14: Rules tab — READ-ONLY. Every rule, trigger and message comes from
+//  the live Apps Script code (getRules / rules.gs reads constants and calls
+//  the real template functions); the eBay fee and ROI shipping assumptions
+//  come from the constants in this file. Nothing here is hand-written policy.
+// ═══════════════════════════════════════════════════════════════
+function RulesCard({title,subtitle,open,onToggle,children}) {
+  return <div style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,marginBottom:12,overflow:"hidden"}}>
+    <button onClick={onToggle} style={{width:"100%",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"12px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+      <span style={{fontSize:12,color:G.muted,width:12}}>{open?"▾":"▸"}</span>
+      <span style={{fontWeight:700,fontSize:14,color:G.text}}>{title}</span>
+      {subtitle&&<span style={{fontSize:11,color:G.muted,marginLeft:"auto"}}>{subtitle}</span>}
+    </button>
+    {open&&<div style={{padding:"0 16px 14px"}}>{children}</div>}
+  </div>;
+}
+
+function RuleList({rules}) {
+  if(!rules) return null;
+  if(rules.error) return <div style={{color:G.red,fontSize:12}}>{rules.error}</div>;
+  return <ul style={{margin:0,paddingLeft:18,display:"flex",flexDirection:"column",gap:8}}>
+    {rules.map((r,i)=><li key={i} style={{fontSize:13,color:r.ok?G.text:G.orange,lineHeight:1.5}}>
+      {r.text}
+      {r.evidence&&r.evidence.length>0&&<details style={{marginTop:2}}>
+        <summary style={{fontSize:11,color:G.muted,cursor:"pointer"}}>source</summary>
+        {r.evidence.map((e,j)=><div key={j} style={{fontFamily:"monospace",fontSize:11,color:G.muted,background:G.bg,borderRadius:4,padding:"3px 6px",marginTop:3,overflowX:"auto",whiteSpace:"pre"}}><span style={{color:G.blue}}>{e.where}</span>{"  "}{e.line}</div>)}
+      </details>}
+    </li>)}
+  </ul>;
+}
+
+function RulesCopy({c}) {
+  return <div style={{marginTop:10}}>
+    <div style={{fontSize:11,color:G.muted,marginBottom:3,display:"flex",gap:6,flexWrap:"wrap"}}>
+      <b style={{color:G.text}}>{c.touch}</b><span>· {c.channel}</span>{c.variant&&<span style={{color:G.blue,fontWeight:700}}>· {c.variant}</span>}
+    </div>
+    <pre style={{margin:0,fontFamily:"monospace",fontSize:12,lineHeight:1.5,background:"#FAF7F2",border:`1px solid ${G.border}`,borderRadius:6,padding:"8px 10px",whiteSpace:"pre-wrap",wordBreak:"break-word",color:c.error?G.red:G.text}}>
+      {(c.subject?`Subject: ${c.subject}\n\n`:"")+(c.body||"")}
+    </pre>
+  </div>;
+}
+
+function RulesTab() {
+  const isMobile = useIsMobile();
+  const [data,setData]       = useState(null);
+  const [loading,setLoading] = useState(true);
+  const [err,setErr]         = useState("");
+  const [open,setOpen]       = useState({intake:true});
+  const [email,setEmail]     = useState("");
+  const [ex,setEx]           = useState(null);
+  const [exBusy,setExBusy]   = useState(false);
+  const toggle = k => setOpen(o=>({...o,[k]:!o[k]}));
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr("");
+    try{
+      const r=await apiPost({action:"getRules"});
+      if(r&&r.success) setData(r); else setErr((r&&r.error)||"Couldn't load rules");
+    }catch(e){ setErr(e.message||String(e)); }
+    setLoading(false);
+  },[]);
+  useEffect(()=>{ load(); },[load]);
+
+  async function explain(){
+    const v=email.trim(); if(!v) return;
+    setExBusy(true); setEx(null);
+    try{ const r=await apiPost({action:"explainRegistration",email:v}); setEx(r||{success:false,error:"no response"}); }
+    catch(e){ setEx({success:false,error:e.message||String(e)}); }
+    setExBusy(false);
+  }
+
+  const when = ts => ts ? (fmtDateTime(ts)||String(ts)) : "—";
+  const seqs = data && Array.isArray(data.sequences) ? data.sequences : [];
+  const localMoney = [
+    {ok:true,text:`eBay sales: ${EBAY_FEE_PCT}% of gross is deducted as fees (Sales tab and realized margin).`,evidence:[{where:"src/crm.jsx",line:`const EBAY_FEE_PCT = ${EBAY_FEE_PCT};`}]},
+    {ok:true,text:`ROI shipping assumption: $${ROI_SHIP_IN} per package that arrives, plus $${ROI_SHIP_RET} return postage for each arrival that isn't purchased.`,evidence:[{where:"src/crm.jsx",line:`const ROI_SHIP_IN = ${ROI_SHIP_IN}; const ROI_SHIP_RET = ${ROI_SHIP_RET};`}]},
+  ];
+  const guardColor = k => k==="dnc"?G.red:(k==="implausible"||k==="duplicate")?G.orange:k==="typo"?G.blue:G.muted;
+  const h4 = {fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.08em",textTransform:"uppercase",margin:"14px 0 6px"};
+
+  return <div style={{flex:1,overflow:"auto",padding:isMobile?12:24,background:G.bg}}>
+    <div style={{maxWidth:980,margin:"0 auto"}}>
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:6,flexWrap:"wrap"}}>
+        <h2 style={{margin:0,fontSize:22,color:G.text}}>Rules</h2>
+        {data&&<div style={{fontSize:11,color:G.muted}}>Read from the live code {when(data.generated_at)}{data.cached?" · cached (10 min)":""}</div>}
+        <div style={{flex:1}}/>
+        <Btn v="ghost" small onClick={load} disabled={loading}>{loading?"…":"⟳ Reload"}</Btn>
+      </div>
+      {data&&data.sample&&<div style={{fontSize:11,color:G.muted,marginBottom:14}}>Copy rendered for a sample customer: {data.sample.first} · {data.sample.phrase} · {data.sample.estimate}. Nothing is sent.</div>}
+      {err&&<div style={{background:"#fff",border:`1px solid ${G.red}55`,borderRadius:10,padding:"12px 16px",color:G.red,fontSize:13,marginBottom:12}}>{err}</div>}
+      {loading&&!data&&<div style={{color:G.muted,fontSize:13}}>Reading rules from the code…</div>}
+
+      {data&&<>
+        <RulesCard title="1. Intake" subtitle="handleLeadIngestion · createShipment · dnc.gs" open={!!open.intake} onToggle={()=>toggle("intake")}>
+          <RuleList rules={data.intake}/>
+        </RulesCard>
+
+        <RulesCard title="2. Sequences" subtitle={`${seqs.length} automated / manual senders`} open={!!open.sequences} onToggle={()=>toggle("sequences")}>
+          {data.sequences&&data.sequences.error&&<div style={{color:G.red,fontSize:12}}>{data.sequences.error}</div>}
+          {seqs.map(s=><RulesCard key={s.key} title={s.label}
+              subtitle={s.trigger ? (s.trigger.manual ? `manual · ${s.trigger.cadence}` : `${s.trigger.cadence||"cadence unreadable"} · ${s.trigger.installed?"trigger installed":"TRIGGER MISSING"}`) : ""}
+              open={!!open["seq_"+s.key]} onToggle={()=>toggle("seq_"+s.key)}>
+            {s.trigger&&<div style={{fontSize:12,marginBottom:10,color:s.trigger.manual?G.muted:(s.trigger.installed?G.green:G.red)}}>
+              {s.trigger.manual ? "Manual" : "Trigger"}: <span style={{fontFamily:"monospace"}}>{s.trigger.handler}</span>{s.trigger.cadence?` — ${s.trigger.cadence}`:""}{!s.trigger.manual&&(s.trigger.installed?" (installed)":" (not installed)")} · {s.file}
+            </div>}
+            <RuleList rules={s.rules}/>
+            {(s.copy&&s.copy.length>0||s.copy_note)&&<div style={h4}>Copy</div>}
+            {s.copy_note&&<div style={{fontSize:12,color:G.muted}}>{s.copy_note}</div>}
+            {(s.copy||[]).map((c,i)=><RulesCopy key={i} c={c}/>)}
+          </RulesCard>)}
+        </RulesCard>
+
+        <RulesCard title="3. Label routing" subtitle="generateAndSendLabel · _buyShippoLabel" open={!!open.routing} onToggle={()=>toggle("routing")}>
+          <RuleList rules={data.routing}/>
+        </RulesCard>
+
+        <RulesCard title="4. Money & policy" open={!!open.money} onToggle={()=>toggle("money")}>
+          <RuleList rules={data.money}/>
+          <div style={{marginTop:8}}><RuleList rules={localMoney}/></div>
+        </RulesCard>
+      </>}
+
+      <RulesCard title="5. Explain a registration" subtitle="what ingestion did for one email" open={open.explain!==false} onToggle={()=>setOpen(o=>({...o,explain:o.explain===false}))}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:10,alignItems:"end"}}>
+          <Inp label="Customer email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="name@example.com"/>
+          <Btn v="gold" onClick={explain} disabled={exBusy||!email.trim()}>{exBusy?"Checking…":"Explain"}</Btn>
+        </div>
+        {ex&&!ex.success&&<div style={{color:G.red,fontSize:12,marginTop:10}}>{ex.error}</div>}
+        {ex&&ex.success&&<div style={{marginTop:6}}>
+          <div style={h4}>Guards</div>
+          <ul style={{margin:0,paddingLeft:18}}>{(ex.guards||[]).length===0
+            ? <li style={{fontSize:13,color:G.muted}}>No guard applies (not on Do Not Contact, plausible email, one customer row).</li>
+            : ex.guards.map((g,i)=><li key={i} style={{fontSize:13,color:guardColor(g.kind),lineHeight:1.5}}>{g.text}</li>)}</ul>
+
+          <div style={h4}>Customer</div>
+          <div style={{fontSize:13}}>{ex.customer ? <>{ex.customer.customer_id} · {ex.customer.name||"(no name)"} · {ex.customer.email}{ex.customer.phone?` · ${fmtPhone(ex.customer.phone)}`:""}</> : <span style={{color:G.muted}}>Not found</span>}</div>
+
+          <div style={h4}>Lead Intake rows {ex.total_leads>ex.leads.length?`(latest ${ex.leads.length} of ${ex.total_leads})`:""}</div>
+          {ex.leads.length===0&&<div style={{fontSize:12,color:G.muted}}>No Lead Intake rows for this email.</div>}
+          {ex.leads.map(l=><div key={l.row} style={{borderTop:`1px solid ${G.border}`,padding:"8px 0",fontSize:12}}>
+            <div style={{color:G.muted,display:"flex",gap:8,flexWrap:"wrap"}}>
+              <span>{when(l.ts)}</span><span>row {l.row}</span>{l.type&&<span>{l.type}</span>}
+              <span>shipping: {l.shipping||"—"}</span><span>address: {l.has_address?"yes":"no"}</span>
+            </div>
+            {(l.item||l.estimate)&&<div style={{marginTop:2}}>{l.item}{l.estimate?` (${l.estimate})`:""}</div>}
+            <div style={{marginTop:3,fontWeight:700,color:G.text}}>{l.decision}</div>
+            {l.auto_reply&&<div style={{marginTop:3,fontFamily:"monospace",fontSize:11,color:G.muted,wordBreak:"break-word"}}>{l.auto_reply}</div>}
+          </div>)}
+
+          <div style={h4}>Shipments</div>
+          {ex.shipments.length===0&&<div style={{fontSize:12,color:G.muted}}>None.</div>}
+          {ex.shipments.map(s=><div key={s.shipment_id} style={{fontSize:12,padding:"3px 0",display:"flex",gap:8,flexWrap:"wrap"}}>
+            <b>{s.shipment_id}</b><span>{s.stage}</span><span>{s.shipping_type||"no type"}</span>
+            <span style={{color:G.muted}}>created {when(s.created_at)}{s.sent_at?` · sent ${when(s.sent_at)}`:""}{s.received_at?` · received ${when(s.received_at)}`:""}</span>
+            {s.item&&<span style={{color:G.muted}}>· {s.item}</span>}
+          </div>)}
+
+          {ex.debug.length>0&&<><div style={h4}>DebugLog</div>
+            {ex.debug.map((d,i)=><div key={i} style={{fontFamily:"monospace",fontSize:11,color:G.muted,wordBreak:"break-word"}}>{when(d.ts)} {d.event} {d.detail}</div>)}</>}
+          {(ex.notes||[]).map((n,i)=><div key={i} style={{fontSize:11,color:G.muted,marginTop:8}}>{n}</div>)}
+        </div>}
+      </RulesCard>
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  SEP 14: Comms tab — sequence health, Postmark deliverability, Do Not
 //  Contact, and what the drip / post-label senders would send next.
 //  Data: getCommsDashboard (comms-dashboard.gs, cached 5 min server-side).
@@ -6435,7 +6602,7 @@ useEffect(()=>{
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold},{id:"comms",label:"Comms",color:G.blue}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold},{id:"comms",label:"Comms",color:G.blue},{id:"rules",label:"Rules",color:G.muted}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -6486,6 +6653,7 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
       {tab==="roi"      &&<RoiTab shipments={shipments}/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
       {tab==="comms"    &&<CommsTab/>}
+      {tab==="rules"    &&<RulesTab/>}
     </div>
   </div>;
 }

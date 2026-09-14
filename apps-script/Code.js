@@ -268,7 +268,7 @@ function doPost(e) {
       'pushToLeadsOnline','uploadLeadsOnlinePhotos',
             'manualCustomerShipment','migrate','getAffiliates','addAffiliate','updateAffiliate','deleteAffiliate','getAffiliateStats',
       'getMarketingRoi','getAdSpend','addAdSpend','deleteAdSpend','syncMetaSpend','getSetting','setSetting',
-      'getCommsDashboard','addDoNotContact','getLabelUrl',
+      'getCommsDashboard','addDoNotContact','getLabelUrl','getRules','explainRegistration',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
       if (!CRM_SECRET_KEY || (parsed.key || '') !== CRM_SECRET_KEY) {
@@ -283,6 +283,9 @@ function doPost(e) {
     if (action === 'updateShipment')  return jsonResponse(updateShipment(parsed.shipment_id, parsed.updates));
     if (action === 'resendLabelEmail') return jsonResponse(handleResendLabelEmail(parsed));
     if (action === 'getLabelUrl')     return jsonResponse(handleGetLabelUrl(parsed));
+    // ── Rules tab (rules.gs, read-only) ──
+    if (action === 'getRules')            return jsonResponse(handleGetRules(parsed));
+    if (action === 'explainRegistration') return jsonResponse(handleExplainRegistration(parsed));
     if (action === 'addContactLog')   return jsonResponse(addContactLog(parsed.data));
     if (action === 'getSales')        return jsonResponse({ success: true, sales: getSales() });
     if (action === 'addSale')         return jsonResponse(addSale(parsed.data));
