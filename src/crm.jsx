@@ -2057,6 +2057,37 @@ function BinNumberPromptModal({shipment, onSaved, onSkip}) {
   </div>;
 }
 
+// "Open label PDF" — asks the backend (getLabelUrl) for the existing Shippo/EasyPost
+// label URL on click; the URL isn't stored on the shipment.
+function LabelPdfLink({shipmentId}) {
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState("");
+  async function openLabel(){
+    setBusy(true); setMsg("");
+    // Open the tab synchronously, inside the click — a window.open after the
+    // await gets popup-blocked (Safari). Pointed at the label once it resolves.
+    const w=window.open("","_blank");
+    if(w) w.opener=null;
+    try{
+      const r=await apiPost({action:"getLabelUrl",shipment_id:shipmentId});
+      if(r&&r.success&&r.label_url){
+        if(w) w.location.href=r.label_url; else window.open(r.label_url,"_blank","noopener");
+      } else {
+        if(w) w.close();
+        setMsg(r&&r.success===false ? "Couldn't fetch label: "+(r.error||"unknown error") : "No label found");
+      }
+    }catch(e){ if(w) w.close(); setMsg("Couldn't fetch label: "+(e.message||e)); }
+    setBusy(false);
+  }
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      <Btn v="blue" small onClick={openLabel} disabled={busy}>{busy?"Fetching label…":"📄 Open label PDF"}</Btn>
+      {msg&&<span style={{fontSize:11,color:G.red}}>{msg}</span>}
+    </div>
+    <div style={{fontSize:11,color:G.muted,marginTop:4}}>No printer? Forward the PDF to printandgo@fedex.com from hello@, then text the customer the retrieval code FedEx sends back (any FedEx Office, self-serve, ~20¢/page).</div>
+  </div>;
+}
+
 function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onUpdate,onNewShipment,onClose}) {
   const [modal,setModal]=useState(null);
   const [localLogs,setLocalLogs]=useState(contactLogs||[]);
@@ -2835,10 +2866,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
                 }
               }}>📧 Resend label email + text</Btn>
             )}
-            {shipment.label_url && <div>
-              <a href={shipment.label_url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:G.blue,textDecoration:"none"}}>📄 Open label PDF</a>
-              <div style={{fontSize:11,color:G.muted,marginTop:2}}>No printer? Forward the PDF to printandgo@fedex.com from hello@, then text the customer the retrieval code FedEx sends back (any FedEx Office, self-serve, ~20¢/page).</div>
-            </div>}
+            {(shipment.shippo_transaction_id || shipment.easypost_shipment_id) && <LabelPdfLink shipmentId={shipment.shipment_id}/>}
           </div>
           {/* Inventory Photos — shown for received and later stages */}
           {["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"].includes(shipment.stage) && (

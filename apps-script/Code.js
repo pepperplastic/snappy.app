@@ -268,7 +268,7 @@ function doPost(e) {
       'pushToLeadsOnline','uploadLeadsOnlinePhotos',
             'manualCustomerShipment','migrate','getAffiliates','addAffiliate','updateAffiliate','deleteAffiliate','getAffiliateStats',
       'getMarketingRoi','getAdSpend','addAdSpend','deleteAdSpend','syncMetaSpend','getSetting','setSetting',
-      'getCommsDashboard','addDoNotContact',
+      'getCommsDashboard','addDoNotContact','getLabelUrl',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
       if ((parsed.key || '') !== CRM_SECRET_KEY) {
@@ -282,6 +282,7 @@ function doPost(e) {
     if (action === 'createShipment')  return jsonResponse(createShipment(parsed.data));
     if (action === 'updateShipment')  return jsonResponse(updateShipment(parsed.shipment_id, parsed.updates));
     if (action === 'resendLabelEmail') return jsonResponse(handleResendLabelEmail(parsed));
+    if (action === 'getLabelUrl')     return jsonResponse(handleGetLabelUrl(parsed));
     if (action === 'addContactLog')   return jsonResponse(addContactLog(parsed.data));
     if (action === 'getSales')        return jsonResponse({ success: true, sales: getSales() });
     if (action === 'addSale')         return jsonResponse(addSale(parsed.data));
@@ -5890,6 +5891,68 @@ function createQuoSyncTrigger() {
 
 
 // ═══════════════════════════════════════════════
+//  LABEL URL LOOKUP (Sep 14) — shared by resendLabelEmail and getLabelUrl.
+//  Resolves the label URL from whichever provider created it. Shippo is the
+//  current primary (shippo_transaction_id); EasyPost is the legacy/fallback
+//  (easypost_shipment_id). Earlier the resend was EasyPost-only, so Shippo
+//  labels (all recent shipments) failed to resend. Read-only: nothing is
+//  purchased or stored.
+//  Returns { success:true, label_url } or { success:false, error, notFound }
+//  — notFound means no label on record, as opposed to a provider fetch failure.
+// ═══════════════════════════════════════════════
+function _lookupLabelUrl(shipment) {
+  var shippoTxId = String(shipment.shippo_transaction_id || '').trim();
+  var epShipmentId = String(shipment.easypost_shipment_id || '').trim();
+
+  if (shippoTxId) {
+    // Shippo: fetch the transaction to get its label_url
+    var shRes = UrlFetchApp.fetch('https://api.goshippo.com/transactions/' + shippoTxId, {
+      method: 'get',
+      headers: { 'Authorization': 'ShippoToken ' + SHIPPO_API_KEY },
+      muteHttpExceptions: true
+    });
+    if (shRes.getResponseCode() !== 200) {
+      return { success: false, error: 'Shippo fetch failed (' + shRes.getResponseCode() + ')' };
+    }
+    var shData = JSON.parse(shRes.getContentText());
+    if (!shData.label_url) return { success: false, notFound: true, error: 'no label_url on Shippo transaction' };
+    return { success: true, label_url: shData.label_url };
+  }
+  if (epShipmentId) {
+    // EasyPost (legacy): pull the shipment to get the postage label URL
+    var epRes = UrlFetchApp.fetch('https://api.easypost.com/v2/shipments/' + epShipmentId, {
+      method: 'get',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(EASYPOST_API_KEY + ':') },
+      muteHttpExceptions: true
+    });
+    if (epRes.getResponseCode() !== 200) {
+      return { success: false, error: 'EasyPost fetch failed (' + epRes.getResponseCode() + ')' };
+    }
+    var epData = JSON.parse(epRes.getContentText());
+    var epUrl = epData.postage_label && epData.postage_label.label_url ? epData.postage_label.label_url : '';
+    if (!epUrl) return { success: false, notFound: true, error: 'no label URL on EasyPost shipment' };
+    return { success: true, label_url: epUrl };
+  }
+  return { success: false, notFound: true, error: 'no shippo_transaction_id or easypost_shipment_id stored — this label predates the resend feature. Generate a new label instead.' };
+}
+
+// CRM "Open label PDF": { success, label_url } — label_url '' when the shipment has no label on record.
+function handleGetLabelUrl(parsed) {
+  try {
+    var shipmentId = parsed.shipment_id;
+    if (!shipmentId) return { success: false, error: 'shipment_id required' };
+    var shipment = _findShipmentById(SpreadsheetApp.openById(SHEET_ID), shipmentId);
+    if (!shipment) return { success: false, error: 'shipment not found' };
+    var r = _lookupLabelUrl(shipment);
+    if (r.success) return { success: true, label_url: r.label_url };
+    return r.notFound ? { success: true, label_url: '' } : { success: false, error: r.error };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+
+// ═══════════════════════════════════════════════
 //  RESEND LABEL EMAIL (May 22)
 //
 //  When a customer says they lost or accidentally deleted the original label
@@ -5912,43 +5975,10 @@ function handleResendLabelEmail(parsed) {
     var trackingNumber = String(shipment.outbound_tracking || '').trim();
     if (!trackingNumber) return { success: false, error: 'no outbound_tracking — label was never generated' };
 
-    // Resolve the label URL from whichever provider created it.
-    // Shippo is the current primary (shippo_transaction_id); EasyPost is the
-    // legacy/fallback (easypost_shipment_id). Earlier this function was
-    // EasyPost-only, so Shippo labels (all recent shipments) failed to resend.
-    var shippoTxId = String(shipment.shippo_transaction_id || '').trim();
-    var epShipmentId = String(shipment.easypost_shipment_id || '').trim();
-    var labelUrl = '';
-
-    if (shippoTxId) {
-      // Shippo: fetch the transaction to get its label_url
-      var shRes = UrlFetchApp.fetch('https://api.goshippo.com/transactions/' + shippoTxId, {
-        method: 'get',
-        headers: { 'Authorization': 'ShippoToken ' + SHIPPO_API_KEY },
-        muteHttpExceptions: true
-      });
-      if (shRes.getResponseCode() !== 200) {
-        return { success: false, error: 'Shippo fetch failed (' + shRes.getResponseCode() + ')' };
-      }
-      var shData = JSON.parse(shRes.getContentText());
-      labelUrl = shData.label_url || '';
-      if (!labelUrl) return { success: false, error: 'no label_url on Shippo transaction' };
-    } else if (epShipmentId) {
-      // EasyPost (legacy): pull the shipment to get the postage label URL
-      var epRes = UrlFetchApp.fetch('https://api.easypost.com/v2/shipments/' + epShipmentId, {
-        method: 'get',
-        headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(EASYPOST_API_KEY + ':') },
-        muteHttpExceptions: true
-      });
-      if (epRes.getResponseCode() !== 200) {
-        return { success: false, error: 'EasyPost fetch failed (' + epRes.getResponseCode() + ')' };
-      }
-      var epData = JSON.parse(epRes.getContentText());
-      labelUrl = epData.postage_label && epData.postage_label.label_url ? epData.postage_label.label_url : '';
-      if (!labelUrl) return { success: false, error: 'no label URL on EasyPost shipment' };
-    } else {
-      return { success: false, error: 'no shippo_transaction_id or easypost_shipment_id stored — this label predates the resend feature. Generate a new label instead.' };
-    }
+    // Resolve the label URL from whichever provider created it (shared with getLabelUrl).
+    var lookup = _lookupLabelUrl(shipment);
+    if (!lookup.success) return { success: false, error: lookup.error };
+    var labelUrl = lookup.label_url;
 
     // Download the PDF/PNG
     var labelRes = UrlFetchApp.fetch(labelUrl, { muteHttpExceptions: true });
