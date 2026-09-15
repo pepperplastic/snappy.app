@@ -1566,6 +1566,8 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
               : <Badge stage={shipment.stage} sm/>}
             {absStr&&<span title={ageStr?`${ageStr} ago`:""} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {absStr}</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
+            {/* SEP 14: triage hold — "CODE: reason" written by triage.gs; chip shows the code, hover shows the reason */}
+            {shipment.stage==="ready_to_fulfill"&&String(shipment.triage_flag||"").trim()&&<span title={"Triage hold — "+shipment.triage_flag} style={{fontSize:10,fontWeight:700,color:G.orange,background:G.orange+"14",border:`1px solid ${G.orange}33`,borderRadius:3,padding:"1px 5px",whiteSpace:"nowrap"}}>⚑ {String(shipment.triage_flag).split(":")[0].trim()}</span>}
           </div>
         </div>
       </div>
@@ -2809,6 +2811,21 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         {shipment.stage==="pending_response"&&<Btn v="orange" small onClick={resendOfferEmail}>📧 Resend offer email</Btn>}
         <Btn v="ghost" small onClick={generateReturnLabel}>📦 Return label</Btn>
         <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+          {/* SEP 14: thumbs-down on a triage fulfillment → auto:triage-override Contact Log row (weekly review) */}
+          {(()=>{
+            const sid=shipment?.shipment_id;
+            if(!(localLogs||[]).some(l=>l.kind==="auto:triage"&&l.shipment_id===sid)) return null;
+            const overridden=(localLogs||[]).some(l=>l.kind==="auto:triage-override"&&l.shipment_id===sid);
+            return <Btn v={overridden?"ghost":"danger"} small disabled={overridden} onClick={async()=>{
+              if(!confirm("Mark this triage fulfillment as \"shouldn't have fulfilled\"?\n\nThis only adds a Contact Log row for the weekly triage review — nothing is sent or changed.")) return;
+              const row={customer_id:shipment.customer_id,shipment_id:sid,type:"note",direction:"",source:"crm",kind:"auto:triage-override",notes:"Shouldn't have fulfilled (triage override)"};
+              try{
+                const r=await apiPost({action:"addContactLog",data:row});
+                if(r&&r.success===false){ alert("Save failed: "+(r.error||"unknown")); return; }
+                setLocalLogs(p=>[...p,{...row,log_id:typeof r==="string"?r:"",timestamp:new Date().toISOString()}]);
+              }catch(e){ alert("Save failed: "+(e.message||e)); }
+            }}>{overridden?"👎 Override logged":"👎 Shouldn't have fulfilled"}</Btn>;
+          })()}
           <Btn v="ghost" small onClick={()=>setModal("log")}>+ Log</Btn>
           <Btn v="purple" small onClick={()=>setModal("addShipment")}>+ Shipment</Btn>
           <Btn v="gold" small onClick={()=>setModal("edit")}>Edit</Btn>

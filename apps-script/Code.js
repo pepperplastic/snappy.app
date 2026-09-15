@@ -57,7 +57,7 @@ var COLS = {
     'purchased_at','returned_at','sworn_statement_at','sworn_statement_ip','leadsonline_submitted_at',
     'shipping_cost','shipping_service','easypost_shipment_id','label_qr_url','self_serve_submitted_at',
     'offer_price','paid_at','shippo_transaction_id','ship_followups_sent','capi_shipped_sent',
-            'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent'
+            'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent','triage_flag'
   ],
   CONTACT_LOG: [
     'log_id','customer_id','timestamp','type','notes','shipment_id','direction','source','kind'

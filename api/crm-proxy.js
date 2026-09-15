@@ -153,7 +153,7 @@ const SHIPMENT_PASSTHROUGH = [
   'appraised_value', 'offer_price', 'offer_description', 'shipping_cost',
   'outbound_tracking', 'return_tracking', 'kit_tracking', 'shipping_service',
   'easypost_shipment_id', 'shippo_transaction_id', 'label_qr_url',
-  'label_refunded_at', 'payment_method', 'payment_info', 'created_at',
+  'label_refunded_at', 'triage_flag', 'payment_method', 'payment_info', 'created_at',
   'sent_at', 'received_at', 'purchased_at', 'returned_at', 'paid_at',
   'deferred_at', 'leadsonline_submitted_at', 'self_serve_submitted_at',
   'last_activity_at', 'traffic_source', 'variant', 'gclid', 'fbclid',
