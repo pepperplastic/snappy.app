@@ -46,6 +46,25 @@ function VerifyField({ label, children }) {
   )
 }
 
+// SEP 23: away-window banner. The dates live in Apps Script Script Properties
+// (AWAY_FROM / AWAY_TO and the optional customer-facing AWAY_CLOSED_* pair);
+// this asks the backend for the rendered line and shows nothing when it's empty.
+function AwayBanner() {
+  const [line, setLine] = useState('')
+  useEffect(() => {
+    let live = true
+    fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'awayNotice' }) })
+      .then(r => r.json())
+      .then(d => { if (live && d && d.active && d.line) setLine(d.line) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [])
+  if (!line) return null
+  return <div style={{ background: '#1A1816', color: '#E8B86D', fontFamily: 'Georgia, serif', fontSize: 14,
+    lineHeight: 1.5, textAlign: 'center', padding: '10px 16px' }}>{line}</div>
+}
+
 // SEP 23: /relabel — public, token-gated one-click new label (win-back emails).
 // Same shape as VerifyPage: token in the URL, /api/crm for both calls, no key.
 function RelabelPage() {
@@ -103,8 +122,13 @@ function RelabelPage() {
   if (step === 'done')    return <div style={wrap}><h2>All set{info?.customer?.name ? `, ${String(info.customer.name).split(' ')[0]}` : ''}</h2><p>{msg}</p><p>Nothing else to do — pack the item in any box when the label arrives.</p><p style={{ fontSize: 13, color: '#8A8078' }}>David · Snappy Gold · 866-613-0704</p></div>
   if (step === 'sending') return <div style={wrap}>One moment — making your label…</div>
 
+  const awayNote = info?.away_notice
+    ? <p style={{ background: '#FFF8EE', border: '1px solid #C8953C55', borderRadius: 6, padding: '10px 12px', fontSize: 14 }}>{info.away_notice}</p>
+    : null
+
   if (step === 'form') return <div style={wrap}>
     <h2>Where should the label go?</h2>
+    {awayNote}
     <p>I just need the address you want the prepaid label made out to.</p>
     <label>Street<input style={inp} value={street} onChange={e => setStreet(e.target.value)} autoComplete="address-line1"/></label>
     <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
@@ -124,6 +148,7 @@ function RelabelPage() {
     <p>{info?.is_kit
       ? 'I will put a new shipping kit in the mail to you — just confirm below.'
       : 'One click and I will email you a new prepaid label for ' + (info?.shipment?.item ? String(info.shipment.item) : 'your item') + '.'}</p>
+    {awayNote}
     <p><button style={btn} onClick={() => request(false)}>{info?.is_kit ? 'Send me a new kit' : 'Email me a new label'}</button></p>
     {info?.already_requested && <p style={{ fontSize: 13, color: '#8A8078' }}>(You asked for one recently — clicking again is fine, I will not send duplicates.)</p>}
     <p style={{ fontSize: 13, color: '#8A8078' }}>Free both ways · no commitment · David · 866-613-0704</p>
@@ -1576,6 +1601,7 @@ export default function App() {
 
   return (
     <div style={styles.app}>
+      <AwayBanner />
       {/* ── NAV ── */}
       <nav style={styles.nav}>
         <div style={styles.navInner}>

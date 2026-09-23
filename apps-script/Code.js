@@ -329,6 +329,7 @@ function doPost(e) {
     if (action === 'generateSelfServeToken') return jsonResponse(handleGenerateSelfServeToken(parsed));
     // ── Public, token-gated win-back relabel (winback.gs) — no CRM key, same
     //    shape as the self-serve token actions below it. ──
+    if (action === 'awayNotice')            return jsonResponse(handleAwayNotice());
     if (action === 'relabelValidate')       return jsonResponse(handleRelabelValidate(parsed));
     if (action === 'relabelRequest')        return jsonResponse(handleRelabelRequest(parsed));
     if (action === 'validateSelfServeToken') return jsonResponse(handleValidateSelfServeToken(parsed));
@@ -1167,13 +1168,77 @@ function normalizeShipType(v) {
   return t === 'label' ? 'fedex' : t;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  AWAY WINDOW (Sep 23) — all dates come from Script Properties, never code.
+//    AWAY_FROM / AWAY_TO              yyyy-mm-dd (ET). While inside, no
+//                                     "ship now" nudge campaign sends.
+//    AWAY_CLOSED_FROM / AWAY_CLOSED_TO / AWAY_SHIP_AFTER   optional. The dates
+//                                     the CUSTOMER is told; when unset they
+//                                     fall back to AWAY_FROM / AWAY_TO and
+//                                     AWAY_TO − 4 days.
+//  Unset properties = feature off, everything behaves as before.
+// ═══════════════════════════════════════════════════════════════
+var AWAY_BACK_GREET_DAYS = 14;   // a "we're back" line rides on sends this long after AWAY_TO
+
+function _awayDate(s) {
+  if (!s) return null;
+  var d = new Date(String(s).trim() + 'T12:00:00');
+  return isNaN(d.getTime()) ? null : d;
+}
+function _awayFmt(d) { return d ? Utilities.formatDate(d, 'America/New_York', 'MMM d') : ''; }
+
+function awayWindow() {
+  var p = PropertiesService.getScriptProperties();
+  var from = _awayDate(p.getProperty('AWAY_FROM')), to = _awayDate(p.getProperty('AWAY_TO'));
+  if (!from || !to) return { set: false, active: false, justBack: false };
+  var now = new Date(), endOfTo = new Date(to.getTime() + 12 * 3600000);
+  return {
+    set: true, from: from, to: to,
+    closedFrom: _awayDate(p.getProperty('AWAY_CLOSED_FROM')) || from,
+    closedTo:   _awayDate(p.getProperty('AWAY_CLOSED_TO'))   || to,
+    shipAfter:  _awayDate(p.getProperty('AWAY_SHIP_AFTER'))  || new Date(to.getTime() - 4 * 86400000),
+    active: now >= from && now <= endOfTo,
+    justBack: now > endOfTo && now <= new Date(to.getTime() + AWAY_BACK_GREET_DAYS * 86400000),
+  };
+}
+
+// The one line customers see while we're away. '' when the window is off/over.
+function awayNoticeLine() {
+  var w = awayWindow();
+  if (!w.set || !w.active) return '';
+  return "We're closed for receiving " + _awayFmt(w.closedFrom) + '–' + _awayFmt(w.closedTo) +
+         ' — ship after ' + _awayFmt(w.shipAfter) + " and we'll process it the day it arrives.";
+}
+// Opening line for campaign sends in the first two weeks back.
+function awayBackLine() {
+  var w = awayWindow();
+  return (w.set && w.justBack) ? "We're back in the office and processing packages again." : '';
+}
+// True while "ship now" nudge campaigns must hold.
+function awayHoldsNudges() { var w = awayWindow(); return !!(w.set && w.active); }
+
+// PUBLIC (no key): the site banner reads this.
+function handleAwayNotice() {
+  var w = awayWindow();
+  return { success: true, active: !!w.active, line: awayNoticeLine() };
+}
+
+// SEP 23: a write to any of these means the CUSTOMER did something — an intake
+// append (new items, photos, message, estimate) or a relabel click. updateShipment
+// stamps last_activity_at when it sees one. Anything else (stage moves, triage
+// flags, capi/flex stamps, CRM edits of internal fields) leaves it alone.
+var ACTIVITY_FIELDS = ['item', 'notes', 'customer_message', 'customer_edits', 'customer_edits_text',
+                       'estimate', 'ai_rationale', 'ai_estimate_raw', 'relabel_requested_at'];
+
 function createShipment(data) {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.SHIPMENTS);
   var shipId = nextId(sheet, 'SHP-', 0);
+  var nowIso = new Date().toISOString();
   var row = COLS.SHIPMENTS.map(function(col) {
     if (col === 'shipment_id') return shipId;
-    if (col === 'created_at')  return new Date().toISOString();
+    if (col === 'created_at')  return nowIso;
+    if (col === 'last_activity_at') return data[col] || nowIso;   // Sep 23: starts equal to created_at
     if (col === 'shipping_type' && data[col] !== undefined) return normalizeShipType(data[col]);
     return data[col] !== undefined ? data[col] : '';
   });
@@ -1628,6 +1693,15 @@ function updateShipment(shipmentId, updates) {
             // SEP 3 PERF: batch the write. This used to do one setValue() per changed
       // field — a separate round trip each. Build the full row in memory and
       // write it once.
+      // SEP 23: last_activity_at is stamped HERE, in the low-level writer, so no
+      // append path can skip it — intake's append mode, the relabel click and any
+      // future path all land here. Only customer-driven fields bump it
+      // (ACTIVITY_FIELDS); automated stamps like triage_flag or capi flags must
+      // not, or the Fulfill queue would reorder itself every time a trigger ran.
+      if (updates.last_activity_at === undefined &&
+          Object.keys(updates).some(function(k) { return ACTIVITY_FIELDS.indexOf(k) !== -1; })) {
+        updates.last_activity_at = new Date().toISOString();
+      }
       var rowVals = allRows[r].slice();
       var wroteAny = false;
       var dobCol = -1;
@@ -1837,7 +1911,32 @@ function addPhoto(data) {
     return data[col] !== undefined ? data[col] : '';
   });
   sheet.appendRow(row);
+  // SEP 23: a photo added to an existing shipment is an append too — intake's
+  // append mode can write a photo and nothing else.
+  if (data.shipment_id) {
+    try { updateShipment(data.shipment_id, { last_activity_at: new Date().toISOString() }); }
+    catch (e) { Logger.log('addPhoto activity stamp (non-fatal): ' + e); }
+  }
   return photoId;
+}
+
+// ONE-TIME: give every existing shipment a last_activity_at (= created_at).
+// Safe to re-run; only fills blanks.
+function backfillLastActivity() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(TAB.SHIPMENTS);
+  var data = sheet.getDataRange().getValues();
+  var h = data[0], actIdx = h.indexOf('last_activity_at'), madeIdx = h.indexOf('created_at');
+  if (actIdx < 0) { Logger.log('✗ last_activity_at column missing — run ensureAllColumns() first'); return 0; }
+  var col = [], n = 0;
+  for (var r = 1; r < data.length; r++) {
+    var cur = String(data[r][actIdx] || '').trim();
+    if (!cur && data[r][madeIdx]) { col.push([data[r][madeIdx]]); n++; }
+    else col.push([data[r][actIdx]]);
+  }
+  if (n) sheet.getRange(2, actIdx + 1, col.length, 1).setValues(col);
+  Logger.log('backfillLastActivity: filled ' + n + ' of ' + (data.length - 1) + ' rows');
+  return n;
 }
 
 // PATCH: Inventory photo handler — called from CRM Inventory Photos panel.
@@ -3276,6 +3375,7 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
       Subject: 'Your prepaid ' + carrierName + ' label is attached, ' + firstName,
       HtmlBody: buildPlainEmail(firstName,
         'Your prepaid ' + carrierName + ' return label is attached to this email.' +
+        (awayNoticeLine() ? '\n\n' + awayNoticeLine() : '') +
         '\n\nJust print it, pack ' + itemText + ' in any box or padded envelope, attach the label, and ' + dropText + '.' +
         extraItemsLine +
         '\n\n<strong>Free shipping, no commitment</strong> — if my offer isn\'t good enough I\'ll send everything back at no charge.' +
@@ -7652,6 +7752,7 @@ function _validEmail(e) {
 
 function _recoveryCore(daysBack, maxSend, dryRun, minEst) {
   minEst = minEst || 0;
+  if (!dryRun && awayHoldsNudges()) { Logger.log('AWAY WINDOW — recovery emails held (nothing sent)'); return { eligible: 0, sent: 0, held: 'away window' }; }
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.LEADS);
   var rows = sheet.getDataRange().getValues();

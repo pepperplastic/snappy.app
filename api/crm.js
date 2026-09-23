@@ -22,7 +22,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyyQPxQfHWB8Y_7GyR7Uh-zn8DEru429ASvGfzAGjkEkjvk6GBdFZg1zpl9DpTtZFV1Fg/exec';
+  // One source of truth: Vercel env APPS_SCRIPT_URL (same var the CRM proxy uses).
+  const GOOGLE_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+  if (!GOOGLE_SCRIPT_URL) return res.status(500).json({ success: false, error: 'APPS_SCRIPT_URL is not set' });
 
   try {
     const upstream = await fetch(GOOGLE_SCRIPT_URL, {

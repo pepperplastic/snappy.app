@@ -5,10 +5,14 @@
 //  send function you run by hand from the editor.
 //
 //    winbackBaseline()                    read-only report on the Aug/Sep sends
-//    winbackADryRun() / winbackASend100() A — never-shipped, second touch
-//    winbackASmsDryRun() / winbackASmsSend()  A by SMS (label-only copy)
-//    winbackBDryRun() / winbackBSend()    B — past buyers
-//    winbackCDryRun() / winbackCSend100() C — customers with no shipment
+//    winbackAudit()                       read-only: the reengage stamp gap + A's funnel
+//    winbackADryRun() · winbackASend250() · winbackASend100() (pilot)
+//    winbackASmsDryRun() · winbackASmsSend() · winbackASmsSend100() (pilot)
+//    winbackBDryRun() · winbackBSend()
+//    winbackCDryRun() · winbackCSend250() · winbackCSend100() (pilot)
+//
+//  Dry runs never write: they print a placeholder link instead of minting a
+//  RelabelTokens row. Every send also holds while the away window is open.
 //
 //  Shared: every email carries a one-click relabel link — a public,
 //  token-gated route (same shape as the /verify self-serve token: 30-day TTL,
@@ -34,6 +38,26 @@ function _wbDate(v) {
 }
 function _wbDay(d) { return d ? Utilities.formatDate(d, 'America/New_York', 'yyyy-MM-dd') : ''; }
 function _wbEmail(v) { return String(v || '').toLowerCase().trim(); }
+
+// Sep 23: the Mar 24–25 2026 rows are migration stamps, not real events. Any
+// date before this cutoff is treated as unknown wherever the date matters.
+var WB_MIGRATION_CUTOFF = '2026-04-01';
+function _wbReliable(d) { return (d && _wbDay(d) >= WB_MIGRATION_CUTOFF) ? d : null; }
+
+// Sep 23: dry runs must not mint RelabelTokens rows. While this is on, _wbLink
+// returns a placeholder instead of issuing a token.
+var WB_PREVIEW = false;
+
+// '' when we have no usable name, so greetings and subjects can fall back cleanly.
+function _wbFirst(name) {
+  var n = String(name || '').replace(/\(.*?\)/g, '').trim().split(/\s+/)[0] || '';
+  if (!n || /^[^a-z]+$/i.test(n)) return '';
+  return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
+}
+function _wbHi(first) { return 'Hi ' + (first || 'there') + ',\n\n'; }
+function _wbComma(first) { return first ? ', ' + first : ''; }
+// "We're back" opener for the first sends after the away window.
+function _wbBack() { var l = (typeof awayBackLine === 'function') ? awayBackLine() : ''; return l ? l + '\n\n' : ''; }
 
 // ═══════════════════════════════════════════════════════════════════════
 //  STEP 0 — BASELINE (read-only, logs only)
@@ -139,6 +163,115 @@ function winbackBaseline() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  AUDIT (read-only) — why reengage_sent_at covers fewer people than Postmark
+//  says went out, and where Campaign A's filters drop people.
+// ═══════════════════════════════════════════════════════════════════════
+function winbackAudit(fromDay, toDay) {
+  fromDay = fromDay || '2026-08-01';
+  toDay = toDay || '2026-09-30';
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var ships = sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS));
+  var custs = {}; getCustomers().forEach(function (c) { if (c.customer_id) custs[c.customer_id] = c; });
+
+  // ── 1. re-engagement: Postmark vs stamps ──
+  var stamped = 0, people = {}, byDay = {};
+  ships.forEach(function (s) {
+    var d = _wbDate(s.reengage_sent_at);
+    if (!d) return;
+    var day = _wbDay(d);
+    if (day < fromDay || day > toDay) return;
+    stamped++; byDay[day] = (byDay[day] || 0) + 1;
+    var c = custs[s.customer_id];
+    people[_wbEmail(c && c.email) || s.customer_id] = true;
+  });
+  var pm = null;
+  try {
+    var token = _reengageToken();
+    if (token) {
+      var res = UrlFetchApp.fetch('https://api.postmarkapp.com/stats/outbound?fromdate=' + fromDay + '&todate=' + toDay +
+        '&messagestream=' + encodeURIComponent(_reengageStream()) + '&tag=' + encodeURIComponent(REENGAGE_TAG),
+        { headers: { 'X-Postmark-Server-Token': token, 'Accept': 'application/json' }, muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) pm = JSON.parse(res.getContentText());
+    }
+  } catch (e) { Logger.log('Postmark stats: ' + e); }
+
+  // People holding more than one unshipped label — _reengageCandidates stamps ONE per person.
+  var unshippedByPerson = {};
+  ships.forEach(function (s) {
+    if (String(s.stage || '').toLowerCase() !== 'outbound_complete') return;
+    if (String(s.received_at || '').trim()) return;
+    var c = custs[s.customer_id];
+    var key = _wbEmail(c && c.email) || s.customer_id;
+    unshippedByPerson[key] = (unshippedByPerson[key] || 0) + 1;
+  });
+  var multi = Object.keys(unshippedByPerson).filter(function (k) { return unshippedByPerson[k] > 1; }).length;
+
+  Logger.log('═══ WIN-BACK AUDIT ' + fromDay + ' .. ' + toDay + ' ═══');
+  Logger.log('');
+  Logger.log('RE-ENGAGEMENT (tag ' + REENGAGE_TAG + ', stream ' + _reengageStream() + ')');
+  Logger.log('  Postmark says sent : ' + (pm ? pm.Sent : '(could not read)') + (pm ? '   bounced ' + (pm.Bounced || 0) : ''));
+  Logger.log('  reengage_sent_at   : ' + stamped + ' shipments · ' + Object.keys(people).length + ' people');
+  if (pm && pm.Sent) Logger.log('  GAP                : ' + (pm.Sent - stamped) + ' sends with no stamp');
+  Logger.log('  people holding >1 unshipped label: ' + multi + ' (each gets one stamp, so stamps under-count people with several)');
+  Logger.log('  other things that widen the gap: a run that hit the 6-minute limit mid-way (Postmark counted, sheet not stamped),');
+  Logger.log('  reengageTestToMe sends, and any send made before the reengage_sent_at column existed.');
+  Logger.log('  stamps by day:');
+  Object.keys(byDay).sort().forEach(function (d) { Logger.log('    ' + d + '  ' + byDay[d]); });
+  Logger.log('');
+
+  // ── 2. Campaign A funnel ──
+  var touched = _wbRecentlyTouched(WB_A_QUIET_DAYS), now = Date.now();
+  var f = {};
+  ships.forEach(function (s) {
+    var b = _wbABucket(s, custs, touched, now);
+    if (b === 'not_outbound' || b === 'already_arrived') return;
+    f[b] = (f[b] || 0) + 1;
+  });
+  Logger.log('CAMPAIGN A FUNNEL (label sent, never arrived)');
+  Object.keys(f).sort().forEach(function (k) { Logger.log('  ' + _wbPad(k, 22) + _wbPadL(f[k], 6)); });
+  Logger.log('  → after one-per-person de-dupe: ' + _wbSegmentA().length + ' people');
+  Logger.log('');
+  Logger.log('"no_usable_date" = only a pre-' + WB_MIGRATION_CUTOFF + ' (migration) date, so label age is unknown — these are held back on purpose.');
+  return { reengage: { postmark: pm ? pm.Sent : null, stamped: stamped, people: Object.keys(people).length, multi_label_people: multi }, campaign_a: f };
+}
+
+// Where did one cohort land in Campaign A's funnel? Defaults to the shipments
+// stamped reengage_sent_at on a given day:  winbackAuditCohort('2026-09-14')
+// Any stamp column works:                   winbackAuditCohort('2026-09-14', 'winback_a_sent_at')
+function winbackAuditCohort(day, field) {
+  field = field || 'reengage_sent_at';
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var ships = sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS));
+  var custs = {}; getCustomers().forEach(function (c) { if (c.customer_id) custs[c.customer_id] = c; });
+  var touched = _wbRecentlyTouched(WB_A_QUIET_DAYS), now = Date.now();
+
+  var cohort = ships.filter(function (s) { var d = _wbDate(s[field]); return d && (!day || _wbDay(d) === day); });
+  var buckets = {}, rows = [];
+  cohort.forEach(function (s) {
+    var b = _wbABucket(s, custs, touched, now);
+    buckets[b] = (buckets[b] || 0) + 1;
+    var c = custs[s.customer_id] || {};
+    rows.push({ id: s.shipment_id, who: String(c.name || s.customer_id).slice(0, 20), bucket: b,
+                why: (b === 'touched_recently') ? _wbTouchReason(s, custs, touched) : '' });
+  });
+
+  Logger.log('═══ COHORT · ' + field + (day ? ' = ' + day : ' (any date)') + ' — ' + cohort.length + ' shipments ═══');
+  Logger.log('  quiet window: ' + WB_A_QUIET_DAYS + ' days   ·   today: ' + _wbDay(new Date()));
+  Object.keys(buckets).sort(function (a, b) { return buckets[b] - buckets[a]; }).forEach(function (b) {
+    Logger.log('  ' + _wbPad(b, 22) + _wbPadL(buckets[b], 6) + (b === 'eligible' ? '   ← Campaign A WOULD email these' : ''));
+  });
+  Logger.log('');
+  Logger.log('  first 15:');
+  rows.slice(0, 15).forEach(function (r) { Logger.log('    ' + _wbPad(r.id, 10) + _wbPad(r.who, 22) + _wbPad(r.bucket, 20) + r.why); });
+  if (buckets.eligible) {
+    Logger.log('');
+    Logger.log('  ⚠ ' + buckets.eligible + ' of this cohort would still be emailed. If that is unexpected, their stamp is');
+    Logger.log('    older than the ' + WB_A_QUIET_DAYS + '-day quiet window, or the stamp column is empty on those rows.');
+  }
+  return { cohort: cohort.length, buckets: buckets };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  SHARED — ONE-CLICK RELABEL (public, token-gated)
 //
 //  Issued per shipment, 30-day TTL, no CRM key. The public page (/relabel)
@@ -209,6 +342,7 @@ function _wbIssueToken(shipmentId, customerId, campaign) {
 }
 
 function _wbLink(shipmentId, customerId, campaign) {
+  if (WB_PREVIEW) return WB_BASE_URL + '<token issued at send time>&ref=' + campaign;
   return WB_BASE_URL + _wbIssueToken(shipmentId, customerId, campaign) + '&ref=' + campaign;
 }
 
@@ -249,6 +383,7 @@ function handleRelabelValidate(parsed) {
       shipping_type: type,
       is_kit: type === 'kit',
       has_address: !!String(customer.address || '').trim(),
+      away_notice: awayNoticeLine(),   // '' unless we're inside the away window
       customer: { name: customer.name || '', email: customer.email || '' },
       shipment: { shipment_id: shipment.shipment_id, item: shipment.item || '' },
     };
@@ -309,7 +444,9 @@ function handleRelabelRequest(parsed) {
     updateShipment(shipmentId, { relabel_requested_at: stamp });
     if (t.sheet) t.sheet.getRange(t.rowNum, t.ix.used_at + 1).setValue(stamp);
     _wbLog(customerId, shipmentId, 'auto:winback_relabel', 'New ' + type.toUpperCase() + ' label sent from the win-back link (' + (res.tracking || 'no tracking') + ')');
-    return { success: true, message: 'Your new prepaid label is on its way to ' + customer.email + '.' };
+    var away = awayNoticeLine();
+    return { success: true, away_notice: away,
+             message: 'Your new prepaid label is on its way to ' + customer.email + '.' + (away ? ' ' + away : '') };
   } catch (err) { return { success: false, error: String(err && err.message || err) }; }
 }
 
@@ -363,14 +500,81 @@ function _wbBounceRate(tag) {
 }
 
 // Anyone automatically emailed/texted in the last N days (Contact Log, source=auto).
+// Sep 23: was Contact Log only — which is not enough. The Contact Log rows for
+// re-engagement and recovery only exist for sends made AFTER logAutoSend shipped
+// (Sep 14), and only when the address matched a customer row. The campaigns'
+// own stamps are the authoritative record, so read those too. Returns a map
+// keyed by BOTH customer_id and normalized email → why they were touched.
 function _wbRecentlyTouched(days) {
   var cutoff = Date.now() - days * 86400000, out = {};
+  var mark = function (key, why) { if (key && !out[key]) out[key] = why; };
+  var fresh = function (v) { var d = _wbDate(v); return (d && d.getTime() >= cutoff) ? d : null; };
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+
+  var custs = getCustomers(), emailOf = {};
+  custs.forEach(function (c) { if (c.customer_id) emailOf[c.customer_id] = _wbEmail(c.email); });
+  var both = function (custId, why) { mark(custId, why); mark(emailOf[custId], why); };
+
+  // 1. Contact Log, any automated send (drip, post-label, label email, win-back…)
   getContactLog(null).forEach(function (l) {
     if (String(l.source || '') !== 'auto' || !l.customer_id) return;
-    var t = _wbDate(l.timestamp);
-    if (t && t.getTime() >= cutoff) out[l.customer_id] = true;
+    var d = fresh(l.timestamp);
+    if (d) both(l.customer_id, 'contact log ' + _wbDay(d) + ' (' + (l.kind || 'auto') + ')');
   });
+
+  // 2. Campaign stamps on the shipment — re-engagement and win-back A
+  sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS)).forEach(function (s) {
+    if (!s.customer_id) return;
+    var re = fresh(s.reengage_sent_at);      if (re) both(s.customer_id, 'reengage_sent_at ' + _wbDay(re));
+    var wa = fresh(s.winback_a_sent_at);     if (wa) both(s.customer_id, 'winback_a_sent_at ' + _wbDay(wa));
+    var ws = fresh(s.winback_a_sms_at);      if (ws) both(s.customer_id, 'winback_a_sms_at ' + _wbDay(ws));
+  });
+
+  // 3. Campaign stamps on the customer — win-back B and C
+  custs.forEach(function (c) {
+    if (!c.customer_id) return;
+    var b = fresh(c.winback_b_sent_at); if (b) both(c.customer_id, 'winback_b_sent_at ' + _wbDay(b));
+    var cc = fresh(c.winback_c_sent_at); if (cc) both(c.customer_id, 'winback_c_sent_at ' + _wbDay(cc));
+  });
+
+  // 4. Recovery — RECOV:yyyy-mm-dd stamps in Lead Intake, keyed by email only
+  var lead = ss.getSheetByName(TAB.LEADS).getDataRange().getValues();
+  for (var r = 1; r < lead.length; r++) {
+    var em = _wbEmail(lead[r][COL.EMAIL]);
+    if (!em) continue;
+    var y = String(lead[r][COL.AUTO_REPLY] || '');
+    var m = y.match(/RECOV:(\d{4}-\d{2}-\d{2})/g);
+    if (!m) continue;
+    m.forEach(function (tag) {
+      var d = fresh(tag.slice(6) + 'T12:00:00');
+      if (d) mark(em, 'RECOV: ' + _wbDay(d));
+    });
+  }
   return out;
+}
+
+// Why a shipment is or isn't eligible for Campaign A. One place, so the segment
+// and the audit can never disagree.
+function _wbABucket(s, custs, touched, now) {
+  if (String(s.stage || '').toLowerCase() !== 'outbound_complete') return 'not_outbound';
+  if (String(s.received_at || '').trim()) return 'already_arrived';
+  if (normalizeShipType(s.shipping_type) === 'kit') return 'kit';
+  var sent = _wbReliable(_wbDate(s.sent_at)) || _wbReliable(_wbDate(s.created_at));
+  if (!sent) return 'no_usable_date';
+  if ((now - sent.getTime()) / 86400000 < WB_A_MIN_DAYS) return 'too_new';
+  if (String(s.relabel_requested_at || '').trim()) return 'already_relabeled';
+  if (String(s.winback_a_sent_at || '').trim()) return 'already_sent';
+  var c = custs[s.customer_id];
+  if (!c) return 'no_customer';
+  var to = isPlausibleEmail(c.email);
+  if (!to) return 'bad_email';
+  if (isDoNotContact(c.email) || (c.phone && isDoNotContact(c.phone)) || isDoNotContact(to)) return 'dnc';
+  if (touched[c.customer_id] || touched[_wbEmail(c.email)] || touched[to]) return 'touched_recently';
+  return 'eligible';
+}
+function _wbTouchReason(s, custs, touched) {
+  var c = custs[s.customer_id] || {};
+  return touched[s.customer_id] || touched[_wbEmail(c.email)] || touched[isPlausibleEmail(c.email)] || '';
 }
 
 function _wbIsTest(c) {
@@ -391,6 +595,10 @@ function _wbBlocked(c, to) {
 // Shared runner: dry run prints counts + first 10; live sends with the bounce watch.
 function _wbRun(campaign, tag, list, limit, dryRun, build, stampFn) {
   var label = campaign.toUpperCase();
+  if (!dryRun && awayHoldsNudges()) {
+    Logger.log('AWAY WINDOW — ' + label + ' held (nothing sent). Clear AWAY_FROM/AWAY_TO or wait for the window to pass.');
+    return { eligible: list.length, sent: 0, held: 'away window' };
+  }
   Logger.log('━━━ WIN-BACK ' + label + (dryRun ? ' — DRY RUN (nothing sent)' : ' — SENDING') + ' ━━━');
   Logger.log('eligible: ' + list.length + (dryRun ? '' : '   sending up to ' + limit));
   if (dryRun) {
@@ -442,22 +650,17 @@ function _wbSegmentA() {
   var touched = _wbRecentlyTouched(WB_A_QUIET_DAYS);
   var now = Date.now(), best = {};
   ships.forEach(function (s) {
-    if (String(s.stage || '').toLowerCase() !== 'outbound_complete') return;
-    if (normalizeShipType(s.shipping_type) === 'kit') return;   // kits aren't labels; A's copy is label + USPS pickup
-    if (String(s.received_at || '').trim()) return;
-    if (String(s.relabel_requested_at || '').trim()) return;
-    if (String(s.winback_a_sent_at || '').trim()) return;
-    var sent = _wbDate(s.sent_at) || _wbDate(s.created_at);
-    if (!sent) return;
+    if (_wbABucket(s, custs, touched, now) !== 'eligible') return;
+    var sent = _wbReliable(_wbDate(s.sent_at)) || _wbReliable(_wbDate(s.created_at));
     var days = (now - sent.getTime()) / 86400000;
-    if (days < WB_A_MIN_DAYS) return;
     var c = custs[s.customer_id];
-    if (!c || touched[c.customer_id]) return;
     var to = isPlausibleEmail(c.email);
-    if (_wbBlocked(c, to)) return;
-    var cur = best[c.customer_id];
+    // Sep 23: key on the EMAIL, not customer_id — duplicate customer rows for one
+    // person were putting them in the list twice (Shanna Beasley).
+    var key = to || _wbEmail(c.email) || c.customer_id;
+    var cur = best[key];
     if (cur && cur.days <= days) return;                     // one per person: freshest label
-    best[c.customer_id] = { customer_id: c.customer_id, shipment_id: s.shipment_id, name: c.name, email: c.email,
+    best[key] = { customer_id: c.customer_id, shipment_id: s.shipment_id, name: c.name, email: c.email,
                             to: to, phone: c.phone || '', item: s.item || '', days: Math.round(days),
                             note: 'label ' + Math.round(days) + 'd old · ' + s.shipment_id };
   });
@@ -469,12 +672,12 @@ function _wbSegmentA() {
 var WB_A_EXPIRED_DAYS = 90;
 
 function _wbCopyA(p) {
-  var first = _firstName(p.name);
+  var first = _wbFirst(p.name);
   var link = _wbLink(p.shipment_id, p.customer_id, 'winback_a');
   var expired = p.days >= WB_A_EXPIRED_DAYS;
   return {
-    subject: expired ? ('Your prepaid label expired, ' + first) : ('Your prepaid label is still good, ' + first),
-    body: 'Hi ' + first + ',\n\n' +
+    subject: (expired ? 'Your prepaid label expired' : 'Your prepaid label is still good') + _wbComma(first),
+    body: _wbHi(first) + _wbBack() +
       (expired
         ? 'You asked us for a prepaid label a while back and it never made it to us. That label has since expired — carrier labels stop working after about ' + WB_A_EXPIRED_DAYS + ' days — but replacing it takes one click.\n\n'
         : 'You asked us for a prepaid label a while back and it never made it to us — no problem, that happens. Your label is still open, and I can send a fresh one if you no longer have it.\n\n') +
@@ -485,13 +688,19 @@ function _wbCopyA(p) {
   };
 }
 
-function winbackADryRun() { return _wbRun('winback_a', 'winback_a', _wbSegmentA(), 0, true, _wbCopyA, null); }
-function winbackASend100() {
+function winbackADryRun() {
+  WB_PREVIEW = true;
+  try { return _wbRun('winback_a', 'winback_a', _wbSegmentA(), 0, true, _wbCopyA, null); }
+  finally { WB_PREVIEW = false; }
+}
+function _wbSendA(limit) {
   _wbEnsureShipmentCols();
-  return _wbRun('winback_a', 'winback_a', _wbSegmentA(), 100, false, _wbCopyA, function (p) {
+  return _wbRun('winback_a', 'winback_a', _wbSegmentA(), limit, false, _wbCopyA, function (p) {
     updateShipment(p.shipment_id, { winback_a_sent_at: new Date().toISOString() });
   });
 }
+function winbackASend250() { return _wbSendA(250); }   // full run
+function winbackASend100() { return _wbSendA(100); }   // pilot
 
 // ── Campaign A by SMS — separate run, label-only copy (no gold price, no offer) ──
 var WB_SMS_START = 9, WB_SMS_END = 20;   // ET
@@ -505,7 +714,7 @@ function _wbSegmentASms() {
 function fmtPhoneSafe(v) { var d = _dncNormPhone(v); return d ? '(' + d.slice(0, 3) + ') ***-' + d.slice(6) : ''; }
 
 function _wbSmsTextA(p) {
-  var first = _firstName(p.name);
+  var first = _wbFirst(p.name) || 'there';
   var link = _wbLink(p.shipment_id, p.customer_id, 'winback_a');
   return p.days >= WB_A_EXPIRED_DAYS
     ? 'Hi ' + first + ' — David at Snappy Gold. The prepaid label I sent you has expired, but I can send you a new one: ' + link + ' Reply STOP to opt out.'
@@ -513,6 +722,10 @@ function _wbSmsTextA(p) {
 }
 
 function winbackASmsDryRun() {
+  WB_PREVIEW = true;
+  try { return _wbSmsDryRun(); } finally { WB_PREVIEW = false; }
+}
+function _wbSmsDryRun() {
   var list = _wbSegmentASms();
   Logger.log('━━━ WIN-BACK A · SMS — DRY RUN (nothing sent) ━━━');
   Logger.log('eligible (phone on file, not DNC): ' + list.length);
@@ -527,8 +740,10 @@ function _wbSmsOk() {
   return h >= WB_SMS_START && h < WB_SMS_END;
 }
 
+function winbackASmsSend100() { return winbackASmsSend(100); }   // pilot
 function winbackASmsSend(limit) {
-  limit = limit || 100;
+  limit = limit || 250;
+  if (awayHoldsNudges()) { Logger.log('AWAY WINDOW — win-back A SMS held (nothing sent)'); return { sent: 0, held: 'away window' }; }
   if (!_wbSmsOk()) { Logger.log('Outside ' + WB_SMS_START + ':00–' + WB_SMS_END + ':00 ET — nothing sent.'); return { sent: 0, blocked: 'quiet hours' }; }
   _wbEnsureShipmentCols();
   var list = _wbSegmentASms(), sent = 0, failed = [];
@@ -588,28 +803,32 @@ function _wbSegmentB() {
     if (cur && cur._when && when && cur._when >= when) return;      // keep their most recent purchase
     byCust[c.customer_id] = { customer_id: c.customer_id, shipment_id: s.shipment_id, name: c.name, email: c.email, to: to,
                               code: codes[_wbEmail(c.email)] || '', _when: when,
-                              note: 'bought ' + (when ? _wbDay(when) : '?') + ' · ' + (codes[_wbEmail(c.email)] || 'no ref code') };
+                              note: 'bought ' + (_wbReliable(when) ? _wbDay(when) : '(pre-Apr migration date)') + ' · ' + (codes[_wbEmail(c.email)] || 'no ref code') };
   });
   return Object.keys(byCust).map(function (k) { return byCust[k]; });
 }
 
 function _wbCopyB(p) {
-  var first = _firstName(p.name);
+  var first = _wbFirst(p.name);
   var link = _wbLink(p.shipment_id, p.customer_id, 'winback_b');
   var referral = p.code
     ? '\n\nAnd the $' + REFERRAL_BONUS + ' referral still stands: send anyone you know to <strong><a href="' + SITE_BASE_URL_SAFE() + '/?ref=' + p.code + '">' +
       SITE_BASE_URL_SAFE() + '/?ref=' + p.code + '</a></strong> and I pay you $' + REFERRAL_BONUS + ' when they sell to me. No limit.'
     : '';
   return {
-    subject: 'Anything else in the drawer, ' + first + '?',
-    body: 'Hi ' + first + ',\n\n' +
+    subject: 'Anything else in the drawer' + _wbComma(first) + '?',
+    body: _wbHi(first) + _wbBack() +
       'Thanks again for selling with me. If there is anything else sitting in a drawer — odd earrings, a broken chain, an old class ring — I am happy to take a look.\n\n' +
       '<strong><a href="' + link + '">Click here and I will email you a prepaid label</a></strong>, same as last time. Free both ways, and anything I don\'t buy comes straight back.' +
       referral + '\n\nDavid\nSnappy Gold\n866-613-0704',
   };
 }
 
-function winbackBDryRun() { return _wbRun('winback_b', 'winback_b', _wbSegmentB(), 0, true, _wbCopyB, null); }
+function winbackBDryRun() {
+  WB_PREVIEW = true;
+  try { return _wbRun('winback_b', 'winback_b', _wbSegmentB(), 0, true, _wbCopyB, null); }
+  finally { WB_PREVIEW = false; }
+}
 function winbackBSend(limit) {
   _wbEnsureCustomerCols();
   return _wbRun('winback_b', 'winback_b', _wbSegmentB(), limit || 250, false, _wbCopyB, function (p) {
@@ -646,11 +865,11 @@ function _wbSegmentC() {
 }
 
 function _wbCopyC(p) {
-  var first = _firstName(p.name);
+  var first = _wbFirst(p.name);
   var link = buildReturnUrl('shipping', first, '', '') + '&ref=winback_c';
   return {
-    subject: 'Still have it, ' + first + '?',
-    body: 'Hi ' + first + ',\n\n' +
+    subject: 'Still have it' + _wbComma(first) + '?',
+    body: _wbHi(first) + _wbBack() +
       'You started with us a while back but never got as far as sending anything in. If the piece is still sitting there, I will send you a prepaid label — free both ways, and it comes back free if my offer isn\'t right.\n\n' +
       '<strong><a href="' + link + '">Click here and tell me where to send the label</a></strong> — takes about a minute.\n\n' +
       'David\nSnappy Gold\n866-613-0704',
@@ -658,6 +877,10 @@ function _wbCopyC(p) {
 }
 
 function winbackCDryRun() {
+  WB_PREVIEW = true;
+  try { return _wbCDryRun(); } finally { WB_PREVIEW = false; }
+}
+function _wbCDryRun() {
   var list = _wbSegmentC();
   Logger.log('(excluded ' + (list._skippedTest || 0) + ' test/own accounts via MY_EMAIL_PATTERNS / MY_PHONES / MY_NAMES)');
   var r = _wbRun('winback_c', 'winback_c', list, 0, true, _wbCopyC, null);
@@ -666,12 +889,14 @@ function winbackCDryRun() {
     : 'Segment is ' + list.length + ' — above the 100 threshold.');
   return r;
 }
-function winbackCSend100() {
+function _wbSendC(limit) {
   _wbEnsureCustomerCols();
-  return _wbRun('winback_c', 'winback_c', _wbSegmentC(), 100, false, _wbCopyC, function (p) {
+  return _wbRun('winback_c', 'winback_c', _wbSegmentC(), limit, false, _wbCopyC, function (p) {
     upsertCustomer({ email: p.email, winback_c_sent_at: new Date().toISOString() });
   });
 }
+function winbackCSend250() { return _wbSendC(250); }   // full run
+function winbackCSend100() { return _wbSendC(100); }   // pilot
 
 // Private column helpers. NOTE: _pad is defined twice in the project
 // (arrivals.gs right-pads, Estimates.gs left-pads) and whichever file loads

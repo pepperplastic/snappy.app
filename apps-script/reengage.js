@@ -199,6 +199,7 @@ function reengageDryRun() {
 
 // ── Send. Freshest labels first. ──
 function reengageSend(limit) {
+  if (awayHoldsNudges()) { Logger.log('AWAY WINDOW — re-engagement held (nothing sent)'); return; }
   var token = _reengageToken();
   if (!token) { Logger.log('No Postmark token found — stopping.'); return; }
   Logger.log('sending on stream: ' + _reengageStream());

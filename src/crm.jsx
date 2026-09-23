@@ -1567,6 +1567,7 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
             {absStr&&<span title={ageStr?`${ageStr} ago`:""} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {absStr}</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
             {/* SEP 14: triage hold — "CODE: reason" written by triage.gs; chip shows the code, hover shows the reason */}
+            {wasUpdated(shipment)&&<span title={`Customer added to this registration${timeAgo(shipment.last_activity_at)?" "+timeAgo(shipment.last_activity_at)+" ago":""} — originally ${fmtDateTime(shipment.created_at)||"?"}`} style={{fontSize:10,fontWeight:700,color:G.gold,background:"#FFF8EE",border:`1px solid ${G.gold}55`,borderRadius:3,padding:"1px 5px",whiteSpace:"nowrap"}}>✏️ updated +{appendedCount(shipment)}</span>}
             {shipment.stage==="ready_to_fulfill"&&String(shipment.triage_flag||"").trim()&&<span title={"Triage hold — "+shipment.triage_flag} style={{fontSize:10,fontWeight:700,color:G.orange,background:G.orange+"14",border:`1px solid ${G.orange}33`,borderRadius:3,padding:"1px 5px",whiteSpace:"nowrap"}}>⚑ {String(shipment.triage_flag).split(":")[0].trim()}</span>}
           </div>
         </div>
@@ -3418,7 +3419,9 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
     let list=shipments.filter(s=>FULFILL_STAGES.includes(s.stage));
     list=list.filter(s=>showDeferred?isDeferred(s):!isDeferred(s)); // active vs deferred view
     if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
-    return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    // SEP 23: newest ACTIVITY first — an append to an old shipment should rise to
+    // the top of Fulfill, not stay buried at its original registration date.
+    return [...list].sort((a,b)=>activityAt(b)-activityAt(a));
   },[shipments,search,custById,showDeferred]);
 
   const kits=filtered.filter(s=>normalizeShipType(s.shipping_type)==="kit");
@@ -6536,6 +6539,24 @@ function CommsTab() {
 function normalizeShipType(v){
   const t = String(v==null?"":v).trim().toLowerCase();
   return t==="label" ? "fedex" : t;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SEP 23: intake appends to a shipment that is already in Fulfill instead of
+//  creating a new one. Code.gs stamps last_activity_at on every append (items,
+//  photos, message) in the low-level writer. Items are joined with " + " in the
+//  item column and added to notes as "+ <item> (<estimate>)", so the count of
+//  appended items comes from whichever of those two is higher.
+// ═══════════════════════════════════════════════════════════════
+function appendedCount(s){
+  const items = String(s?.item||"").split(/\s*\+\s*/).filter(Boolean).length;
+  const noteLines = String(s?.notes||"").split("\n").filter(l=>l.trim().startsWith("+")).length;
+  return Math.max(items>1 ? items-1 : 0, noteLines);
+}
+function activityAt(s){ return new Date(s?.last_activity_at || s?.created_at || 0); }
+function wasUpdated(s){
+  if(!s?.last_activity_at || !s?.created_at) return false;
+  return activityAt(s) > new Date(s.created_at) && appendedCount(s) > 0;
 }
 
 export default function SnappyGoldCRM() {

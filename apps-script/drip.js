@@ -29,6 +29,7 @@ function _dripStages(y) {
 }
 
 function _dripCore(dryRun) {
+  if (!dryRun && awayHoldsNudges()) { Logger.log('AWAY WINDOW — pre-registration drip held (nothing sent)'); return { sent: 0, skipped: 0, errors: 0, would: [], held: 'away window' }; }
   var sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.LEADS);
   var data  = sheet.getDataRange().getValues();
   var now   = new Date();
@@ -202,8 +203,45 @@ function notifyNewRegistrations() {
     var c = new Date(s.created_at); if (c > newest) newest = c;
   });
   props.setProperty('REG_ALERT_LAST_ISO', newest.toISOString());
-  Logger.log('notifyNewRegistrations: ' + fresh.length + ' new since ' + lastIso);
-  return fresh.length;
+
+  // SEP 23: appends. When a customer adds to a shipment that is already in
+  // Fulfill, intake writes to the existing row and nothing ever fired — SHP-1140
+  // sat at the bottom of the queue with the Aug 4 rows. Same two channels,
+  // prefixed UPDATED:, with its own watermark so an append alerts once.
+  var lastActIso = props.getProperty('REG_ALERT_LAST_APPEND_ISO') || lastIso;
+  var lastAct = new Date(lastActIso), newestAct = lastAct;
+  var updated = ships.filter(function (s) {
+    if (String(s.stage || '').toLowerCase() !== 'ready_to_fulfill') return false;
+    var act = s.last_activity_at ? new Date(s.last_activity_at) : null;
+    if (!act || isNaN(act.getTime()) || !(act > lastAct)) return false;
+    var made = s.created_at ? new Date(s.created_at) : null;
+    // Within a minute of creation that IS the create stamp — already alerted as new.
+    if (made && !isNaN(made.getTime()) && (act.getTime() - made.getTime()) < 60000) return false;
+    return true;
+  }).sort(function (a, b) { return String(a.last_activity_at).localeCompare(String(b.last_activity_at)); });
+
+  updated.forEach(function (s) {
+    var cu = custs[s.customer_id] || {};
+    var name = cu.name || '(no name)';
+    var item = String(s.item || '').trim() || '(no item text)';
+    var sms = 'UPDATED: ' + s.shipment_id + ' — ' + name + ' added to an open registration · ' + item.slice(0, 60) +
+              ' · ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
+    try { sendSms(REG_ALERT_PHONE, 'David', sms); } catch (e) { Logger.log('update alert sms: ' + e); }
+    try {
+      MailApp.sendEmail(REG_ALERT_EMAIL, '✏️ UPDATED registration: ' + name + ' — ' + s.shipment_id,
+        'Name: ' + name + '\nEmail: ' + (cu.email || '') + '\nPhone: ' + (cu.phone || '') +
+        '\nItems now: ' + item + '\nEstimate: ' + (String(s.estimate || '').trim() || '—') +
+        (s.customer_message ? '\nMessage: ' + s.customer_message : '') +
+        '\n\nAlready in Fulfill — the customer added to it rather than registering again.\n' +
+        s.shipment_id + ' → ' + REG_ALERT_CRM + '?shp=' + s.shipment_id);
+    } catch (e) { Logger.log('update alert email: ' + e); }
+    var a = new Date(s.last_activity_at);
+    if (a > newestAct) newestAct = a;
+  });
+  props.setProperty('REG_ALERT_LAST_APPEND_ISO', newestAct.toISOString());
+
+  Logger.log('notifyNewRegistrations: ' + fresh.length + ' new since ' + lastIso + ' · ' + updated.length + ' updated since ' + lastActIso);
+  return fresh.length + updated.length;
 }
 
 function createRegAlertTrigger() {

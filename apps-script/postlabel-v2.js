@@ -68,6 +68,7 @@ function _pl2Content(key, first, item, s) {
 
 // asData (dry run only): return { would: [...], sms_quiet_hours } instead of the count — used by the CRM Comms tab.
 function _pl2Core(dryRun, asData) {
+  if (!dryRun && awayHoldsNudges()) { Logger.log('AWAY WINDOW — post-label follow-ups held (nothing sent)'); return 0; }
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.SHIPMENTS);
   var data = sheet.getDataRange().getValues(), h = data[0];
