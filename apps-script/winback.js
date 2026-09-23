@@ -272,6 +272,59 @@ function winbackAuditCohort(day, field) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  LIVE TEST LINK (editor-run). Prints a working /relabel URL for one
+//  customer. The token is REAL: clicking through generates and emails an
+//  actual label (Shippo, billed on scan). Uses campaign 'manual' so it does
+//  not consume or collide with the token a win-back send would mint, and so
+//  the ref= tag doesn't land in the campaign's attribution.
+//
+//  Editor: select relabelLinkForCustomer and Run (edit the address inside),
+//  or call relabelLinkFor('someone@example.com') from another function.
+// ═══════════════════════════════════════════════════════════════════════
+function relabelLinkForCustomer() {
+  var EMAIL = 'senditherepleasethanks@gmail.com';   // ← edit me
+  return relabelLinkFor(EMAIL);
+}
+
+function relabelLinkFor(email) {
+  var want = _wbEmail(email);
+  if (!want) { Logger.log('Pass an email address.'); return null; }
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var cust = getCustomers().filter(function (c) { return _wbEmail(c.email) === want; });
+  if (!cust.length) { Logger.log('No customer with email ' + want); return null; }
+  if (cust.length > 1) Logger.log('NOTE: ' + cust.length + ' customer rows share this email — using ' + cust[0].customer_id);
+  var c = cust[0];
+
+  var mine = sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS)).filter(function (s) { return s.customer_id === c.customer_id; });
+  var open = mine.filter(function (s) { return String(s.stage || '').toLowerCase() === 'outbound_complete'; })
+                 .sort(function (a, b) {
+                   var ad = _wbDate(a.sent_at) || _wbDate(a.created_at), bd = _wbDate(b.sent_at) || _wbDate(b.created_at);
+                   return (bd ? bd.getTime() : 0) - (ad ? ad.getTime() : 0);
+                 });
+  Logger.log('═══ RELABEL LINK — ' + (c.name || c.customer_id) + ' <' + c.email + '> ═══');
+  Logger.log('  shipments on file: ' + mine.map(function (s) { return s.shipment_id + ' (' + s.stage + ')'; }).join(', ') || '(none)');
+  if (!open.length) { Logger.log('  ✗ nothing in outbound_complete — no relabel link to give.'); return null; }
+  if (open.length > 1) Logger.log('  NOTE: ' + open.length + ' in outbound_complete — using the most recently sent.');
+
+  var s = open[0];
+  WB_PREVIEW = false;                       // this one is real
+  var url = _wbLink(s.shipment_id, c.customer_id, 'manual');
+  var type = normalizeShipType(s.shipping_type);
+  Logger.log('');
+  Logger.log('  ' + url);
+  Logger.log('');
+  Logger.log('  shipment : ' + s.shipment_id + ' · ' + (s.item || '(no item)') + ' · ' + (type || 'no type'));
+  Logger.log('  sent     : ' + (_wbDay(_wbDate(s.sent_at)) || '(no sent_at)') +
+             '   ·   relabel_requested_at: ' + (String(s.relabel_requested_at || '').trim() || 'none'));
+  Logger.log('  address  : ' + (String(c.address || '').trim() ? 'on file → the page shows the one-click button' : 'MISSING → the page shows the address form first'));
+  Logger.log('  token TTL: ' + WB_TOKEN_TTL_DAYS + ' days · ' + WB_TOKEN_MAX_HITS + ' page loads · one label per shipment per ' + WB_RELABEL_COOLDOWN_H + 'h');
+  if (type === 'kit') Logger.log('  NOTE: this is a KIT — the page offers a new kit and texts you; it does not buy a label.');
+  Logger.log('');
+  Logger.log('  ⚠ This is a live customer link. Clicking the button emails them a real label.');
+  return url;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  SHARED — ONE-CLICK RELABEL (public, token-gated)
 //
 //  Issued per shipment, 30-day TTL, no CRM key. The public page (/relabel)
