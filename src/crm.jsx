@@ -6319,8 +6319,10 @@ function RulesTab() {
         </div>}
       </RulesCard>
 
-      {data&&<RulesCard title="6. Stages & actions" subtitle={`${Array.isArray(data.stages)?data.stages.length:0} CRM actions`} open={!!open.stages} onToggle={()=>toggle("stages")}>
+      {data&&<RulesCard title="6. Stages & actions" subtitle={Array.isArray(data.stages)?`${data.stages.length} CRM actions`:"not available"} open={!!open.stages} onToggle={()=>toggle("stages")}>
         {data.stages&&data.stages.error&&<div style={{color:G.red,fontSize:12}}>{data.stages.error}</div>}
+        {!data.stages&&<div style={{fontSize:12,color:G.orange}}>This section needs a newer rules.gs than the deployed Apps Script version — push and cut a new version, then reload.</div>}
+        {Array.isArray(data.stages)&&data.stages.length===0&&<div style={{fontSize:12,color:G.orange}}>No actions returned.</div>}
         {(Array.isArray(data.stages)?data.stages:[]).map((a,i)=><div key={i} style={{borderTop:i?`1px solid ${G.border}`:"none",paddingTop:i?12:0,marginTop:i?12:0}}>
           <div style={{fontWeight:700,fontSize:13,color:G.text}}>{a.action}</div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",margin:"4px 0 6px"}}>

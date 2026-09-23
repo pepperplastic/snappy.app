@@ -18,7 +18,7 @@
 //  explainRegistration   — { email } → what ingestion did for that person
 // ═══════════════════════════════════════════════════════════════════════
 
-var RULES_CACHE_KEY = 'RULES_V1';
+var RULES_CACHE_KEY = 'RULES_V2';   // bump when the payload shape changes, so a cached older payload isn't served after a deploy
 var RULES_CACHE_SEC = 600;
 var RULES_SAMPLE = { first: 'Jane', item: '14K gold ring', phrase: 'your 14K gold ring', estimate: '$240 – $480' };
 
