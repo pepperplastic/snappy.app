@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby82CuMrlr0us5SUSCusqzGoxZYHPQg9nQuzalIplObIjtbXNUpRBNPrJWuV1qimmJbgA/exec';
+  const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyyQPxQfHWB8Y_7GyR7Uh-zn8DEru429ASvGfzAGjkEkjvk6GBdFZg1zpl9DpTtZFV1Fg/exec';
 
   try {
     const upstream = await fetch(GOOGLE_SCRIPT_URL, {

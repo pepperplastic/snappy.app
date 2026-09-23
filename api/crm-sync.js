@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const url = 'https://script.google.com/macros/s/AKfycby82CuMrlr0us5SUSCusqzGoxZYHPQg9nQuzalIplObIjtbXNUpRBNPrJWuV1qimmJbgA/exec?action=crm_leads&key=snappy_crm_2026';
+    const url = 'https://script.google.com/macros/s/AKfycbyyQPxQfHWB8Y_7GyR7Uh-zn8DEru429ASvGfzAGjkEkjvk6GBdFZg1zpl9DpTtZFV1Fg/exec?action=crm_leads&key=snappy_crm_2026';
     const response = await fetch(url, {
       redirect: 'follow',
       headers: { 'Accept': 'application/json' }
