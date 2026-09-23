@@ -5958,7 +5958,6 @@ function MarketingTab() {
     </div>
 
     {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
-    {sideErr && <div style={{background:"#FFF8E6",border:`1px solid ${G.gold}66`,borderRadius:8,padding:"8px 12px",fontSize:12,color:G.muted,marginBottom:12}}>Realized strip is missing data ({sideErr}). Recompute retries.</div>}
 
     {loading && !stats ? <div style={{color:G.muted}}>Loading…</div> :
      rows.length === 0 ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
