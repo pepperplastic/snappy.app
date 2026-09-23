@@ -268,6 +268,7 @@ function doPost(e) {
       'capturePaymentId','generateSelfServeToken',
       'pushToLeadsOnline','uploadLeadsOnlinePhotos',
             'manualCustomerShipment','migrate','getAffiliates','addAffiliate','updateAffiliate','deleteAffiliate','getAffiliateStats',
+      'getAffiliateRecords',
       'getMarketingRoi','getAdSpend','addAdSpend','deleteAdSpend','syncMetaSpend','getSetting','setSetting',
       'getCommsDashboard','addDoNotContact','getLabelUrl','getRules','explainRegistration',
     ];
@@ -298,6 +299,7 @@ function doPost(e) {
     if (action === 'updateAffiliate')   return jsonResponse(updateAffiliate(parsed.affiliate_id, parsed.updates));
     if (action === 'deleteAffiliate')   return jsonResponse(deleteAffiliate(parsed.affiliate_id));
     if (action === 'getAffiliateStats') return jsonResponse(getAffiliateStats(parsed));
+    if (action === 'getAffiliateRecords') return jsonResponse(getAffiliateRecords(parsed));
         // ── ROI / Ad Spend ──
     if (action === 'getMarketingRoi') return jsonResponse(handleGetMarketingRoi(parsed));
     if (action === 'getAdSpend')      return jsonResponse({ success: true, rows: getAdSpend(parsed) });

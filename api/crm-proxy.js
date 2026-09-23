@@ -69,7 +69,7 @@ const WRITE_ACTIONS = new Set([
   'capturePaymentId', 'generateSelfServeToken',
   'pushToLeadsOnline', 'uploadLeadsOnlinePhotos',
   'manualCustomerShipment', 'getAffiliates', 'addAffiliate', 'updateAffiliate',
-  'deleteAffiliate', 'getAffiliateStats',
+  'deleteAffiliate', 'getAffiliateStats', 'getAffiliateRecords',
   'getMarketingRoi', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend','getSetting','setSetting',
   'getCommsDashboard', 'addDoNotContact', 'getLabelUrl', 'getRules', 'explainRegistration',
 ]);

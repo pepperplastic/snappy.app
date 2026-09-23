@@ -342,3 +342,182 @@ function testAffiliateStats() {
   }
   return r;
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  DRILL-DOWN — the records behind a REGS / ARRIVED / PURCHASED number
+//
+//  Same three passes as getAffiliateStats, and deliberately the same rules
+//  (first-touch ref, "registration" = address + shipping present, the
+//  ARRIVED_STAGES / PURCHASED_STAGES lists) so a drill-down can never
+//  disagree with the count it was opened from. One row per shipment; a
+//  registered customer with no shipment still gets a row, with blank
+//  shipment fields. counts_reg marks one row per customer so the caller can
+//  show REGS without double-counting a customer who sent two boxes.
+//
+//  ref_codes is an explicit list — the customer-referral group row passes
+//  every r-… code at once, which is also how its aggregate is drilled.
+// ═══════════════════════════════════════════════════════════════════════
+var AFF_RECORDS_MAX = 5000;
+
+function _affDate(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString();
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? String(v) : d.toISOString();
+}
+
+function getAffiliateRecords(params) {
+  params = params || {};
+
+  var codes = params.ref_codes;
+  if (typeof codes === 'string') codes = codes.split(',');
+  if (!codes || !codes.length) return { success: false, error: 'ref_codes required' };
+  var want = {};
+  codes.forEach(function (c) { c = String(c || '').trim().toLowerCase(); if (c) want[c] = true; });
+  if (!Object.keys(want).length) return { success: false, error: 'ref_codes required' };
+
+  var matureDays = parseInt(params.mature_days, 10);
+  if (isNaN(matureDays)) matureDays = 30;
+  if (matureDays < 0) matureDays = 0;
+  var matureCutoff = new Date(Date.now() - matureDays * 86400000);
+
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+
+  // ── Pass 1: Lead Intake → first-touch ref + earliest registration ──
+  var leadData = ss.getSheetByName(TAB.LEADS).getDataRange().getValues();
+  var refIdx = (typeof COL.REF === 'number') ? COL.REF : leadData[0].indexOf('Ref');
+  var nameIdx = (typeof COL.NAME === 'number') ? COL.NAME : leadData[0].indexOf('Name');
+
+  var byEmail = {};
+  for (var r = 1; r < leadData.length; r++) {
+    var em = String(leadData[r][COL.EMAIL] || '').toLowerCase().trim();
+    if (!em || em.indexOf('@') === -1) continue;
+    var ts = leadData[r][COL.TIMESTAMP];
+    var tsDate = ts instanceof Date ? ts : new Date(ts);
+    if (isNaN(tsDate.getTime())) continue;
+
+    if (!byEmail[em]) byEmail[em] = { ref: '', refTs: null, regTs: null, name: '' };
+    var rec = byEmail[em];
+
+    var ref = refIdx >= 0 ? String(leadData[r][refIdx] || '').trim().toLowerCase() : '';
+    if (ref && (!rec.refTs || tsDate < rec.refTs)) { rec.ref = ref; rec.refTs = tsDate; }
+
+    var addr = String(leadData[r][COL.ADDRESS] || '').trim();
+    var ship = String(leadData[r][COL.SHIPPING] || '').trim();
+    if (addr && ship && (!rec.regTs || tsDate < rec.regTs)) rec.regTs = tsDate;
+    if (!rec.name && nameIdx >= 0) rec.name = String(leadData[r][nameIdx] || '').trim();
+  }
+
+  // Only the emails this call asked about, and only completed registrations —
+  // the same two filters getAffiliateStats applies before it counts anything.
+  var wanted = {};
+  Object.keys(byEmail).forEach(function (em) {
+    var rec = byEmail[em];
+    if (!rec.ref || !want[rec.ref] || !rec.regTs) return;
+    wanted[em] = { ref: rec.ref, regTs: rec.regTs, name: rec.name, mature: rec.regTs <= matureCutoff, rows: [] };
+  });
+  if (!Object.keys(wanted).length) {
+    return { success: true, mature_days: matureDays, records: [], truncated: false };
+  }
+
+  // ── Pass 2: Customers → customer_id ↔ email ──
+  var custData = ss.getSheetByName(TAB.CUSTOMERS).getDataRange().getValues();
+  var cH = custData[0];
+  var cIdIdx = cH.indexOf('customer_id'), cEmIdx = cH.indexOf('email'), cNmIdx = cH.indexOf('name');
+  var custIdToEmail = {}, emailToCust = {};
+  for (var r = 1; r < custData.length; r++) {
+    var cid = custData[r][cIdIdx];
+    if (!cid) continue;
+    var cem = String(custData[r][cEmIdx] || '').toLowerCase().trim();
+    custIdToEmail[cid] = cem;
+    if (cem && wanted[cem] && !emailToCust[cem]) {
+      emailToCust[cem] = { customer_id: cid, name: String(custData[r][cNmIdx] || '').trim() };
+    }
+  }
+
+  // ── Pass 3: Shipments → one record per shipment ──
+  var shipData = ss.getSheetByName(TAB.SHIPMENTS).getDataRange().getValues();
+  var sH = shipData[0];
+  var ix = {};
+  ['shipment_id','customer_id','stage','received_at','purchase_price','sent_at','created_at',
+   'purchased_at','paid_at','flex_click_id','flex_postback_sent'].forEach(function (k) { ix[k] = sH.indexOf(k); });
+
+  function cell(row, key) { return ix[key] >= 0 ? row[ix[key]] : ''; }
+
+  for (var r = 1; r < shipData.length; r++) {
+    var row = shipData[r];
+    var em = custIdToEmail[cell(row, 'customer_id')];
+    if (!em || !wanted[em]) continue;
+    var stage = String(cell(row, 'stage') || '').toLowerCase().trim();
+    var received = cell(row, 'received_at');
+    var didArrive = ARRIVED_STAGES.indexOf(stage) !== -1 || String(received || '').trim() !== '';
+    var purchasedAt = _affDate(cell(row, 'purchased_at')) || _affDate(cell(row, 'paid_at'));
+    wanted[em].rows.push({
+      shipment_id: String(cell(row, 'shipment_id') || ''),
+      customer_id: String(cell(row, 'customer_id') || ''),
+      sent_at: _affDate(cell(row, 'sent_at')),
+      arrived_at: _affDate(received),
+      purchased_at: purchasedAt,
+      paid: parseFloat(cell(row, 'purchase_price')) || 0,
+      stage: stage,
+      flex_click_id: String(cell(row, 'flex_click_id') || ''),
+      flex_postback_sent: _affDate(cell(row, 'flex_postback_sent')),
+      arrived: didArrive,
+      purchased: PURCHASED_STAGES.indexOf(stage) !== -1,
+      _sortTs: new Date(_affDate(cell(row, 'sent_at')) || _affDate(cell(row, 'created_at')) || 0).getTime() || 0,
+    });
+  }
+
+  // ── Flatten. Earliest shipment first, and that row carries counts_reg. ──
+  var records = [], truncated = false;
+  Object.keys(wanted).forEach(function (em) {
+    if (truncated) return;
+    var w = wanted[em];
+    var who = emailToCust[em] || { customer_id: '', name: '' };
+    var base = {
+      ref_code: w.ref, email: em, name: who.name || w.name || '',
+      registered_at: _affDate(w.regTs), mature: w.mature,
+    };
+    w.rows.sort(function (a, b) { return a._sortTs - b._sortTs; });
+    if (!w.rows.length) {
+      records.push(_affMerge(base, {
+        customer_id: who.customer_id, shipment_id: '', sent_at: '', arrived_at: '', purchased_at: '',
+        paid: 0, stage: '', flex_click_id: '', flex_postback_sent: '',
+        arrived: false, purchased: false, counts_reg: true,
+      }));
+      return;
+    }
+    w.rows.forEach(function (s, i) {
+      if (records.length >= AFF_RECORDS_MAX) { truncated = true; return; }
+      delete s._sortTs;
+      s.counts_reg = (i === 0);
+      if (!s.customer_id) s.customer_id = who.customer_id;
+      records.push(_affMerge(base, s));
+    });
+  });
+
+  return { success: true, mature_days: matureDays, records: records, truncated: truncated };
+}
+
+function _affMerge(base, extra) {
+  var o = {};
+  Object.keys(base).forEach(function (k) { o[k] = base[k]; });
+  Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+  return o;
+}
+
+// ── Run from the editor to check a code without the CRM ──
+function testAffiliateRecords() {
+  var stats = getAffiliateStats({ mature_days: 30 });
+  if (!stats.affiliates.length) { Logger.log('no affiliates'); return; }
+  var code = stats.affiliates[0].ref_code;
+  var r = getAffiliateRecords({ ref_codes: [code], mature_days: 30 });
+  Logger.log('═══ RECORDS for ?ref=' + code + ' — ' + r.records.length + ' row(s) ═══');
+  r.records.slice(0, 25).forEach(function (x) {
+    Logger.log('  ' + (x.shipment_id || '(no shipment)') + ' · ' + x.name + ' · ' + x.email +
+      ' · reg ' + String(x.registered_at).slice(0, 10) + ' · ' + (x.stage || '—') +
+      (x.arrived ? ' · arrived' : '') + (x.purchased ? ' · purchased $' + x.paid : '') +
+      (x.counts_reg ? ' · [reg]' : ''));
+  });
+}

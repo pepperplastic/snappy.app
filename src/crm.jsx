@@ -5889,6 +5889,181 @@ function RoiWeeklyChart({weeks}) {
   </div>;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  MARKETING — customer-referral grouping + count drill-down (Sep 23)
+//
+//  referral.gs gives every paid customer their own r-<name>-<id> affiliate
+//  row, so the registry and the funnel table grow by one row per customer and
+//  the channels that cost money get buried in them. The r-… rows collapse into
+//  a single group row, expandable inline. The aggregate is recomputed the way
+//  _finaliseBucket does it server-side — rates from the summed counts (never an
+//  average of the children's percentages) and payout summed, because each
+//  referrer carries their own cpl and bonus.
+// ═══════════════════════════════════════════════════════════════
+function isReferralCode(c){ return /^r-/i.test(String(c||"")); }
+const REF_GROUP_ID = "__customer_referrals__";
+
+function useSticky(key, initial){
+  const [v,setV] = useState(()=>{ try{ const s=localStorage.getItem(key); return s===null?initial:JSON.parse(s); }catch{ return initial; } });
+  useEffect(()=>{ try{ localStorage.setItem(key,JSON.stringify(v)); }catch{} },[key,v]);
+  return [v,setV];
+}
+
+function Chevron({open}){
+  return <span style={{display:"inline-block",width:12,fontSize:10,color:G.muted,transform:open?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▶</span>;
+}
+
+function sumBucket(list, which){
+  const b = {registrations:0,arrived:0,purchased:0,paid:0,appraised:0,qualifying:0,payout:0};
+  let prorated = false;
+  list.forEach(a=>{
+    const s = a[which] || {};
+    b.registrations += s.registrations||0; b.arrived += s.arrived||0; b.purchased += s.purchased||0;
+    b.paid += s.paid||0; b.appraised += s.appraised||0; b.qualifying += s.qualifying||0; b.payout += s.payout||0;
+    if(s.spend_prorated) prorated = true;
+  });
+  b.ship_rate     = b.registrations ? b.arrived/b.registrations : null;
+  b.purchase_rate = b.arrived ? b.purchased/b.arrived : null;
+  b.margin = Math.round((b.appraised - b.paid)*100)/100;
+  b.net    = Math.round((b.margin - b.payout)*100)/100;
+  b.cost_per_reg     = b.registrations ? b.payout/b.registrations : null;
+  b.cost_per_arrival = b.arrived ? b.payout/b.arrived : null;
+  b.spend_prorated = prorated;
+  return b;
+}
+
+// ── Drill-down: the records behind a REGS / ARRIVED / PURCHASED count ──
+const DRILL_LABEL = {regs:"Registrations", arrived:"Arrived", purchased:"Purchased"};
+const DRILL_COLS = [
+  {k:"customer_id",   label:"Customer"},
+  {k:"shipment_id",   label:"Shipment"},
+  {k:"name",          label:"Name"},
+  {k:"email",         label:"Email"},
+  {k:"registered_at", label:"Registered", type:"date"},
+  {k:"sent_at",       label:"Label sent", type:"date"},
+  {k:"arrived_at",    label:"Arrived",    type:"date"},
+  {k:"purchased_at",  label:"Purchased",  type:"date"},
+  {k:"paid",          label:"Paid",       type:"money"},
+  {k:"stage",         label:"Stage"},
+];
+// Only shown when the set actually carries FlexOffers clicks.
+const DRILL_FLEX_COLS = [
+  {k:"flex_click_id",      label:"Flex click ID"},
+  {k:"flex_postback_sent", label:"Postback", type:"postback"},
+];
+function drillDate(v){ if(!v) return ""; const d=new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString(); }
+
+function RecordsDrawer({drill, matureDays, view, onClose}){
+  const [recs,setRecs]   = useState(null);
+  const [err,setErr]     = useState("");
+  const [trunc,setTrunc] = useState(false);
+  const [sort,setSort]   = useState({k:"registered_at", dir:"desc"});
+
+  useEffect(()=>{
+    let dead = false;
+    (async()=>{
+      setRecs(null); setErr("");
+      try{
+        const r = await apiPost({action:"getAffiliateRecords", ref_codes:drill.codes, mature_days:matureDays});
+        if(dead) return;
+        if(r && r.success){ setRecs(r.records||[]); setTrunc(!!r.truncated); }
+        else setErr((r&&r.error)||"Couldn't load records");
+      }catch(e){ if(!dead) setErr(e.message||String(e)); }
+    })();
+    return ()=>{ dead = true; };
+  },[drill,matureDays]);
+
+  useEffect(()=>{
+    const esc = e=>{ if(e.key==="Escape") onClose(); };
+    window.addEventListener("keydown",esc);
+    return ()=>window.removeEventListener("keydown",esc);
+  },[onClose]);
+
+  // Filter on exactly the flags the server set, so a drill-down can never
+  // disagree with the number it was opened from: cohort view first, then metric.
+  // counts_reg is one row per customer — a customer who sent two boxes is one
+  // registration but two arrivals.
+  const filtered = (recs||[]).filter(r=>{
+    if(view==="mature" && !r.mature) return false;
+    if(drill.metric==="regs")     return r.counts_reg;
+    if(drill.metric==="arrived")  return r.arrived;
+    return r.purchased;
+  });
+  const showFlex = filtered.some(r=>r.flex_click_id);
+  const cols = showFlex ? DRILL_COLS.concat(DRILL_FLEX_COLS) : DRILL_COLS;
+
+  const sorted = filtered.slice().sort((a,b)=>{
+    const col = cols.find(c=>c.k===sort.k) || {};
+    let x=a[sort.k], y=b[sort.k];
+    if(col.type==="money"){ x=parseFloat(x)||0; y=parseFloat(y)||0; }
+    else if(col.type==="date"||col.type==="postback"){ x=x?(new Date(x).getTime()||0):0; y=y?(new Date(y).getTime()||0):0; }
+    else { x=String(x||"").toLowerCase(); y=String(y||"").toLowerCase(); }
+    if(x<y) return sort.dir==="asc"?-1:1;
+    if(x>y) return sort.dir==="asc"?1:-1;
+    return 0;
+  });
+
+  function toggleSort(k){ setSort(s=> s.k===k ? {k, dir:s.dir==="asc"?"desc":"asc"} : {k, dir:"asc"}); }
+
+  function exportCsv(){
+    const q = v => `"${String(v==null?"":v).replace(/"/g,'""')}"`;
+    const head = cols.map(c=>q(c.label)).join(",");
+    const body = sorted.map(r=>cols.map(c=>q(c.type==="money" ? (parseFloat(r[c.k])||0).toFixed(2) : r[c.k])).join(",")).join("\n");
+    const blob = new Blob([head+"\n"+body],{type:"text/csv"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${drill.slug}_${drill.metric}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  const cell = {padding:"7px 10px",fontSize:12,borderTop:`1px solid ${G.border}`,whiteSpace:"nowrap",color:G.text};
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1200,display:"flex",justifyContent:"flex-end"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"min(1100px, 96vw)",height:"100%",background:"#fff",display:"flex",flexDirection:"column",boxShadow:"-8px 0 30px rgba(0,0,0,0.25)"}}>
+      <div style={{padding:"14px 20px",borderBottom:`1px solid ${G.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:16,fontWeight:700,color:G.text}}>{drill.name} — {DRILL_LABEL[drill.metric]}</div>
+          <div style={{fontSize:11,color:G.muted,marginTop:2}}>
+            {view==="mature" ? `mature cohorts only · registered ${matureDays}+ days ago` : "all cohorts"}
+            {drill.codes.length>1 ? ` · ${drill.codes.length} ref codes` : ""}
+          </div>
+        </div>
+        <div style={{flex:1}}/>
+        <span style={{fontSize:12,color:G.muted,whiteSpace:"nowrap"}}>{recs===null?"":`${sorted.length} record${sorted.length===1?"":"s"}`}</span>
+        <Btn v="ghost" small onClick={exportCsv} disabled={!sorted.length}>Export CSV</Btn>
+        <Btn v="ghost" small onClick={onClose}>✕</Btn>
+      </div>
+      <div style={{flex:1,overflow:"auto"}}>
+        {err && <div style={{padding:20,color:G.red,fontSize:13}}>{err}</div>}
+        {!err && recs===null && <div style={{padding:20,color:G.muted,fontSize:13}}>Loading…</div>}
+        {!err && recs!==null && !sorted.length && <div style={{padding:32,color:G.muted,fontSize:13,textAlign:"center"}}>No records behind this number.</div>}
+        {!err && !!sorted.length && <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead><tr style={{background:G.dark,color:G.gold}}>
+            {cols.map(c=><th key={c.k} onClick={()=>toggleSort(c.k)}
+              style={{padding:"9px 10px",fontSize:11,fontWeight:700,textAlign:"left",cursor:"pointer",whiteSpace:"nowrap",letterSpacing:"0.04em",textTransform:"uppercase",position:"sticky",top:0,background:G.dark}}>
+              {c.label}{sort.k===c.k ? <span style={{marginLeft:4}}>{sort.dir==="asc"?"▲":"▼"}</span> : null}
+            </th>)}
+          </tr></thead>
+          <tbody>
+            {sorted.map((r,i)=><tr key={(r.shipment_id||r.email)+"_"+i} style={{background:i%2?"#FAF9F7":"#fff"}}>
+              {cols.map(c=><td key={c.k} style={{...cell,...(c.k==="email"?{whiteSpace:"normal",wordBreak:"break-all"}:{})}}>
+                {c.type==="date"     ? (drillDate(r[c.k]) || <span style={{color:G.muted}}>—</span>)
+                 : c.type==="money"  ? (r[c.k] ? money(r[c.k]) : <span style={{color:G.muted}}>—</span>)
+                 : c.type==="postback" ? (r.flex_postback_sent
+                     ? <span style={{color:G.green}}>✓ {drillDate(r.flex_postback_sent)}</span>
+                     : <span style={{color:G.muted}}>not fired</span>)
+                 : (r[c.k] || <span style={{color:G.muted}}>—</span>)}
+              </td>)}
+            </tr>)}
+          </tbody>
+        </table>}
+        {trunc && <div style={{padding:12,fontSize:11,color:G.orange}}>Capped at the first 5,000 rows — narrow the view to see the rest.</div>}
+      </div>
+    </div>
+  </div>;
+}
+
+
 function MarketingTab() {
   const [stats,setStats]     = useState(null);
   const [loading,setLoading] = useState(true);
@@ -5898,6 +6073,9 @@ function MarketingTab() {
   const [showAdd,setShowAdd] = useState(false);
   const [editing,setEditing] = useState(null);
   const [raw,setRaw]         = useState([]);         // full affiliate rows (for edit)
+  const [drill,setDrill]     = useState(null);       // {metric, name, codes, slug}
+  const [linksOpen,setLinksOpen] = useSticky("snappy_mkt_links_referrals", false);
+  const [tableOpen,setTableOpen] = useSticky("snappy_mkt_table_referrals", false);
 
   const load = useCallback(async ()=>{
     setLoading(true); setErr("");
@@ -5921,12 +6099,107 @@ function MarketingTab() {
   }
 
   const rows = stats ? stats.affiliates : [];
+  const refRows  = rows.filter(a=>isReferralCode(a.ref_code));
+  const mainRows = rows.filter(a=>!isReferralCode(a.ref_code));
+  const groupRow = refRows.length ? {
+    affiliate_id: REF_GROUP_ID, group: true, active: true, channel_type: "affiliate",
+    name: `Customer referrals (${refRows.length})`, ref_code: "",
+    codes: refRows.map(a=>a.ref_code),
+    mature: sumBucket(refRows,"mature"), all: sumBucket(refRows,"all"),
+  } : null;
+  // Same order the server sorts by, with the group row taking its place on the
+  // strength of the whole cohort rather than any one referrer.
+  const tableRows = (groupRow ? mainRows.concat([groupRow]) : mainRows)
+    .sort((x,y)=>((y.all&&y.all.registrations)||0)-((x.all&&x.all.registrations)||0));
   const th = {padding:"10px 12px",textAlign:"right",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"};
   const td = {padding:"10px 12px",textAlign:"right",fontSize:13,borderTop:`1px solid ${G.border}`};
+
+  function openDrill(a, metric){
+    setDrill({
+      metric, name: a.name,
+      codes: a.group ? a.codes : [a.ref_code],
+      slug: (a.group ? "customer_referrals" : a.ref_code) || "affiliate",
+    });
+  }
+  function countCell(a, metric, value, style){
+    if(!value) return <td style={style}>0</td>;
+    return <td style={style}>
+      <span onClick={()=>openDrill(a,metric)} title="Show the records behind this number"
+        style={{cursor:"pointer",borderBottom:`1px dotted ${G.muted}`}}>{value}</span>
+    </td>;
+  }
+
+  function linkRow(a, child){
+    const link = `${SITE_BASE}/?ref=${a.ref_code}`;
+    const full = raw.find(x=>x.affiliate_id===a.affiliate_id) || a;
+    return <div key={a.affiliate_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",marginLeft:child?22:0,background:a.active?G.bg:"#F7F5F2",borderRadius:6,opacity:a.active?1:0.6}}>
+      <div style={{minWidth:child?118:140,fontWeight:600,fontSize:13,color:G.text}}>
+        {a.name}{!a.active && <span style={{marginLeft:6,fontSize:10,color:G.muted}}>(inactive)</span>}
+      </div>
+      <code style={{flex:1,fontSize:12,color:G.muted,wordBreak:"break-all"}}>{link}</code>
+      <span style={{fontSize:11,color:G.muted,whiteSpace:"nowrap"}}>
+        {a.channel_type==="campaign"
+          ? `spend ${money(a.ad_spend)}`
+          : `$${a.cpl}/reg${a.bonus_amount>0?` + $${a.bonus_amount} ≥ $${a.bonus_threshold}`:""}`}
+      </span>
+      <Btn v="ghost" small onClick={()=>{navigator.clipboard?.writeText(link); alert("Copied!");}}>Copy</Btn>
+      <Btn v="ghost" small onClick={()=>setEditing(full)}>Edit</Btn>
+      <Btn v="ghost" small onClick={()=>remove(a)}>Delete</Btn>
+    </div>;
+  }
+
+  function statRow(a, child){
+    const b = (view==="mature" ? a.mature : a.all) || {};
+    const netCol = b.net>=0 ? G.green : G.red;
+    const tdc = child ? {...td,background:"#FAF9F7"} : td;
+    return <tr key={a.affiliate_id} style={{opacity:a.active?1:0.55}}>
+      <td style={{...tdc,textAlign:"left",fontWeight:600,paddingLeft:child?30:12,cursor:a.group?"pointer":"default"}}
+          onClick={a.group?()=>setTableOpen(!tableOpen):undefined}>
+        {a.group ? <Chevron open={tableOpen}/> : null}{a.group?" ":""}{a.name}
+        {a.channel_type==="campaign" && <span style={{marginLeft:6,background:"#E8F0FF",color:G.blue,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>AD</span>}
+        <div style={{fontSize:11,color:G.muted,fontWeight:400}}>
+          {a.group ? `${refRows.length} referrer${refRows.length===1?"":"s"} — click to ${tableOpen?"collapse":"expand"}` : `?ref=${a.ref_code}`}
+        </div>
+      </td>
+      {countCell(a,"regs",b.registrations,tdc)}
+      {countCell(a,"arrived",b.arrived,tdc)}
+      <td style={{...tdc,color:G.muted}}>{pct(b.ship_rate)}</td>
+      {countCell(a,"purchased",b.purchased,{...tdc,color:G.green,fontWeight:600})}
+      <td style={{...tdc,color:G.muted}}>{pct(b.purchase_rate)}</td>
+      <td style={tdc}>{money(b.margin)}</td>
+      <td style={{...tdc,color:G.red}} title={b.spend_prorated?"Ad spend prorated by this cohort's share of registrations":""}>
+        {money(b.payout)}{b.spend_prorated?"*":""}
+      </td>
+      <td style={{...tdc,color:netCol,fontWeight:700}}>{money(b.net)}</td>
+      <td style={{...tdc,color:G.muted}}>{b.cost_per_reg===null||b.cost_per_reg===undefined?"—":money(b.cost_per_reg)}</td>
+      <td style={{...tdc,color:G.muted}}>{b.cost_per_arrival===null||b.cost_per_arrival===undefined?"—":money(b.cost_per_arrival)}</td>
+    </tr>;
+  }
+
+  // Flattened rather than nested so a group and its children stay valid table
+  // rows (no fragment wrapper inside <tbody>).
+  const linkBody = [];
+  mainRows.forEach(a=>linkBody.push(linkRow(a,false)));
+  if(groupRow){
+    linkBody.push(<div key="__reflinks" onClick={()=>setLinksOpen(!linksOpen)}
+      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:G.bg,borderRadius:6,cursor:"pointer"}}>
+      <Chevron open={linksOpen}/>
+      <div style={{minWidth:128,fontWeight:600,fontSize:13,color:G.text}}>Customer referrals ({refRows.length})</div>
+      <code style={{flex:1,fontSize:12,color:G.muted}}>{SITE_BASE}/?ref=r-…</code>
+      <span style={{fontSize:11,color:G.muted,whiteSpace:"nowrap"}}>{linksOpen?"hide":"show"} individual codes</span>
+    </div>);
+    if(linksOpen) refRows.forEach(a=>linkBody.push(linkRow(a,true)));
+  }
+  const tableBody = [];
+  tableRows.forEach(a=>{
+    tableBody.push(statRow(a,false));
+    if(a.group && tableOpen) refRows.forEach(x=>tableBody.push(statRow(x,true)));
+  });
 
   return <div style={{flex:1,overflow:"auto",padding:24,background:G.bg}}>
     {showAdd && <AffiliateModal onSave={()=>{setShowAdd(false);load();}} onCancel={()=>setShowAdd(false)}/>}
     {editing && <AffiliateModal affiliate={editing} onSave={()=>{setEditing(null);load();}} onCancel={()=>setEditing(null)}/>}
+    {drill && <RecordsDrawer drill={drill} matureDays={matureDays} view={view} onClose={()=>setDrill(null)}/>}
 
     <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
       <h2 style={{margin:0,fontSize:22,color:G.text}}>Marketing</h2>
@@ -5970,24 +6243,7 @@ function MarketingTab() {
       <div style={{background:"#fff",borderRadius:10,border:`1px solid ${G.border}`,padding:16,marginBottom:16}}>
         <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Tracking links</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {rows.map(a=>{
-            const link = `${SITE_BASE}/?ref=${a.ref_code}`;
-            const full = raw.find(x=>x.affiliate_id===a.affiliate_id) || a;
-            return <div key={a.affiliate_id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:a.active?G.bg:"#F7F5F2",borderRadius:6,opacity:a.active?1:0.6}}>
-              <div style={{minWidth:140,fontWeight:600,fontSize:13,color:G.text}}>
-                {a.name}{!a.active && <span style={{marginLeft:6,fontSize:10,color:G.muted}}>(inactive)</span>}
-              </div>
-              <code style={{flex:1,fontSize:12,color:G.muted,wordBreak:"break-all"}}>{link}</code>
-              <span style={{fontSize:11,color:G.muted,whiteSpace:"nowrap"}}>
-                {a.channel_type==="campaign"
-                  ? `spend ${money(a.ad_spend)}`
-                  : `$${a.cpl}/reg${a.bonus_amount>0?` + $${a.bonus_amount} ≥ $${a.bonus_threshold}`:""}`}
-              </span>
-              <Btn v="ghost" small onClick={()=>{navigator.clipboard?.writeText(link); alert("Copied!");}}>Copy</Btn>
-              <Btn v="ghost" small onClick={()=>setEditing(full)}>Edit</Btn>
-              <Btn v="ghost" small onClick={()=>remove(a)}>Delete</Btn>
-            </div>;
-          })}
+          {linkBody}
         </div>
       </div>
 
@@ -6010,29 +6266,7 @@ function MarketingTab() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(a=>{
-              const b = view==="mature" ? a.mature : a.all;
-              const netCol = b.net>=0 ? G.green : G.red;
-              return <tr key={a.affiliate_id} style={{opacity:a.active?1:0.55}}>
-                <td style={{...td,textAlign:"left",fontWeight:600}}>
-                  {a.name}
-                  {a.channel_type==="campaign" && <span style={{marginLeft:6,background:"#E8F0FF",color:G.blue,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>AD</span>}
-                  <div style={{fontSize:11,color:G.muted,fontWeight:400}}>?ref={a.ref_code}</div>
-                </td>
-                <td style={td}>{b.registrations}</td>
-                <td style={td}>{b.arrived}</td>
-                <td style={{...td,color:G.muted}}>{pct(b.ship_rate)}</td>
-                <td style={{...td,color:G.green,fontWeight:600}}>{b.purchased}</td>
-                <td style={{...td,color:G.muted}}>{pct(b.purchase_rate)}</td>
-                <td style={td}>{money(b.margin)}</td>
-                <td style={{...td,color:G.red}} title={b.spend_prorated?"Ad spend prorated by this cohort's share of registrations":""}>
-                  {money(b.payout)}{b.spend_prorated?"*":""}
-                </td>
-                <td style={{...td,color:netCol,fontWeight:700}}>{money(b.net)}</td>
-                <td style={{...td,color:G.muted}}>{b.cost_per_reg===null?"—":money(b.cost_per_reg)}</td>
-                <td style={{...td,color:G.muted}}>{b.cost_per_arrival===null?"—":money(b.cost_per_arrival)}</td>
-              </tr>;
-            })}
+            {tableBody}
           </tbody>
         </table>
       </div>
