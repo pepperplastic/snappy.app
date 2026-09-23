@@ -37,7 +37,7 @@ var COLS = {
     'source','created_at','notes',
     'id_type','id_number','id_state','date_birth','id_photo_url',
     'sworn_statement_at','sworn_statement_ip',
-    'quo_contact_id'
+    'quo_contact_id','winback_b_sent_at','winback_c_sent_at'
   ],
   SHIPMENTS: [
     // JUN 5 FIX: This array now mirrors the LIVE sheet's real column order
@@ -57,7 +57,8 @@ var COLS = {
     'purchased_at','returned_at','sworn_statement_at','sworn_statement_ip','leadsonline_submitted_at',
     'shipping_cost','shipping_service','easypost_shipment_id','label_qr_url','self_serve_submitted_at',
     'offer_price','paid_at','shippo_transaction_id','ship_followups_sent','capi_shipped_sent',
-            'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent','triage_flag','completed_at'
+            'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent','triage_flag','completed_at',
+            'relabel_requested_at','winback_a_sent_at','winback_a_sms_at'
   ],
   CONTACT_LOG: [
     'log_id','customer_id','timestamp','type','notes','shipment_id','direction','source','kind'
@@ -326,6 +327,10 @@ function doPost(e) {
     if (action === 'deleteContactLog')  return jsonResponse(deleteContactLogEntry(parsed));
     if (action === 'capturePaymentId')   return jsonResponse(handleCapturePaymentId(parsed));
     if (action === 'generateSelfServeToken') return jsonResponse(handleGenerateSelfServeToken(parsed));
+    // ── Public, token-gated win-back relabel (winback.gs) — no CRM key, same
+    //    shape as the self-serve token actions below it. ──
+    if (action === 'relabelValidate')       return jsonResponse(handleRelabelValidate(parsed));
+    if (action === 'relabelRequest')        return jsonResponse(handleRelabelRequest(parsed));
     if (action === 'validateSelfServeToken') return jsonResponse(handleValidateSelfServeToken(parsed));
     if (action === 'submitSelfServe')        return jsonResponse(handleSubmitSelfServe(parsed));
     if (action === 'pushToLeadsOnline')      return jsonResponse(handlePushToLeadsOnline(parsed));
@@ -2599,6 +2604,11 @@ var EASYPOST_API_KEY = _SP.getProperty('EASYPOST_API_KEY') || '';
 var SHIPPO_API_KEY   = _SP.getProperty('SHIPPO_API_TOKEN') || '';   // the only definition — shippoUSPS.gs uses this too
 var QUO_API_KEY      = _SP.getProperty('QUO_API_KEY') || '';
 var LABEL_PROVIDER = 'shippo';  // 'shippo' or 'easypost'
+// Sep 23: set true around a generateAndSendLabel call that must NEVER produce a
+// pay-on-creation label. Shippo labels are scan-based (extra.is_return), EasyPost
+// bills the moment the label is created — the win-back relabel link is public, so
+// it runs Shippo-only and fails loudly rather than falling back.
+var LABEL_SHIPPO_ONLY = false;
 var QUO_FROM_NUMBER  = '8666130704';
 var SHIP_FROM = {
   name: 'Snappy Gold', street1: '1686 S Federal Hwy #318',
@@ -3034,6 +3044,11 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
 
     // EasyPost path: runs if (a) LABEL_PROVIDER is 'easypost', OR
     // (b) Shippo failed above for a USPS label (FedEx returned an error instead).
+    // LABEL_SHIPPO_ONLY callers never get here — EasyPost bills on creation.
+    if (!labelData && LABEL_SHIPPO_ONLY) {
+      Logger.log('Shippo-only request for ' + shipmentId + ': refusing the EasyPost fallback');
+      return { success: false, error: 'Could not create a scan-based label right now. Nothing was charged — reply to this email and I will sort it out.' };
+    }
     if (!labelData) {
     var epAddr = _parseUsAddress(address);
     var street1 = epAddr.street1, city = epAddr.city, state = epAddr.state, zip = epAddr.zip;

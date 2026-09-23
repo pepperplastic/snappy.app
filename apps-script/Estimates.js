@@ -91,8 +91,8 @@ function estimatesByMonth() {
     var people = Object.keys(m.emails).length;
     Logger.log(
       k + '   ' +
-      _pad(m.n, 9) + '  ' + _pad(people, 7) + '  ' +
-      _pad(_usd(m.low), 12) + '  ' + _pad(_usd(mid), 12) + '  ' + _pad(_usd(m.high), 12)
+      _estPad(m.n, 9) + '  ' + _estPad(people, 7) + '  ' +
+      _estPad(_usd(m.low), 12) + '  ' + _estPad(_usd(mid), 12) + '  ' + _estPad(_usd(m.high), 12)
     );
   });
   Logger.log('');
@@ -131,7 +131,7 @@ function purchasedByMonth() {
   Logger.log('month     items    sellers   paid out');
   Object.keys(months).sort().forEach(function (k) {
     var m = months[k];
-    Logger.log(k + '   ' + _pad(m.n, 7) + '  ' + _pad(Object.keys(m.custs).length, 8) + '  ' + _usd(m.total));
+    Logger.log(k + '   ' + _estPad(m.n, 7) + '  ' + _estPad(Object.keys(m.custs).length, 8) + '  ' + _usd(m.total));
   });
   Logger.log('');
   Logger.log('items whose description mentions an engagement/wedding ring: ' + ringCount);
@@ -142,7 +142,7 @@ function purchasedByMonth() {
 function _usd(n) {
   return '$' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
-function _pad(v, w) {
+function _estPad(v, w) {
   var s = String(v);
   while (s.length < w) s = ' ' + s;
   return s;

@@ -46,6 +46,90 @@ function VerifyField({ label, children }) {
   )
 }
 
+// SEP 23: /relabel — public, token-gated one-click new label (win-back emails).
+// Same shape as VerifyPage: token in the URL, /api/crm for both calls, no key.
+function RelabelPage() {
+  const [step, setStep] = useState('loading')      // loading | ready | form | sending | done | error
+  const [msg, setMsg] = useState('')
+  const [info, setInfo] = useState(null)
+  const [token, setToken] = useState('')
+  const [street, setStreet] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
+  const [zip, setZip] = useState('')
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('token')
+    if (!t) { setMsg('No token in the link. Please use the button in the email I sent you.'); setStep('error'); return }
+    setToken(t)
+    fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'relabelValidate', token: t }) })
+      .then(r => r.json())
+      .then(d => {
+        if (!d.success) {
+          const e = d.error
+          setMsg(e === 'expired' ? 'This link has expired. Reply to my email and I will send a fresh one.'
+            : e === 'rate_limited' ? 'This link has been opened too many times. Reply to my email and I will help directly.'
+            : e === 'invalid_token' ? 'This link is not valid. Please use the button in the email I sent you.'
+            : (d.error || 'Something went wrong. Reply to my email and I will sort it out.'))
+          setStep('error'); return
+        }
+        setInfo(d)
+        setStep(d.has_address ? 'ready' : 'form')
+      })
+      .catch(() => { setMsg('Network error. Please try again in a moment.'); setStep('error') })
+  }, [])
+
+  async function request(withAddress) {
+    setStep('sending')
+    const body = { action: 'relabelRequest', token }
+    if (withAddress) body.address = `${street.trim()}, ${city.trim()}, ${state.trim().toUpperCase()}, ${zip.trim()}`
+    try {
+      const r = await fetch('/api/crm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const d = await r.json()
+      if (d.success) { setMsg(d.message || 'Done — check your email.'); setStep('done') }
+      else if (d.error === 'need_address') { setStep('form') }
+      else if (d.error === 'bad_address') { setMsg('That address looks incomplete — please check the street, city, state and ZIP.'); setStep('form') }
+      else { setMsg(d.error || 'Something went wrong. Reply to my email and I will sort it out.'); setStep('error') }
+    } catch { setMsg('Network error. Please try again in a moment.'); setStep('error') }
+  }
+
+  const wrap = { fontFamily: 'Georgia, serif', maxWidth: 520, margin: '0 auto', padding: '40px 20px', color: '#2A2015', lineHeight: 1.6 }
+  const btn = { background: '#C8953C', color: '#fff', border: 'none', borderRadius: 8, padding: '14px 24px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }
+  const inp = { width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 15, border: '1px solid #E4DFD7', borderRadius: 6, marginTop: 6 }
+
+  if (step === 'loading') return <div style={wrap}>Loading…</div>
+  if (step === 'error')   return <div style={wrap}><h2>Sorry —</h2><p>{msg}</p><p style={{ fontSize: 13, color: '#8A8078' }}>Snappy Gold · hello@snappy.gold · 866-613-0704</p></div>
+  if (step === 'done')    return <div style={wrap}><h2>All set{info?.customer?.name ? `, ${String(info.customer.name).split(' ')[0]}` : ''}</h2><p>{msg}</p><p>Nothing else to do — pack the item in any box when the label arrives.</p><p style={{ fontSize: 13, color: '#8A8078' }}>David · Snappy Gold · 866-613-0704</p></div>
+  if (step === 'sending') return <div style={wrap}>One moment — making your label…</div>
+
+  if (step === 'form') return <div style={wrap}>
+    <h2>Where should the label go?</h2>
+    <p>I just need the address you want the prepaid label made out to.</p>
+    <label>Street<input style={inp} value={street} onChange={e => setStreet(e.target.value)} autoComplete="address-line1"/></label>
+    <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+      <label style={{ flex: 2 }}>City<input style={inp} value={city} onChange={e => setCity(e.target.value)} autoComplete="address-level2"/></label>
+      <label style={{ flex: 1 }}>State<input style={inp} value={state} onChange={e => setState(e.target.value)} maxLength={2} autoComplete="address-level1"/></label>
+      <label style={{ flex: 1 }}>ZIP<input style={inp} value={zip} onChange={e => setZip(e.target.value)} maxLength={10} autoComplete="postal-code"/></label>
+    </div>
+    <p style={{ marginTop: 18 }}>
+      <button style={{ ...btn, opacity: (street && city && state && zip) ? 1 : 0.5 }}
+        disabled={!(street && city && state && zip)} onClick={() => request(true)}>Email me the label</button>
+    </p>
+    <p style={{ fontSize: 13, color: '#8A8078' }}>Free both ways. Everything comes back free if my offer isn't right for you.</p>
+  </div>
+
+  return <div style={wrap}>
+    <h2>Want a fresh label{info?.customer?.name ? `, ${String(info.customer.name).split(' ')[0]}` : ''}?</h2>
+    <p>{info?.is_kit
+      ? 'I will put a new shipping kit in the mail to you — just confirm below.'
+      : 'One click and I will email you a new prepaid label for ' + (info?.shipment?.item ? String(info.shipment.item) : 'your item') + '.'}</p>
+    <p><button style={btn} onClick={() => request(false)}>{info?.is_kit ? 'Send me a new kit' : 'Email me a new label'}</button></p>
+    {info?.already_requested && <p style={{ fontSize: 13, color: '#8A8078' }}>(You asked for one recently — clicking again is fine, I will not send duplicates.)</p>}
+    <p style={{ fontSize: 13, color: '#8A8078' }}>Free both ways · no commitment · David · 866-613-0704</p>
+  </div>
+}
+
 function VerifyPage() {
   const [step, setStep]         = useState('loading')  // loading | form | submitting | success | error
   const [errorMsg, setErrorMsg] = useState('')
@@ -1170,6 +1254,10 @@ export default function App() {
   // violated. The verify page is fully independent of the main quote flow.
   if (typeof window !== 'undefined' && window.location.pathname === '/verify') {
     return <VerifyPage />
+  }
+
+  if (typeof window !== 'undefined' && window.location.pathname === '/relabel') {
+    return <RelabelPage />
   }
 
   const [step, setStep] = useState(STEPS.HERO)

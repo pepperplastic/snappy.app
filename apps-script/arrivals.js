@@ -214,6 +214,16 @@ function arrivalsReport(days) {
     if (d && s.customer_id) (reengageByCust[s.customer_id] = reengageByCust[s.customer_id] || []).push(d);
   });
 
+  // Sep 23: win-back campaigns (winback.gs) count as win-back touches too —
+  // A is stamped on the shipment, B and C on the customer.
+  var winbackByCust = {};
+  var addWb = function (cid, d) { if (cid && d) (winbackByCust[cid] = winbackByCust[cid] || []).push(d); };
+  ships.forEach(function (s) { addWb(s.customer_id, toDate(s.winback_a_sent_at)); addWb(s.customer_id, toDate(s.winback_a_sms_at)); });
+  Object.keys(custById).forEach(function (cid) {
+    addWb(cid, toDate(custById[cid].winback_b_sent_at));
+    addWb(cid, toDate(custById[cid].winback_c_sent_at));
+  });
+
   var latestBefore = function (list, when) {
     var best = null;
     (list || []).forEach(function (d) { if (when && d < when && (!best || d > best)) best = d; });
@@ -234,10 +244,12 @@ function arrivalsReport(days) {
 
     var rec = latestBefore(recovByEmail[em], reg);
     var ree = latestBefore(reengageByCust[s.customer_id], reg);
+    var wb  = latestBefore(winbackByCust[s.customer_id], reg);
     var touch = '';
     if (rec && ree) touch = 'recovery ' + fmt(rec) + ' + re-engage ' + fmt(ree);
     else if (rec)   touch = 'after recovery ' + fmt(rec);
     else if (ree)   touch = 'after re-engage ' + fmt(ree);
+    if (wb) touch = (touch ? touch + ' + ' : 'after ') + 'win-back ' + fmt(wb);
 
     rows.push({ channel: cls.label, adset: adset, name: c.name || s.customer_id || '(no name)',
                 shp: s.shipment_id, recv: recv, reg: reg, touch: touch,
