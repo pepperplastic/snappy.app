@@ -66,7 +66,38 @@ function AwayBanner() {
 }
 
 // SEP 23: /relabel — public, token-gated one-click new label (win-back emails).
-// Same shape as VerifyPage: token in the URL, /api/crm for both calls, no key.
+// Same shell, tokens and card treatment as the /verify page (VERIFY_BRAND +
+// cardStyle) so the two public pages match the site rather than each other's
+// rough edges. Item trimming happens here on purpose: the API response shape
+// is unchanged, the page just decides what's worth showing.
+const RELABEL_JUNK = [
+  /^(.)\1{2,}$/i,          // aaaa
+  /^(.{1,4})\1{1,}$/i,     // asdfasdf, abcabc
+  /^[asdfghjkl]+$/i,       // home-row mash
+  /^[qwertyuiop]+$/i,
+  /^[zxcvbnm]+$/i,
+  /^[^aeiou]+$/i,          // no vowels at all
+]
+function relabelLooksLikeItem(s) {
+  const t = String(s || '').trim()
+  if (t.length < 3 || t.length > 60) return false
+  if (!/[a-z]{2}/i.test(t)) return false
+  if (/\d+\s*k\b/i.test(t)) return true                  // "14K rope chain" always reads fine
+  return !RELABEL_JUNK.some(re => re.test(t.replace(/\s+/g, '')))
+}
+// Items are joined with " + " as the customer appends them, so the newest are last.
+function relabelItemPhrase(itemString) {
+  const good = String(itemString || '').split(/\s*\+\s*/).map(s => s.trim()).filter(relabelLooksLikeItem).slice(-2)
+  if (!good.length) return 'your items'
+  return good.length === 1 ? good[0] : `${good[0]} and ${good[1]}`
+}
+function relabelMaskEmail(e) {
+  const s = String(e || '')
+  const at = s.indexOf('@')
+  if (at < 1) return s
+  return s[0] + '***' + s.slice(at)
+}
+
 function RelabelPage() {
   const [step, setStep] = useState('loading')      // loading | ready | form | sending | done | error
   const [msg, setMsg] = useState('')
@@ -113,46 +144,122 @@ function RelabelPage() {
     } catch { setMsg('Network error. Please try again in a moment.'); setStep('error') }
   }
 
-  const wrap = { fontFamily: 'Georgia, serif', maxWidth: 520, margin: '0 auto', padding: '40px 20px', color: '#2A2015', lineHeight: 1.6 }
-  const btn = { background: '#C8953C', color: '#fff', border: 'none', borderRadius: 8, padding: '14px 24px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }
-  const inp = { width: '100%', boxSizing: 'border-box', padding: '10px 12px', fontSize: 15, border: '1px solid #E4DFD7', borderRadius: 6, marginTop: 6 }
+  const B = VERIFY_BRAND
+  const card = { background: '#fff', border: `1px solid ${B.border}`, borderRadius: 8, padding: 28, marginBottom: 20 }
+  const btn = { width: '100%', display: 'block', padding: '16px 24px', fontSize: 17, fontWeight: 600, fontFamily: 'inherit',
+    color: '#fff', background: B.gold, border: 'none', borderRadius: 8, cursor: 'pointer' }
+  const inp = { width: '100%', padding: '12px 14px', fontSize: 15, border: '1px solid #D5CBB8', borderRadius: 6,
+    fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box' }
+  const caption = { fontSize: 13, color: B.light, lineHeight: 1.5, margin: '10px 0 0' }
+  const first = info?.customer?.name ? String(info.customer.name).trim().split(/\s+/)[0] : ''
 
-  if (step === 'loading') return <div style={wrap}>Loading…</div>
-  if (step === 'error')   return <div style={wrap}><h2>Sorry —</h2><p>{msg}</p><p style={{ fontSize: 13, color: '#8A8078' }}>Snappy Gold · hello@snappy.gold · 866-613-0704</p></div>
-  if (step === 'done')    return <div style={wrap}><h2>All set{info?.customer?.name ? `, ${String(info.customer.name).split(' ')[0]}` : ''}</h2><p>{msg}</p><p>Nothing else to do — pack the item in any box when the label arrives.</p><p style={{ fontSize: 13, color: '#8A8078' }}>David · Snappy Gold · 866-613-0704</p></div>
-  if (step === 'sending') return <div style={wrap}>One moment — making your label…</div>
-
-  const awayNote = info?.away_notice
-    ? <p style={{ background: '#FFF8EE', border: '1px solid #C8953C55', borderRadius: 6, padding: '10px 12px', fontSize: 14 }}>{info.away_notice}</p>
-    : null
-
-  if (step === 'form') return <div style={wrap}>
-    <h2>Where should the label go?</h2>
-    {awayNote}
-    <p>I just need the address you want the prepaid label made out to.</p>
-    <label>Street<input style={inp} value={street} onChange={e => setStreet(e.target.value)} autoComplete="address-line1"/></label>
-    <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-      <label style={{ flex: 2 }}>City<input style={inp} value={city} onChange={e => setCity(e.target.value)} autoComplete="address-level2"/></label>
-      <label style={{ flex: 1 }}>State<input style={inp} value={state} onChange={e => setState(e.target.value)} maxLength={2} autoComplete="address-level1"/></label>
-      <label style={{ flex: 1 }}>ZIP<input style={inp} value={zip} onChange={e => setZip(e.target.value)} maxLength={10} autoComplete="postal-code"/></label>
+  const Shell = ({ children }) => (
+    <div style={{ minHeight: '100vh', background: B.cream, fontFamily: 'Georgia, serif', color: B.dark }}>
+      <header style={{ background: B.dark, padding: '20px 24px', borderBottom: `3px solid ${B.gold}`, textAlign: 'center' }}>
+        <h1 style={{ margin: 0, fontSize: 28, color: B.gold, fontWeight: 500, letterSpacing: '0.08em' }}>
+          SNAPPY<span style={{ color: B.cream }}>.GOLD</span>
+        </h1>
+      </header>
+      <main style={{ maxWidth: 520, margin: '0 auto', padding: '32px 20px' }}>{children}</main>
     </div>
-    <p style={{ marginTop: 18 }}>
-      <button style={{ ...btn, opacity: (street && city && state && zip) ? 1 : 0.5 }}
-        disabled={!(street && city && state && zip)} onClick={() => request(true)}>Email me the label</button>
-    </p>
-    <p style={{ fontSize: 13, color: '#8A8078' }}>Free both ways. Everything comes back free if my offer isn't right for you.</p>
-  </div>
+  )
 
-  return <div style={wrap}>
-    <h2>Want a fresh label{info?.customer?.name ? `, ${String(info.customer.name).split(' ')[0]}` : ''}?</h2>
-    <p>{info?.is_kit
-      ? 'I will put a new shipping kit in the mail to you — just confirm below.'
-      : 'One click and I will email you a new prepaid label for ' + (info?.shipment?.item ? String(info.shipment.item) : 'your item') + '.'}</p>
-    {awayNote}
-    <p><button style={btn} onClick={() => request(false)}>{info?.is_kit ? 'Send me a new kit' : 'Email me a new label'}</button></p>
-    {info?.already_requested && <p style={{ fontSize: 13, color: '#8A8078' }}>(You asked for one recently — clicking again is fine, I will not send duplicates.)</p>}
-    <p style={{ fontSize: 13, color: '#8A8078' }}>Free both ways · no commitment · David · 866-613-0704</p>
-  </div>
+  // 18px stroked icons in the brand gold — emoji render differently per device.
+  const Icon = ({ children }) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={B.gold} strokeWidth="1.6"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"
+      style={{ flexShrink: 0, marginTop: 2 }}>{children}</svg>
+  )
+  const IconBox = <Icon><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5v-9Z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></Icon>
+  const IconHouse = <Icon><path d="M3 10.6 12 3l9 7.6"/><path d="M5.5 9.6V21h13V9.6"/><path d="M10 21v-5.5h4V21"/></Icon>
+  const IconReturn = <Icon><path d="M9 14 5 10l4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-3"/></Icon>
+  const IconPin = <Icon><path d="M12 21s7-5.7 7-11a7 7 0 1 0-14 0c0 5.3 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></Icon>
+
+  // The middle line follows the carrier on THIS shipment, not a fixed USPS promise.
+  const type = info?.shipping_type
+  const middle = type === 'fedex' ? [IconPin, 'Drop at any FedEx location']
+    : type === 'kit' ? [IconHouse, 'Your prepaid kit is on its way.']
+    : [IconHouse, 'Free USPS home pickup — no post office trip']
+
+  const Trust = () => (
+    <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {[[IconBox, 'Free shipping both ways'],
+        middle,
+        [IconReturn, "No obligation — we return anything you don't sell"]].map(([icon, text]) => (
+        <div key={text} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14.5, color: B.muted, lineHeight: 1.45 }}>
+          {icon}<span>{text}</span>
+        </div>
+      ))}
+      <p style={{ margin: '14px 0 0', fontSize: 13, color: B.light }}>
+        Questions? <a href="tel:8666130704" style={{ color: B.gold }}>(866) 613-0704</a> — David, Snappy Gold
+      </p>
+    </div>
+  )
+
+  const awayNote = info?.away_notice ? <p style={caption}>{info.away_notice}</p> : null
+
+  if (step === 'loading') return <Shell><p style={{ textAlign: 'center', color: B.muted, marginTop: 60 }}>Loading…</p></Shell>
+  if (step === 'sending') return <Shell><p style={{ textAlign: 'center', color: B.muted, marginTop: 60 }}>One moment — making your label…</p></Shell>
+
+  if (step === 'error') return <Shell>
+    <div style={{ ...card, textAlign: 'center' }}>
+      <div style={{ fontSize: 44, marginBottom: 12 }}>⚠️</div>
+      <h2 style={{ margin: '0 0 10px', fontSize: 22 }}>We hit a snag</h2>
+      <p style={{ color: B.muted, lineHeight: 1.6, margin: 0 }}>{msg}</p>
+      <p style={{ marginTop: 20, fontSize: 14 }}>
+        <a href="mailto:hello@snappy.gold" style={{ color: B.gold }}>hello@snappy.gold</a> · <a href="tel:8666130704" style={{ color: B.gold }}>(866) 613-0704</a>
+      </p>
+    </div>
+  </Shell>
+
+  if (step === 'done') return <Shell>
+    <div style={card}>
+      <div style={{ fontSize: 44, textAlign: 'center', marginBottom: 12 }}>✓</div>
+      <h2 style={{ margin: '0 0 10px', fontSize: 22, textAlign: 'center', color: B.green }}>
+        Label sent — check {relabelMaskEmail(info?.customer?.email)}
+      </h2>
+      <p style={{ color: B.muted, lineHeight: 1.6, margin: 0, textAlign: 'center' }}>{msg}</p>
+      {awayNote}
+      <p style={{ ...caption, textAlign: 'center' }}>
+        Didn't get it? Check spam, then <a href="#" onClick={e => { e.preventDefault(); request(false) }} style={{ color: B.gold }}>resend it</a>.
+      </p>
+      <Trust />
+    </div>
+  </Shell>
+
+  if (step === 'form') return <Shell>
+    <div style={card}>
+      <h2 style={{ margin: '0 0 8px', fontSize: 23 }}>Where should the label go{first ? `, ${first}` : ''}?</h2>
+      <p style={{ color: B.muted, lineHeight: 1.6, margin: '0 0 18px' }}>I just need the address you want the prepaid label made out to.</p>
+      {awayNote}
+      <label style={{ fontSize: 13, color: B.muted }}>Street<input style={{ ...inp, marginTop: 6 }} value={street} onChange={e => setStreet(e.target.value)} autoComplete="address-line1"/></label>
+      <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+        <label style={{ flex: 2, fontSize: 13, color: B.muted }}>City<input style={{ ...inp, marginTop: 6 }} value={city} onChange={e => setCity(e.target.value)} autoComplete="address-level2"/></label>
+        <label style={{ flex: 1, fontSize: 13, color: B.muted }}>State<input style={{ ...inp, marginTop: 6 }} value={state} onChange={e => setState(e.target.value)} maxLength={2} autoComplete="address-level1"/></label>
+        <label style={{ flex: 1, fontSize: 13, color: B.muted }}>ZIP<input style={{ ...inp, marginTop: 6 }} value={zip} onChange={e => setZip(e.target.value)} maxLength={10} autoComplete="postal-code"/></label>
+      </div>
+      <div style={{ marginTop: 20 }}>
+        <button style={{ ...btn, opacity: (street && city && state && zip) ? 1 : 0.5 }}
+          disabled={!(street && city && state && zip)} onClick={() => request(true)}>Email me the label</button>
+      </div>
+      <Trust />
+    </div>
+  </Shell>
+
+  return <Shell>
+    <div style={card}>
+      <h2 style={{ margin: '0 0 12px', fontSize: 23, lineHeight: 1.25 }}>Want a fresh label{first ? `, ${first}` : ''}?</h2>
+      <p style={{ color: B.muted, lineHeight: 1.65, margin: '0 0 20px', fontSize: 16 }}>
+        {info?.is_kit
+          ? "One click and I'll put a new shipping kit in the mail to you — for anything you'd like us to evaluate for a cash offer."
+          : <>One click and I'll email you a new prepaid label for {relabelItemPhrase(info?.shipment?.item)} — and anything else you'd like us to evaluate for a cash offer.</>}
+      </p>
+      <button style={btn} onClick={() => request(false)}>{info?.is_kit ? 'Send me a new kit' : 'Email me a new label'}</button>
+      {info?.already_requested && <p style={caption}>You asked for one recently — clicking again is fine, I won't send duplicates.</p>}
+      {awayNote}
+      <Trust />
+    </div>
+  </Shell>
 }
 
 function VerifyPage() {
