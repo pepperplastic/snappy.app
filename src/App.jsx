@@ -78,16 +78,37 @@ const RELABEL_JUNK = [
   /^[zxcvbnm]+$/i,
   /^[^aeiou]+$/i,          // no vowels at all
 ]
+// Length says nothing about whether an item is real — the AI writes names like
+// "Rolex Datejust 41 126300 Slate Roman 'Wimbledon' Dial on Aftermarket Green
+// Rubber Strap" (87 chars). A cap here used to reject those; long names are a
+// DISPLAY problem, handled by relabelTrim below.
 function relabelLooksLikeItem(s) {
   const t = String(s || '').trim()
-  if (t.length < 3 || t.length > 60) return false
+  if (t.length < 3) return false
   if (!/[a-z]{2}/i.test(t)) return false
   if (/\d+\s*k\b/i.test(t)) return true                  // "14K rope chain" always reads fine
   return !RELABEL_JUNK.some(re => re.test(t.replace(/\s+/g, '')))
 }
+// Keep a long AI name to one line: cut on a word boundary, drop dangling
+// punctuation, add an ellipsis.
+const RELABEL_MAX_ITEM_CHARS = 40
+// Everything after the first " — " is the AI's description, not the item name.
+// Cut it off before the junk check so the check sees the real name.
+function relabelBaseName(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim().split(/\s+[—–]\s+/)[0].trim()
+}
+function relabelTrim(s) {
+  const t = relabelBaseName(s)
+  if (t.length <= RELABEL_MAX_ITEM_CHARS) return t
+  const cut = t.slice(0, RELABEL_MAX_ITEM_CHARS)
+  const lastSpace = cut.lastIndexOf(' ')
+  const base = lastSpace > 20 ? cut.slice(0, lastSpace) : cut
+  return base.replace(/[\s,;:.\-–—'"]+$/, '') + '…'
+}
 // Items are joined with " + " as the customer appends them, so the newest are last.
 function relabelItemPhrase(itemString) {
-  const good = String(itemString || '').split(/\s*\+\s*/).map(s => s.trim()).filter(relabelLooksLikeItem).slice(-2)
+  const good = String(itemString || '').split(/\s*\+\s*/).map(relabelBaseName)
+    .filter(relabelLooksLikeItem).slice(-2).map(relabelTrim)
   if (!good.length) return 'your items'
   return good.length === 1 ? good[0] : `${good[0]} and ${good[1]}`
 }
