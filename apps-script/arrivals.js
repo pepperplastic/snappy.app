@@ -164,3 +164,122 @@ function arrivalsBySource() {
 
 function _pad(s, n)  { s = String(s); while (s.length < n) s += ' '; return s; }
 function _padL(s, n) { s = String(s); while (s.length < n) s = ' ' + s; return s; }
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ARRIVALS REPORT — editor-run, logs only          (Sep 23, 2026)
+//
+//  arrivalsReport(days) / arrivals7(): one line per package RECEIVED in the
+//  last N days — customer, shipment, arrival + registration dates, the
+//  first-touch channel and ad set (the ROI index + _mkClassify, same
+//  attribution the ROI tab uses), whether that registration followed a
+//  recovery or re-engagement email, item and estimate. Totals by channel /
+//  ad set at the end. Reads only: nothing is written or sent.
+// ═══════════════════════════════════════════════════════════════════════
+
+function arrivals7() { return arrivalsReport(7); }
+
+function arrivalsReport(days) {
+  days = (parseInt(days, 10) > 0) ? parseInt(days, 10) : 7;
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var TZ = 'America/New_York';
+  var cutoff = new Date(Date.now() - days * 86400000);
+  var toDate = function (v) { if (!v) return null; var d = (v instanceof Date) ? v : new Date(v); return isNaN(d.getTime()) ? null : d; };
+  var fmt = function (d) { return d ? Utilities.formatDate(d, TZ, 'MMM d') : '—'; };
+
+  var ships = sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS));
+  var custById = {};
+  sheetToObjects(ss.getSheetByName(TAB.CUSTOMERS)).forEach(function (c) { if (c.customer_id) custById[c.customer_id] = c; });
+  var idx = _roiLoadIndex(ss);
+
+  // Recovery emails: "RECOV:yyyy-mm-dd" stamps in the lead's AUTO_REPLY column.
+  var recovByEmail = {};
+  var lead = ss.getSheetByName(TAB.LEADS).getDataRange().getValues();
+  for (var r = 1; r < lead.length; r++) {
+    var em = String(lead[r][COL.EMAIL] || '').toLowerCase().trim();
+    if (!em) continue;
+    var y = String(lead[r][COL.AUTO_REPLY] || '');
+    if (y.indexOf('RECOV:') === -1) continue;
+    var re = /RECOV:(\d{4}-\d{2}-\d{2})/g, m;
+    while ((m = re.exec(y)) !== null) {
+      var rd = toDate(m[1] + 'T12:00:00');
+      if (rd) (recovByEmail[em] = recovByEmail[em] || []).push(rd);
+    }
+  }
+
+  // Re-engagement emails: stamped on the shipment that held the unused label.
+  var reengageByCust = {};
+  ships.forEach(function (s) {
+    var d = toDate(s.reengage_sent_at);
+    if (d && s.customer_id) (reengageByCust[s.customer_id] = reengageByCust[s.customer_id] || []).push(d);
+  });
+
+  var latestBefore = function (list, when) {
+    var best = null;
+    (list || []).forEach(function (d) { if (when && d < when && (!best || d > best)) best = d; });
+    return best;
+  };
+
+  var rows = [], byChannel = {};
+  ships.forEach(function (s) {
+    var recv = toDate(s.received_at);
+    if (!recv || recv < cutoff) return;
+
+    var c = custById[s.customer_id] || {};
+    var em = String(c.email || '').toLowerCase().trim();
+    var attr = em ? idx.attrByEmail[em] : null;
+    var cls = attr ? _mkClassify(attr) : { key: 'direct', label: 'Direct / unknown', sub: '', subLabel: '' };
+    var adset = cls.subLabel || cls.sub || '';
+    var reg = toDate(s.created_at);
+
+    var rec = latestBefore(recovByEmail[em], reg);
+    var ree = latestBefore(reengageByCust[s.customer_id], reg);
+    var touch = '';
+    if (rec && ree) touch = 'recovery ' + fmt(rec) + ' + re-engage ' + fmt(ree);
+    else if (rec)   touch = 'after recovery ' + fmt(rec);
+    else if (ree)   touch = 'after re-engage ' + fmt(ree);
+
+    rows.push({ channel: cls.label, adset: adset, name: c.name || s.customer_id || '(no name)',
+                shp: s.shipment_id, recv: recv, reg: reg, touch: touch,
+                item: String(s.item || '').replace(/\s+/g, ' ').slice(0, 34),
+                est: String(s.estimate || '').trim() });
+
+    var ch = byChannel[cls.label] = byChannel[cls.label] || { n: 0, winback: 0, sets: {} };
+    ch.n++;
+    if (touch) ch.winback++;
+    var k = adset || '(no ad set)';
+    ch.sets[k] = (ch.sets[k] || 0) + 1;
+  });
+
+  rows.sort(function (a, b) {
+    if (a.channel !== b.channel) return a.channel.localeCompare(b.channel);
+    if (a.adset !== b.adset) return String(a.adset).localeCompare(String(b.adset));
+    return b.recv - a.recv;
+  });
+
+  Logger.log('═══ ARRIVALS — last ' + days + ' days — ' + rows.length + ' package' + (rows.length === 1 ? '' : 's') +
+             ' (attribution: ' + idx.source + ') ═══');
+  Logger.log('');
+  Logger.log(_pad('CUSTOMER', 22) + _pad('SHIPMENT', 9) + _pad('ARRIVED', 8) + _pad('REGISTERED', 11) +
+             _pad('CHANNEL / AD SET', 30) + _pad('WIN-BACK', 30) + _pad('ITEM', 35) + 'ESTIMATE');
+  if (!rows.length) Logger.log('  (nothing received in this window)');
+  rows.forEach(function (x) {
+    Logger.log(_pad(String(x.name).slice(0, 21), 22) + _pad(x.shp, 9) + _pad(fmt(x.recv), 8) + _pad(fmt(x.reg), 11) +
+               _pad((x.channel + (x.adset ? ' / ' + x.adset : '')).slice(0, 29), 30) +
+               _pad(x.touch || '—', 30) + _pad(x.item, 35) + (x.est || '—'));
+  });
+
+  Logger.log('');
+  Logger.log('═══ TOTALS BY CHANNEL / AD SET ═══');
+  Logger.log(_pad('CHANNEL', 30) + _padL('ARRIVED', 8) + _padL('AFTER WIN-BACK', 16));
+  Object.keys(byChannel).sort(function (a, b) { return byChannel[b].n - byChannel[a].n; }).forEach(function (k) {
+    var ch = byChannel[k];
+    Logger.log(_pad(k, 30) + _padL(ch.n, 8) + _padL(ch.winback, 16));
+    Object.keys(ch.sets).sort(function (a, b) { return ch.sets[b] - ch.sets[a]; }).forEach(function (sub) {
+      Logger.log(_pad('    ' + sub, 30) + _padL(ch.sets[sub], 8));
+    });
+  });
+  Logger.log('');
+  Logger.log('Win-back = the registration came after a recovery or re-engagement email to that person.');
+  return { days: days, arrivals: rows.length, channels: Object.keys(byChannel).length };
+}

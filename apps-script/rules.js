@@ -571,6 +571,81 @@ function explainRegistration(email) {
   };
 }
 
+// ── 6. Stages & actions ────────────────────────────────────────────────
+// Every CRM action that moves a shipment: where it moves it from and to, and
+// what else it does. Read from the handlers, like every other section.
+function _rulesStages() {
+  var gen = _rulesFn('generateAndSendLabel'), upd = _rulesFn('updateShipment');
+  var tok = _rulesFn('handleGenerateSelfServeToken'), ss = _rulesFn('_notifySelfServeSubmission');
+  var pay = _rulesFn('handleCapturePaymentId'), lo = _rulesFn('handlePushToLeadsOnline'), ret = _rulesFn('handleGenerateReturnLabel');
+  var stamp = function (stage) { return _rulesPick(upd, new RegExp("'" + stage + "':\\s*'(\\w+)'"), 'updateShipment'); };
+  var out = [];
+
+  out.push({ action: 'Fulfill (generate + send label)', file: 'Code.gs · handleGenerateUSPSLabel → generateAndSendLabel',
+    from: 'ready_to_fulfill (the CRM only offers the button there; the server does not check the current stage)',
+    to: _rulesPick(gen, /stage: '([a-z_]+)',\s*\n\s*shipping_cost/, 'generateAndSendLabel'),
+    rules: [
+      _rule({ to: _rulesPick(gen, /stage: '([a-z_]+)',\s*\n\s*shipping_cost/, 'generateAndSendLabel'), st: stamp('outbound_complete') },
+        function (v) { return 'Buys the label, sets stage ' + v.to + ' and stamps ' + v.st + ' (updateShipment stamps it on the transition), and writes outbound_tracking, shipping_cost, shipping_service, the provider id and label_qr_url.'; }),
+      _rule({ mail: _rulesPick(gen, /Subject: 'Your prepaid ' \+ (carrierName)/, 'generateAndSendLabel'), sms: _rulesPick(gen, /(sendSms)\(customerPhone/, 'generateAndSendLabel') },
+        function () { return 'Emails the customer the label (Postmark direct, BCC to DW) and texts them; the carrier wording follows the label that was actually bought.'; }),
+      _rule({ q: _rulesPick(upd, /_enqueue\('(capi)'/, 'updateShipment'), flex: _rulesPick(upd, /_enqueue\('(flex)'/, 'updateShipment'), fire: _rulesGlobal('FLEX_FIRE_STAGE', _rulesG('FLEX_FIRE_STAGE')) },
+        function (v) { return 'Every stage change queues a "' + v.q + '" job (Meta CAPI); a "' + v.flex + '" job is queued only when the new stage is ' + v.fire + '.'; }),
+    ] });
+
+  out.push({ action: 'Mark received', file: 'Code.gs · updateShipment (CRM stage change)',
+    from: 'outbound_complete', to: { ok: true, value: 'received' },
+    rules: [ _rule({ st: stamp('received'), fire: _rulesGlobal('FLEX_FIRE_STAGE', _rulesG('FLEX_FIRE_STAGE')) },
+      function (v) { return 'Stamps ' + v.st + ' if it is empty, queues the CAPI job, and fires the FlexOffers conversion (FLEX_FIRE_STAGE = ' + v.fire + '). No message goes to the customer.'; }) ] });
+
+  out.push({ action: 'Send offer (self-serve link)', file: 'Code.gs · handleGenerateSelfServeToken',
+    from: 'inspected', to: { ok: true, value: 'pending_response — moved by the CRM, not by this handler' },
+    rules: [
+      _rule({ ttl: _rulesGlobal('SELF_SERVE_TTL_DAYS', _rulesG('SELF_SERVE_TTL_DAYS')), log: _rulesPick(tok, /type: '(offer)'/, 'handleGenerateSelfServeToken') },
+        function (v) { return 'Writes a self-serve token good for ' + v.ttl + ' days, records offer_price / offer_description on the shipment, emails the customer the offer link, and logs a Contact Log row of type "' + v.log + '". The stage itself is changed by the CRM (the offer prompt on inspected → pending_response).'; }),
+    ] });
+
+  out.push({ action: 'Customer accepts (self-serve form)', file: 'Code.gs · handleSubmitSelfServe → _notifySelfServeSubmission',
+    from: _rulesPick(ss, /curStage === '([a-z_]+)' \|\| curStage === '([a-z_]+)'/, '_notifySelfServeSubmission'),
+    to: _rulesPick(ss, /ssUpdates\.stage = '([a-z_]+)'/, '_notifySelfServeSubmission'),
+    rules: [
+      _rule({ from: _rulesPick(ss, /curStage === '([a-z_]+)' \|\| curStage === '([a-z_]+)'/, '_notifySelfServeSubmission'),
+              to: _rulesPick(ss, /ssUpdates\.stage = '([a-z_]+)'/, '_notifySelfServeSubmission'),
+              st: _rulesPick(ss, /(self_serve_submitted_at): new Date/, '_notifySelfServeSubmission') },
+        function (v, P) { return 'Only advances from ' + P.from.groups[1] + ', ' + P.from.groups[2] + ' or a blank stage → ' + v.to + ' (never backward), stamps ' + v.st + ', logs a Contact Log note, and emails DW the payment + ID details.'; }),
+    ] });
+
+  out.push({ action: 'Capture payment / ID', file: 'Code.gs · handleCapturePaymentId',
+    from: { ok: true, value: 'any' }, to: { ok: true, value: 'unchanged — the CRM moves the stage separately' },
+    rules: [ _rule({ w: _rulesPick(pay, /(updateShipment)\(shipmentId, shipmentUpdates\)/, 'handleCapturePaymentId'), st: stamp('pending_payment') },
+      function (v) { return 'Writes the ID fields, sworn-statement fields and payment method/info to the shipment and customer. It changes no stage itself; when the CRM moves a shipment to pending_payment, updateShipment stamps ' + v.st + '.'; }) ] });
+
+  out.push({ action: 'Push to LeadsOnline', file: 'leadsonline.gs · handlePushToLeadsOnline',
+    from: _rulesPick(lo, /toLowerCase\(\) !== '([a-z_]+)'\)/, 'handlePushToLeadsOnline'),
+    to: _rulesPick(lo, /leadsonline_submitted_at: stamp[\s\S]{0,60}?stage: '([a-z_]+)'/, 'handlePushToLeadsOnline'),
+    rules: [
+      _rule({ gate: _rulesPick(lo, /toLowerCase\(\) !== '([a-z_]+)'\)/, 'handlePushToLeadsOnline'),
+              to: _rulesPick(lo, /leadsonline_submitted_at: stamp[\s\S]{0,60}?stage: '([a-z_]+)'/, 'handlePushToLeadsOnline'),
+              done: _rulesPick(lo, /(completed_at): stamp/, 'handlePushToLeadsOnline'),
+              kind: _rulesPick(lo, /kind: '(auto:leadsonline)'/, 'handlePushToLeadsOnline') },
+        function (v) { return 'Refuses unless the shipment is at ' + v.gate + '. On a confirmed ticket it stamps leadsonline_submitted_at and ' + v.done + ', sets stage ' + v.to + ', and logs a Contact Log row with kind ' + v.kind + '. Photos upload afterwards through a separate uploadLeadsOnlinePhotos call, so a slow upload cannot fail the submission.'; }),
+    ] });
+
+  out.push({ action: 'Return label', file: 'Code.gs · handleGenerateReturnLabel',
+    from: { ok: true, value: 'any' }, to: { ok: true, value: 'unchanged — returning is a separate CRM stage change' },
+    rules: [ _rule({ trk: _rulesPick(ret, /updateShipment\(shipmentId, \{ (return_tracking): label\.tracking_number \}\)/, 'handleGenerateReturnLabel'), st: stamp('returned') },
+      function (v) { return 'Buys a USPS Ground Advantage label us → customer (billed on creation, not scan-based), writes ' + v.trk + ', emails the customer the tracking, logs a Contact Log note and returns the label PDF to the CRM. When the CRM later sets the stage to returned, updateShipment stamps ' + v.st + '.'; }) ] });
+
+  // from/to may be a literal string (a stage the CRM sets, not this handler) or a pick.
+  var show = function (v) {
+    if (typeof v === 'string') return v;
+    return (v && v.ok) ? v.value : '⚠ not found in code';
+  };
+  return out.map(function (x) {
+    return { action: x.action, file: x.file, from: show(x.from), to: show(x.to), rules: x.rules };
+  });
+}
+
 // ── getRules + handlers ────────────────────────────────────────────────
 function _rulesSafe(fn) { try { return fn(); } catch (e) { return { error: String(e && e.message || e) }; } }
 
@@ -585,6 +660,7 @@ function getRules() {
     sequences: _rulesSafe(function () { return _rulesSequences(installed); }),
     routing: _rulesSafe(_rulesRouting),
     money: _rulesSafe(_rulesMoney),
+    stages: _rulesSafe(_rulesStages),
   };
   try { cache.put(RULES_CACHE_KEY, JSON.stringify(out), RULES_CACHE_SEC); } catch (e) { Logger.log('rules cache put: ' + e); }
   return out;

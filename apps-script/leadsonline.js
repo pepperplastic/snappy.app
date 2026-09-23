@@ -612,6 +612,20 @@ function loUploadAllPhotosForShipment(shipmentId) {
 //    if (action === 'pushToLeadsOnline')  return jsonResponse(handlePushToLeadsOnline(parsed));
 // ═══════════════════════════════════════════════════════════════════════
 
+// completed_at is written when a push completes a shipment; add the column the
+// first time, the same way handleSubmitSelfServe adds self_serve_submitted_at.
+function _loEnsureCompletedAt() {
+  try {
+    var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS);
+    var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (headers.indexOf('completed_at') < 0) {
+      sh.getRange(1, sh.getLastColumn() + 1).setValue('completed_at')
+        .setFontWeight('bold').setBackground('#1A1816').setFontColor('#C8953C');
+      Logger.log('added Shipments.completed_at');
+    }
+  } catch (e) { Logger.log('_loEnsureCompletedAt (non-fatal): ' + e); }
+}
+
 function handlePushToLeadsOnline(parsed) {
   try {
     var shipmentId = parsed.shipment_id;
@@ -682,7 +696,17 @@ function handlePushToLeadsOnline(parsed) {
     // return fast — photos upload separately so a slow upload never makes the
     // CRM time out and show "couldn't confirm" on an actually-successful submit.
     var stamp = new Date().toISOString();
-    updateShipment(shipmentId, { leadsonline_submitted_at: stamp, stage: 'complete' });
+    _loEnsureCompletedAt();
+    updateShipment(shipmentId, { leadsonline_submitted_at: stamp, completed_at: stamp, stage: 'complete' });
+
+    // Sep 23: audit row for the weekly review, same Contact Log columns the
+    // automated senders use (source auto, kind auto:leadsonline).
+    try {
+      _ensureContactLogColumns(SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.CONTACT_LOG));
+      addContactLog({ customer_id: shipment.customer_id, shipment_id: shipmentId, type: 'note', direction: '', source: 'auto',
+                      kind: 'auto:leadsonline',
+                      notes: 'LeadsOnline ticket ' + (ticketNumber || '(no number)') + ' submitted' + (LO_USE_SANDBOX ? ' (sandbox)' : '') + ' — stage → complete' });
+    } catch (logErr) { Logger.log('LO contact log (non-fatal): ' + logErr); }
 
     // ── 4. Return success NOW. Photos upload via a separate call (see below). ──
     // The frontend, on success, fires action=uploadLeadsOnlinePhotos to push the

@@ -6275,6 +6275,7 @@ function RulesTab() {
           <RuleList rules={data.money}/>
           <div style={{marginTop:8}}><RuleList rules={localMoney}/></div>
         </RulesCard>
+
       </>}
 
       <RulesCard title="5. Explain a registration" subtitle="what ingestion did for one email" open={open.explain!==false} onToggle={()=>setOpen(o=>({...o,explain:o.explain===false}))}>
@@ -6317,6 +6318,20 @@ function RulesTab() {
           {(ex.notes||[]).map((n,i)=><div key={i} style={{fontSize:11,color:G.muted,marginTop:8}}>{n}</div>)}
         </div>}
       </RulesCard>
+
+      {data&&<RulesCard title="6. Stages & actions" subtitle={`${Array.isArray(data.stages)?data.stages.length:0} CRM actions`} open={!!open.stages} onToggle={()=>toggle("stages")}>
+        {data.stages&&data.stages.error&&<div style={{color:G.red,fontSize:12}}>{data.stages.error}</div>}
+        {(Array.isArray(data.stages)?data.stages:[]).map((a,i)=><div key={i} style={{borderTop:i?`1px solid ${G.border}`:"none",paddingTop:i?12:0,marginTop:i?12:0}}>
+          <div style={{fontWeight:700,fontSize:13,color:G.text}}>{a.action}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",margin:"4px 0 6px"}}>
+            <span style={{fontSize:11,fontFamily:"monospace",background:G.bg,borderRadius:3,padding:"1px 6px",color:G.muted}}>{a.from}</span>
+            <span style={{fontSize:11,color:G.muted}}>→</span>
+            <span style={{fontSize:11,fontFamily:"monospace",background:String(a.to).indexOf("unchanged")===0?G.bg:G.green+"14",border:`1px solid ${String(a.to).indexOf("unchanged")===0?G.border:G.green+"33"}`,borderRadius:3,padding:"1px 6px",color:String(a.to).indexOf("unchanged")===0?G.muted:G.green}}>{a.to}</span>
+            <span style={{fontSize:10,color:G.muted,marginLeft:"auto"}}>{a.file}</span>
+          </div>
+          <RuleList rules={a.rules}/>
+        </div>)}
+      </RulesCard>}
     </div>
   </div>;
 }
