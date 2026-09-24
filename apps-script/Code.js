@@ -271,6 +271,7 @@ function doPost(e) {
       'getAffiliateRecords',
       'getMarketingRoi','getAdSpend','addAdSpend','deleteAdSpend','syncMetaSpend','getSetting','setSetting',
       'getCommsDashboard','addDoNotContact','getLabelUrl','getRules','explainRegistration',
+      'getMarketingRoiRecords',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
       if (!CRM_SECRET_KEY || (parsed.key || '') !== CRM_SECRET_KEY) {
@@ -302,6 +303,7 @@ function doPost(e) {
     if (action === 'getAffiliateRecords') return jsonResponse(getAffiliateRecords(parsed));
         // ── ROI / Ad Spend ──
     if (action === 'getMarketingRoi') return jsonResponse(handleGetMarketingRoi(parsed));
+    if (action === 'getMarketingRoiRecords') return jsonResponse(handleGetMarketingRoiRecords(parsed));
     if (action === 'getAdSpend')      return jsonResponse({ success: true, rows: getAdSpend(parsed) });
     if (action === 'addAdSpend')      return jsonResponse(handleAddAdSpend(parsed));
     if (action === 'deleteAdSpend')   return jsonResponse(handleDeleteAdSpend(parsed));

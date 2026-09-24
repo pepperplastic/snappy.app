@@ -5516,6 +5516,7 @@ function RoiTab({shipments}) {
   const [spendRows,setSpendRows] = useState(null);     // all-time spend rows, for realized net
   const [sideErr,setSideErr]     = useState("");       // sales / spend fetch problems
   const [invRec,setInvRec]       = useState(null);     // inventory estimate (server-side setting)
+  const [drill,setDrill]         = useState(null);     // count drill-down (RecordsDrawer)
 
   const loadSide = useCallback(async ()=>{
     const errs=[];
@@ -5608,6 +5609,30 @@ function RoiTab({shipments}) {
     if(custType==="first")  return {...m, fulfilled:(m.fulfilled||0)-(m.rep_fulfilled||0), arrived:m.arrived-(m.rep_arrived||0), purchased:m.purchased-(m.rep_purchased||0), paid:m.paid-(m.rep_paid||0), appraised:m.appraised-(m.rep_appraised||0), margin:m.margin-(m.rep_margin||0), missingAppr:m.missingAppr-(m.rep_missingAppr||0)};
     return m;
   };
+  // ── Count drill-down. Every number sends the tab's own params (window,
+  //    maturity, outlier cap, First-time/Repeat chip) to getMarketingRoiRecords,
+  //    which walks the same cohort getMarketingRoi does — so the drawer lists
+  //    exactly the rows behind the number clicked, recovered attribution included.
+  function roiDrill(metric, chanKey, adsetKey, label){
+    setDrill({
+      metric, name: label,
+      action: "getMarketingRoiRecords",
+      params: {from, to, mature_days:matureDays, exclude_over: excludeOn?(parseFloat(excludeOver)||0):0,
+               channel: chanKey||"", adset: adsetKey||""},
+      extraCols: ROI_EXTRA_COLS,
+      repeatFilter: custType,
+      subtitle: [from+" → "+to, custType==="first"?"first-time only":custType==="repeat"?"repeat only":""].filter(Boolean).join(" · "),
+      slug: "roi_" + ((chanKey||"all") + (adsetKey?"_"+adsetKey:"")).replace(/[^a-z0-9_]+/gi,""),
+    });
+  }
+  function roiCount(metric, value, chanKey, adsetKey, label, style){
+    if(!value) return <td style={style}>{value||0}</td>;
+    return <td style={style}>
+      <span onClick={()=>roiDrill(metric, chanKey, adsetKey, label)} title="Show the records behind this number"
+        style={{cursor:"pointer",borderBottom:`1px dotted ${G.muted}`}}>{value}</span>
+    </td>;
+  }
+
   const chanSel0 = data && channel ? data.channels.find(c=>c.key===channel) : null;
   const sliceChan = c=>({...c, all:slice(c.all), mature:slice(c.mature), adsets:(c.adsets||[]).map(a=>({...a, all:slice(a.all), mature:slice(a.mature)}))});
   const chanSel = chanSel0 ? sliceChan(chanSel0) : null;
@@ -5641,6 +5666,7 @@ function RoiTab({shipments}) {
   const freshness = data ? Object.keys(data.spend_freshness||{}).map(k=>`${k==="facebook"?"Meta":k==="google"?"Google":k} through ${data.spend_freshness[k]}`).join(" · ") : "";
 
   return <div style={{flex:1,overflow:"auto",padding:isMobile?12:24,background:G.bg}}>
+    {drill && <RecordsDrawer drill={drill} matureDays={matureDays} view={V} onClose={()=>setDrill(null)}/>}
     <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:14,flexWrap:"wrap"}}>
       <h2 style={{margin:0,fontSize:22,color:G.text}}>ROI</h2>
       <div style={{fontSize:11,color:G.muted}}>{freshness ? `Spend: ${freshness}` : "No spend in the ledger yet"}{data&&data.cached?" · cached":""}</div>
@@ -5795,11 +5821,15 @@ function RoiTab({shipments}) {
             {visibleChannels.map(c=>{
               const m=c[V]; const p=per(m); const isOpen=!!open[c.key] || !!chanSel;
               const sub=c.adsets.filter(a=>a[V].spend>0||a[V].regs>0);
-              const row=(label,m,p,indent,key)=><tr key={key} style={{background:indent?"#FBF8F3":"#fff"}}>
+              const row=(label,m,p,indent,key,dChan,dAdset,dLabel)=><tr key={key} style={{background:indent?"#FBF8F3":"#fff"}}>
                 <td style={{...td,textAlign:"left",fontWeight:indent?400:600,paddingLeft:indent?28:10,fontSize:indent?12:13,color:indent?G.muted:G.text,whiteSpace:"normal"}}>{label}</td>
                 <td style={td}>{m.spend?money(m.spend):<span style={{color:G.muted}}>—</span>}</td>
-                <td style={td}>{m.regs}</td><td style={td}>{m.fulfilled||0}</td><td style={td}>{m.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
-                <td style={td}>{m.purchased}</td><td style={td}>{pct(p.buyPct)}</td>
+                {roiCount("regs",m.regs,dChan,dAdset,dLabel,td)}
+                {roiCount("fulfilled",m.fulfilled||0,dChan,dAdset,dLabel,td)}
+                {roiCount("arrived",m.arrived,dChan,dAdset,dLabel,td)}
+                <td style={td}>{pct(p.shipPct)}</td>
+                {roiCount("purchased",m.purchased,dChan,dAdset,dLabel,td)}
+                <td style={td}>{pct(p.buyPct)}</td>
                 <td style={td}>{money(m.paid)}</td><td style={td}>{money(m.margin)}</td>
                 <td style={td}>{p.shipping?money(p.shipping):<span style={{color:G.muted}}>—</span>}</td>
                 <td style={{...td,fontWeight:600,color:(m.spend||p.shipping)?(p.net>=0?G.green:G.red):G.muted}}>{(m.spend||p.shipping)?money(p.net):"—"}</td>
@@ -5809,14 +5839,19 @@ function RoiTab({shipments}) {
                 row(<span style={{cursor:sub.length?"pointer":"default"}} onClick={()=>sub.length&&setOpen(o=>({...o,[c.key]:!o[c.key]}))}>
                   {sub.length>0&&<span style={{display:"inline-block",width:14,color:G.muted}}>{isOpen?"▾":"▸"}</span>}{c.label}
                   {sub.length>0&&<span style={{marginLeft:6,fontSize:10,color:G.muted}}>{sub.length} ad set{sub.length>1?"s":""}</span>}
-                </span>, m, p, false, c.key),
-                ...(isOpen ? sub.map(a=>row(a.label,a[V],per(a[V]),true,c.key+"/"+a.key)) : [])
+                </span>, m, p, false, c.key, c.key, "", c.label),
+                ...(isOpen ? sub.map(a=>row(a.label,a[V],per(a[V]),true,c.key+"/"+a.key,c.key,a.key,c.label+" — "+a.label)) : [])
               ];
             })}
             {(()=>{ const p=per(tot); return <tr style={{background:"#F5EFE6",fontWeight:700}}>
               <td style={{...td,textAlign:"left"}}>Total</td>
-              <td style={td}>{money(tot.spend)}</td><td style={td}>{tot.regs}</td><td style={td}>{tot.fulfilled||0}</td><td style={td}>{tot.arrived}</td><td style={td}>{pct(p.shipPct)}</td>
-              <td style={td}>{tot.purchased}</td><td style={td}>{pct(p.buyPct)}</td><td style={td}>{money(tot.paid)}</td><td style={td}>{money(tot.margin)}</td>
+              <td style={td}>{money(tot.spend)}</td>
+              {roiCount("regs",tot.regs,channel,"",chanSel?chanSel.label:"All channels",td)}
+              {roiCount("fulfilled",tot.fulfilled||0,channel,"",chanSel?chanSel.label:"All channels",td)}
+              {roiCount("arrived",tot.arrived,channel,"",chanSel?chanSel.label:"All channels",td)}
+              <td style={td}>{pct(p.shipPct)}</td>
+              {roiCount("purchased",tot.purchased,channel,"",chanSel?chanSel.label:"All channels",td)}
+              <td style={td}>{pct(p.buyPct)}</td><td style={td}>{money(tot.paid)}</td><td style={td}>{money(tot.margin)}</td>
               <td style={td}>{money(p.shipping)}</td>
               <td style={{...td,color:p.net>=0?G.green:G.red}}>{money(p.net)}</td>
               <td style={td}>{cost(p.costReg)}</td><td style={td}>{cost(p.costArrival)}</td><td style={td}>{cost(p.costPurchase)}</td>
@@ -5933,7 +5968,7 @@ function sumBucket(list, which){
 }
 
 // ── Drill-down: the records behind a REGS / ARRIVED / PURCHASED count ──
-const DRILL_LABEL = {regs:"Registrations", arrived:"Arrived", purchased:"Purchased"};
+const DRILL_LABEL = {regs:"Registrations", fulfilled:"Fulfilled", arrived:"Arrived", purchased:"Purchased"};
 const DRILL_COLS = [
   {k:"customer_id",   label:"Customer"},
   {k:"shipment_id",   label:"Shipment"},
@@ -5951,6 +5986,13 @@ const DRILL_FLEX_COLS = [
   {k:"flex_click_id",      label:"Flex click ID"},
   {k:"flex_postback_sent", label:"Postback", type:"postback"},
 ];
+// The ROI tab adds these four to the right of Stage.
+const ROI_EXTRA_COLS = [
+  {k:"channel",     label:"Channel"},
+  {k:"adset",       label:"Ad set"},
+  {k:"first_touch", label:"First touch"},
+  {k:"mature",      label:"Mature", type:"flag"},
+];
 function drillDate(v){ if(!v) return ""; const d=new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString(); }
 
 function RecordsDrawer({drill, matureDays, view, onClose}){
@@ -5964,7 +6006,7 @@ function RecordsDrawer({drill, matureDays, view, onClose}){
     (async()=>{
       setRecs(null); setErr("");
       try{
-        const r = await apiPost({action:"getAffiliateRecords", ref_codes:drill.codes, mature_days:matureDays});
+        const r = await apiPost({action:drill.action, ...drill.params});
         if(dead) return;
         if(r && r.success){ setRecs(r.records||[]); setTrunc(!!r.truncated); }
         else setErr((r&&r.error)||"Couldn't load records");
@@ -5985,18 +6027,23 @@ function RecordsDrawer({drill, matureDays, view, onClose}){
   // registration but two arrivals.
   const filtered = (recs||[]).filter(r=>{
     if(view==="mature" && !r.mature) return false;
-    if(drill.metric==="regs")     return r.counts_reg;
-    if(drill.metric==="arrived")  return r.arrived;
+    // Registrations are never split by First-time / Repeat — same as the table.
+    if(drill.metric==="regs") return r.counts_reg;
+    if(drill.repeatFilter==="repeat" && !r.repeat) return false;
+    if(drill.repeatFilter==="first"  &&  r.repeat) return false;
+    if(drill.metric==="fulfilled") return r.fulfilled;
+    if(drill.metric==="arrived")   return r.arrived;
     return r.purchased;
   });
   const showFlex = filtered.some(r=>r.flex_click_id);
-  const cols = showFlex ? DRILL_COLS.concat(DRILL_FLEX_COLS) : DRILL_COLS;
+  const cols = DRILL_COLS.concat(drill.extraCols||[]).concat(showFlex?DRILL_FLEX_COLS:[]);
 
   const sorted = filtered.slice().sort((a,b)=>{
     const col = cols.find(c=>c.k===sort.k) || {};
     let x=a[sort.k], y=b[sort.k];
     if(col.type==="money"){ x=parseFloat(x)||0; y=parseFloat(y)||0; }
     else if(col.type==="date"||col.type==="postback"){ x=x?(new Date(x).getTime()||0):0; y=y?(new Date(y).getTime()||0):0; }
+    else if(col.type==="flag"){ x=x?1:0; y=y?1:0; }
     else { x=String(x||"").toLowerCase(); y=String(y||"").toLowerCase(); }
     if(x<y) return sort.dir==="asc"?-1:1;
     if(x>y) return sort.dir==="asc"?1:-1;
@@ -6025,7 +6072,7 @@ function RecordsDrawer({drill, matureDays, view, onClose}){
           <div style={{fontSize:16,fontWeight:700,color:G.text}}>{drill.name} — {DRILL_LABEL[drill.metric]}</div>
           <div style={{fontSize:11,color:G.muted,marginTop:2}}>
             {view==="mature" ? `mature cohorts only · registered ${matureDays}+ days ago` : "all cohorts"}
-            {drill.codes.length>1 ? ` · ${drill.codes.length} ref codes` : ""}
+            {drill.subtitle ? ` · ${drill.subtitle}` : ""}
           </div>
         </div>
         <div style={{flex:1}}/>
@@ -6048,7 +6095,10 @@ function RecordsDrawer({drill, matureDays, view, onClose}){
             {sorted.map((r,i)=><tr key={(r.shipment_id||r.email)+"_"+i} style={{background:i%2?"#FAF9F7":"#fff"}}>
               {cols.map(c=><td key={c.k} style={{...cell,...(c.k==="email"?{whiteSpace:"normal",wordBreak:"break-all"}:{})}}>
                 {c.type==="date"     ? (drillDate(r[c.k]) || <span style={{color:G.muted}}>—</span>)
-                 : c.type==="money"  ? (r[c.k] ? money(r[c.k]) : <span style={{color:G.muted}}>—</span>)
+                 : c.type==="money"  ? (r[c.k]
+                     ? <span title={r.outlier?"Over the outlier cap — the purchase is counted, but these dollars are excluded from the ROI totals":""}>{money(r[c.k])}{r.outlier?"*":""}</span>
+                     : <span style={{color:G.muted}}>—</span>)
+                 : c.type==="flag"   ? (r[c.k] ? <span style={{color:G.green}}>✓</span> : <span style={{color:G.muted}}>—</span>)
                  : c.type==="postback" ? (r.flex_postback_sent
                      ? <span style={{color:G.green}}>✓ {drillDate(r.flex_postback_sent)}</span>
                      : <span style={{color:G.muted}}>not fired</span>)
@@ -6115,9 +6165,12 @@ function MarketingTab() {
   const td = {padding:"10px 12px",textAlign:"right",fontSize:13,borderTop:`1px solid ${G.border}`};
 
   function openDrill(a, metric){
+    const codes = a.group ? a.codes : [a.ref_code];
     setDrill({
       metric, name: a.name,
-      codes: a.group ? a.codes : [a.ref_code],
+      action: "getAffiliateRecords",
+      params: {ref_codes: codes, mature_days: matureDays},
+      subtitle: codes.length>1 ? `${codes.length} ref codes` : "",
       slug: (a.group ? "customer_referrals" : a.ref_code) || "affiliate",
     });
   }

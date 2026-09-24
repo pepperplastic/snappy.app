@@ -70,7 +70,7 @@ const WRITE_ACTIONS = new Set([
   'pushToLeadsOnline', 'uploadLeadsOnlinePhotos',
   'manualCustomerShipment', 'getAffiliates', 'addAffiliate', 'updateAffiliate',
   'deleteAffiliate', 'getAffiliateStats', 'getAffiliateRecords',
-  'getMarketingRoi', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend','getSetting','setSetting',
+  'getMarketingRoi', 'getMarketingRoiRecords', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend','getSetting','setSetting',
   'getCommsDashboard', 'addDoNotContact', 'getLabelUrl', 'getRules', 'explainRegistration',
 ]);
 

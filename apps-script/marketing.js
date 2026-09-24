@@ -497,6 +497,34 @@ function createRoiIndexTrigger() {
   Logger.log('Trigger created: rebuildRoiIndex every 15 min');
 }
 
+// ── Stage lists. Module-level so the ROI table and its drill-down can never
+//    drift apart — both read these, nothing redefines them. ──
+var ROI_ARRIVED   = ['received', 'inspected', 'pending_response', 'pending_payment', 'pending_leadsonline', 'complete', 'returned'];
+var ROI_PURCHASED = ['complete', 'pending_payment', 'pending_leadsonline'];
+var ROI_FULFILLED = ['outbound_complete'].concat(ROI_ARRIVED);   // a label went out (or further)
+
+// ── Our own test registrations. diagMyTests() found these distorting the
+//    funnel (Direct especially); the ROI table and its drill-down skip them.
+//    Patterns are the DIRECT identifiers from diagMyTests — deliberately NOT
+//    its "shared IP with a known test" inference, which would drop real
+//    customers who happened to register from the same network. Exact addresses
+//    go in TEST_EMAILS; the count and list come back on every ROI response as
+//    excluded_tests so nothing disappears silently.
+var TEST_EMAILS = [];
+var TEST_EMAIL_PATTERNS = [
+  /^test\d*([._+-]|@)/i, /\+test/i,
+  /davidisaacweiss/i, /dweiss/i, /pepperplastic/i,
+  /@snappy\.gold$/i, /@dw5\.llc$/i,
+  /parnasa/i, /beachedgold/i,
+];
+function _roiIsTestEmail(em) {
+  em = String(em || '').toLowerCase().trim();
+  if (!em) return false;
+  if (TEST_EMAILS.indexOf(em) !== -1) return true;
+  for (var i = 0; i < TEST_EMAIL_PATTERNS.length; i++) if (TEST_EMAIL_PATTERNS[i].test(em)) return true;
+  return false;
+}
+
 function getMarketingRoi(parsed) {
   parsed = parsed || {};
   var to   = parsed.to   || _mkDateStr(new Date());
@@ -534,9 +562,7 @@ function getMarketingRoi(parsed) {
   var ships = sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS));
   var shipsByCust = {};
   ships.forEach(function (s) { if (s.customer_id) (shipsByCust[s.customer_id] = shipsByCust[s.customer_id] || []).push(s); });
-  var ARRIVED = ['received', 'inspected', 'pending_response', 'pending_payment', 'pending_leadsonline', 'complete', 'returned'];
-  var PURCHASED = ['complete', 'pending_payment', 'pending_leadsonline'];
-  var FULFILLED = ['outbound_complete'].concat(ARRIVED);   // a label went out (or further)
+  var ARRIVED = ROI_ARRIVED, PURCHASED = ROI_PURCHASED, FULFILLED = ROI_FULFILLED;
   // Repeat flag: a shipment is a repeat if the same customer had an EARLIER
   // shipment that arrived. Walk each customer's shipments oldest→newest.
   Object.keys(shipsByCust).forEach(function (cid) {
@@ -551,7 +577,7 @@ function getMarketingRoi(parsed) {
 
   // Registration touches per email, for "what brought the repeater back"
   var regsByEmail = {};
-  (idx.allRegs || []).forEach(function (g) { (regsByEmail[g.email] = regsByEmail[g.email] || []).push(g); });
+  (idx.allRegs || []).forEach(function (g) { if (_roiIsTestEmail(g.email)) return; (regsByEmail[g.email] = regsByEmail[g.email] || []).push(g); });
   var repeatSources = {};   // key → {key,label,fulfilled,arrived,purchased,paid}
   var repeatRegs = 0;       // registrations by people who already registered before
   Object.keys(regsByEmail).forEach(function (em) { if (regsByEmail[em].length > 1) repeatRegs += regsByEmail[em].length - 1; });
@@ -582,9 +608,11 @@ function getMarketingRoi(parsed) {
     return ch.adsets[k];
   }
 
+  var testsExcluded = [];
   Object.keys(regByEmail).forEach(function (em) {
     var reg = regByEmail[em];
     if (reg < fromDate || reg > toDate) return;
+    if (_roiIsTestEmail(em)) { testsExcluded.push(em); return; }
     var cls = _mkClassify(attrByEmail[em] || {});
     var m = _mkEmptyMetrics(); m.regs = 1;
     var cid = custIdByEmail[em];
@@ -675,6 +703,7 @@ function getMarketingRoi(parsed) {
   var out = {
     success: true, from: from, to: to, mature_days: matureDays, exclude_over: excludeOver, generated_at: now.toISOString(),
     excluded: excluded, index_source: idx.source,
+    excluded_tests: { count: testsExcluded.length, emails: testsExcluded.sort() },
     repeat_sources: Object.keys(repeatSources).map(function (k) { return repeatSources[k]; }).sort(function (a, b) { return b.fulfilled - a.fulfilled; }),
     repeat_registrations: repeatRegs,
     totals: totals, channels: chanList, unmatched_spend: unmatched, spend_freshness: freshness,
@@ -806,4 +835,190 @@ function testMarketingRoi() {
     c.adsets.slice(0, 5).forEach(function (s) { Logger.log('      ' + s.label + ': $' + s.all.spend.toFixed(0) + ' · ' + s.all.regs + ' regs · ' + s.all.arrived + ' arrived'); });
   });
   Logger.log('Unmatched spend: ' + JSON.stringify(r.unmatched_spend) + ' · freshness: ' + JSON.stringify(r.spend_freshness));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  ROI DRILL-DOWN — the records behind a REGS / FULFILLED / ARRIVED / BOUGHT
+//  number on the ROI table.
+//
+//  This repeats getMarketingRoi's cohort walk rather than the affiliate
+//  tab's ref-only logic, so it inherits the same attribution: the ROI Index
+//  (_roiLoadIndex → attrByEmail), which includes the session- and IP-recovered
+//  registrations that have no ref of their own, and the same _mkClassify
+//  buckets. Stage lists are the shared ROI_* constants, the window / maturity /
+//  outlier params are the table's own, and the same test emails are skipped —
+//  so the row count always equals the number that was clicked.
+//
+//  Counting, matching the table exactly:
+//    regs      — 1 per EMAIL (counts_reg marks that row), never per shipment
+//    fulfilled / arrived / purchased — per shipment
+//    repeat    — the caller's First-time / Repeat chip filters on this flag;
+//                registrations are never split by it, same as the table
+//    outlier   — a purchase over exclude_over keeps its COUNT and loses its
+//                dollars upstream; flagged here so the drawer can say so
+// ═══════════════════════════════════════════════════════════════════════
+var ROI_RECORDS_MAX = 5000;
+
+function _roiRecDate(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString();
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? String(v) : d.toISOString();
+}
+
+// "facebook · via ip" — the raw first touch, plus how it was attributed when it
+// wasn't the registration row itself.
+function _roiFirstTouch(a) {
+  if (!a) return 'direct';
+  var src = String(a.utm_source || '').trim() || String(a.ref || '').trim() ||
+            (a.fbclid ? 'fbclid' : '') || (a.gclid ? 'gclid' : '') || 'direct';
+  var via = String(a.via || 'row');
+  return via && via !== 'row' ? (src + ' · via ' + via) : src;
+}
+
+function getMarketingRoiRecords(parsed) {
+  parsed = parsed || {};
+  var to   = parsed.to   || _mkDateStr(new Date());
+  var from = parsed.from || '2026-01-01';
+  var matureDays = parseInt(parsed.mature_days, 10) || 30;
+  var excludeOver = parseFloat(parsed.exclude_over) || 0;
+  var wantChan  = String(parsed.channel || '').toLowerCase().trim();   // '' = every channel (the Total row)
+  var wantAdset = String(parsed.adset || '').trim();                   // '' = the whole channel
+
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var now = new Date();
+  var matureCutoff = new Date(now.getTime() - matureDays * 86400000);
+  var fromDate = new Date(from + 'T00:00:00');
+  var toDate   = new Date(to + 'T23:59:59');
+
+  var idx = _roiLoadIndex(ss);
+  var attrByEmail = idx.attrByEmail, regByEmail = idx.regByEmail;
+
+  var custs = sheetToObjects(ss.getSheetByName(TAB.CUSTOMERS));
+  var custIdByEmail = {}, nameByEmail = {};
+  custs.forEach(function (c) {
+    var e = String(c.email || '').toLowerCase().trim();
+    if (!e || !c.customer_id) return;
+    custIdByEmail[e] = c.customer_id;
+    nameByEmail[e] = String(c.name || '').trim();
+  });
+
+  var ships = sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS));
+  var shipsByCust = {};
+  ships.forEach(function (s) { if (s.customer_id) (shipsByCust[s.customer_id] = shipsByCust[s.customer_id] || []).push(s); });
+  // Same repeat rule as the table: a shipment is a repeat if an EARLIER one arrived.
+  Object.keys(shipsByCust).forEach(function (cid) {
+    var list = shipsByCust[cid].slice().sort(function (a, b) { return String(a.created_at || '').localeCompare(String(b.created_at || '')); });
+    var seenArrived = false;
+    list.forEach(function (s) {
+      s._repeat = seenArrived;
+      var st = String(s.stage || '').toLowerCase();
+      if (ROI_ARRIVED.indexOf(st) !== -1 || String(s.received_at || '').trim()) seenArrived = true;
+    });
+  });
+
+  var records = [], truncated = false;
+  Object.keys(regByEmail).forEach(function (em) {
+    if (truncated) return;
+    var reg = regByEmail[em];
+    if (reg < fromDate || reg > toDate) return;
+    if (_roiIsTestEmail(em)) return;
+    var attr = attrByEmail[em] || {};
+    var cls = _mkClassify(attr);
+    if (wantChan && cls.key !== wantChan) return;
+    if (wantAdset && (cls.sub || '_') !== wantAdset) return;
+
+    var base = {
+      email: em, name: nameByEmail[em] || '',
+      registered_at: _roiRecDate(reg),
+      mature: reg <= matureCutoff,
+      channel: cls.label || cls.key, adset: cls.subLabel || (cls.sub ? cls.sub : '(unattributed within channel)'),
+      first_touch: _roiFirstTouch(attr),
+    };
+    var cid = custIdByEmail[em];
+    var mine = cid ? (shipsByCust[cid] || []) : [];
+    var since = reg.getTime() - 86400000;   // registration creates the shipment; a day of slack, same as the table
+    var kept = [];
+    mine.forEach(function (s) {
+      var c = s.created_at ? new Date(s.created_at) : null;
+      if (!c || isNaN(c.getTime()) || c.getTime() < since) return;
+      var st = String(s.stage || '').toLowerCase();
+      var arrived = ROI_ARRIVED.indexOf(st) !== -1 || !!String(s.received_at || '').trim();
+      var purchased = ROI_PURCHASED.indexOf(st) !== -1;
+      var paid = parseFloat(s.purchase_price) || 0;
+      kept.push({
+        shipment_id: String(s.shipment_id || ''), customer_id: String(s.customer_id || ''),
+        sent_at: _roiRecDate(s.sent_at), arrived_at: _roiRecDate(s.received_at),
+        purchased_at: _roiRecDate(s.purchased_at) || _roiRecDate(s.paid_at),
+        paid: purchased ? paid : 0, stage: st,
+        fulfilled: ROI_FULFILLED.indexOf(st) !== -1 || !!String(s.outbound_tracking || '').trim(),
+        arrived: arrived, purchased: purchased,
+        repeat: !!s._repeat,
+        outlier: purchased && excludeOver > 0 && paid > excludeOver,
+        _ts: c.getTime(),
+      });
+    });
+    kept.sort(function (a, b) { return a._ts - b._ts; });
+
+    if (!kept.length) {
+      records.push(_roiRecMerge(base, {
+        customer_id: cid || '', shipment_id: '', sent_at: '', arrived_at: '', purchased_at: '',
+        paid: 0, stage: '', fulfilled: false, arrived: false, purchased: false,
+        repeat: false, outlier: false, counts_reg: true,
+      }));
+      return;
+    }
+    kept.forEach(function (s, i) {
+      if (records.length >= ROI_RECORDS_MAX) { truncated = true; return; }
+      delete s._ts;
+      s.counts_reg = (i === 0);
+      if (!s.customer_id) s.customer_id = cid || '';
+      records.push(_roiRecMerge(base, s));
+    });
+  });
+
+  return {
+    success: true, from: from, to: to, mature_days: matureDays, exclude_over: excludeOver,
+    channel: wantChan, adset: wantAdset, index_source: idx.source,
+    records: records, truncated: truncated,
+  };
+}
+
+function _roiRecMerge(base, extra) {
+  var o = {};
+  Object.keys(base).forEach(function (k) { o[k] = base[k]; });
+  Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+  return o;
+}
+
+function handleGetMarketingRoiRecords(parsed) {
+  try { return getMarketingRoiRecords(parsed); }
+  catch (e) { return { success: false, error: String(e && e.message || e) }; }
+}
+
+// ── Editor check: every ROI number against its own drill-down ──
+function testRoiRecords() {
+  var params = { from: '2026-01-01', to: _mkDateStr(new Date()), mature_days: 14, exclude_over: 5000, nocache: true };
+  var roi = getMarketingRoi(params);
+  Logger.log('ROI totals (all): regs ' + roi.totals.all.regs + ' · fulfilled ' + roi.totals.all.fulfilled +
+             ' · arrived ' + roi.totals.all.arrived + ' · bought ' + roi.totals.all.purchased);
+  Logger.log('test registrations excluded: ' + roi.excluded_tests.count + (roi.excluded_tests.count ? ' → ' + roi.excluded_tests.emails.join(', ') : ''));
+  var rec = getMarketingRoiRecords(params);
+  ['all', 'mature'].forEach(function (v) {
+    var rows = rec.records.filter(function (r) { return v === 'all' || r.mature; });
+    var t = roi.totals[v];
+    var got = [rows.filter(function (r) { return r.counts_reg; }).length,
+               rows.filter(function (r) { return r.fulfilled; }).length,
+               rows.filter(function (r) { return r.arrived; }).length,
+               rows.filter(function (r) { return r.purchased; }).length];
+    var want = [t.regs, t.fulfilled, t.arrived, t.purchased];
+    Logger.log((got.join('/') === want.join('/') ? 'MATCH  ' : 'MISMATCH ') + v + ': drill ' + got.join('/') + ' vs table ' + want.join('/'));
+  });
+  roi.channels.forEach(function (ch) {
+    var r2 = getMarketingRoiRecords({ from: params.from, to: params.to, mature_days: 14, exclude_over: 5000, channel: ch.key });
+    var got = [r2.records.filter(function (r) { return r.counts_reg; }).length, r2.records.filter(function (r) { return r.arrived; }).length];
+    Logger.log((got[0] === ch.all.regs && got[1] === ch.all.arrived ? '  ok   ' : '  DIFF ') + ch.key +
+               ': drill ' + got.join('/') + ' vs table ' + ch.all.regs + '/' + ch.all.arrived);
+  });
 }
