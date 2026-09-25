@@ -1739,6 +1739,78 @@ function ReceivedPhotoPromptModal({shipment, onPhotoAdded, onSkip}) {
   </div>;
 }
 
+// Per-item values as InspectionPanel writes them: finalValue (the override, or
+// the suggestion when it wasn't overridden), with suggested as the fallback for
+// rows written before that field existed. null = nothing to pre-fill from.
+function inspectionItemSum(raw){
+  try{
+    const v = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if(!Array.isArray(v) || !v.length) return null;
+    let sum = 0, found = false;
+    v.forEach(it=>{
+      const pick = (it && it.finalValue!==undefined && it.finalValue!=="") ? it.finalValue : (it && it.suggested);
+      const n = parseFloat(pick);
+      if(!isNaN(n)){ sum += n; found = true; }
+    });
+    return found ? Math.round(sum*100)/100 : null;
+  }catch(e){ return null; }
+}
+// Blank means never set. A real 0 is a value, not a gap.
+function appraisedBlank(s){ return !String((s && s.appraised_value) ?? "").trim(); }
+
+// Margin and Net across the ROI and Marketing tabs are appraised_value − paid,
+// so a purchase with no appraisal drags every number that reads it. This catches
+// it at the one moment the information is in front of you.
+function AppraisedValuePromptModal({shipment, onSaved, onSkip}) {
+  const suggested = inspectionItemSum(shipment.inspection_json);
+  const [value, setValue] = useState(suggested!==null ? String(suggested) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const canSave = value!=="" && !isNaN(parseFloat(value));
+
+  async function save() {
+    if (!canSave) return;
+    setError(""); setSaving(true);
+    try {
+      const v = Math.round(parseFloat(value)*100)/100;
+      const res = await apiPost({action:"updateShipment", shipment_id:shipment.shipment_id, updates:{appraised_value:String(v)}});
+      const ok = res === true || (res && typeof res === "object" && !res.error) || res === "true";
+      if (!ok) { setError("Save failed: " + ((res && res.error) || "no response")); setSaving(false); return; }
+      onSaved(v);
+    } catch (err) {
+      setError("Save failed: " + (err.message || String(err)));
+    }
+    setSaving(false);
+  }
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onSkip()}>
+    <div style={{background:"#fff",borderRadius:12,width:"min(460px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+      <div style={{fontSize:22,marginBottom:6}}>💎</div>
+      <div style={{fontWeight:700,fontSize:17,marginBottom:6,color:G.text}}>Appraised value for this purchase</div>
+      <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
+        What {shipment.item||"this lot"} is worth to us — margin is this minus what we pay.
+        {suggested!==null && <span> Pre-filled with the inspection item total.</span>}
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
+        <span style={{fontSize:18,fontWeight:700,color:G.gold}}>$</span>
+        <input
+          value={value}
+          onChange={e=>setValue(e.target.value)}
+          type="number"
+          placeholder="0.00"
+          autoFocus
+          style={{flex:1,padding:10,fontSize:16,fontWeight:700,border:`1px solid ${G.border}`,borderRadius:8,boxSizing:"border-box"}}
+        />
+      </div>
+      {error && <div style={{color:G.red,fontSize:12,marginBottom:8}}>{error}</div>}
+      <div style={{display:"flex",gap:10,marginTop:4,alignItems:"center"}}>
+        <Btn v="gold" onClick={save} disabled={saving || !canSave}>{saving ? "Saving…" : "Save appraised value"}</Btn>
+        <button onClick={onSkip} disabled={saving} style={{background:"none",border:"none",color:G.muted,fontSize:13,cursor:saving?"wait":"pointer",textDecoration:"underline",marginLeft:"auto"}}>Not now</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1793,7 +1865,10 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
 function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
   const [price, setPrice] = useState("");
   const [desc, setDesc] = useState("");
-  const canSave = price !== "" && !isNaN(parseFloat(price));
+  // No offer goes out before the lot is appraised — otherwise the purchase
+  // lands in the funnel with margin it can never report.
+  const needsAppraised = appraisedBlank(shipment);
+  const canSave = price !== "" && !isNaN(parseFloat(price)) && !needsAppraised;
 
   return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onCancel()}>
     <div style={{background:"#fff",borderRadius:12,width:"min(500px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
@@ -1827,6 +1902,10 @@ function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
           style={{width:"100%",padding:10,fontSize:14,fontFamily:"inherit",border:`1px solid ${G.border}`,borderRadius:8,resize:"vertical",boxSizing:"border-box"}}
         />
       </div>
+      {needsAppraised && <div style={{background:"#FFF8E6",border:`1px solid ${G.gold}66`,borderRadius:8,padding:"10px 12px",fontSize:12,color:G.text,lineHeight:1.5,marginBottom:12}}>
+        <strong>Appraised value is blank.</strong> Set it before sending an offer — margin and net are computed from it.
+        Add it in the <strong>🔍 Inspection</strong> panel below (Save writes it), or save inspection notes and use the prompt that follows.
+      </div>}
       <div style={{display:"flex",gap:10,alignItems:"center"}}>
         <Btn v="gold" onClick={()=>onSaved(parseFloat(price), desc.trim())} disabled={!canSave}>Generate offer</Btn>
         <button onClick={onCancel} style={{background:"none",border:"none",color:G.muted,fontSize:13,cursor:"pointer",textDecoration:"underline",marginLeft:"auto"}}>Cancel</button>
@@ -2103,6 +2182,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
   const [showReceivedPhotoPrompt, setShowReceivedPhotoPrompt] = useState(false);
   const [showBinNumberPrompt, setShowBinNumberPrompt] = useState(false);
   const [showInspectedNotesPrompt, setShowInspectedNotesPrompt] = useState(false);
+  const [showAppraisedPrompt, setShowAppraisedPrompt] = useState(false);
   const [showOfferPrompt, setShowOfferPrompt] = useState(false);
 
   // PERF PATCH (May 19): attribution is lazy-loaded.
@@ -2722,8 +2802,19 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         onSaved={(newLog)=>{
           setShowInspectedNotesPrompt(false);
           if (newLog) setLocalLogs(prev=>[newLog,...prev]);
+          if (appraisedBlank(shipment)) setShowAppraisedPrompt(true);
         }}
         onSkip={()=>setShowInspectedNotesPrompt(false)}
+      />
+    )}
+    {showAppraisedPrompt && (
+      <AppraisedValuePromptModal
+        shipment={shipment}
+        onSaved={(value)=>{
+          setShowAppraisedPrompt(false);
+          onUpdate({...shipment, appraised_value: String(value)});
+        }}
+        onSkip={()=>setShowAppraisedPrompt(false)}
       />
     )}
     {showOfferPrompt && (
