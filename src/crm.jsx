@@ -4642,6 +4642,21 @@ function SalesTab({shipments, customers}) {
 
   const shown = sales.filter(s => typeFilter === "all" ? true : saleType(s) === typeFilter);
 
+  // Footer totals: the header's arithmetic, over the rows the filter is showing.
+  // Expected rows are projections — the header keeps them out of actuals, so the
+  // footer does too, which is what makes All match the header line exactly. The
+  // Expected view is the one place they're totalled, and it says "projected".
+  const footerRows = typeFilter === "expected" ? shown : shown.filter(x => saleType(x) !== "expected");
+  const foot = footerRows.reduce((t, x) => {
+    const v = summarizeSale(x);
+    t.gross  += saleType(x) === "loss" ? 0 : (parseFloat(x.amount) || 0);
+    t.fees   += v.fees;
+    t.cost   += v.totalCost;
+    t.profit += v.profit;
+    return t;
+  }, {gross:0, fees:0, cost:0, profit:0});
+  const footSkipped = shown.length - footerRows.length;   // expected rows in view but not in the totals
+
   return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:24,background:G.bg}}>
     {showAdd && <SaleModal shipments={shipments} customers={customers} onSave={()=>{setShowAdd(false);loadSales();}} onCancel={()=>setShowAdd(false)} initialShipmentIds={[]}/>}
     {editingSale && <SaleModal shipments={shipments} customers={customers} sale={editingSale} onSave={()=>{setEditingSale(null);loadSales();}} onCancel={()=>setEditingSale(null)} initialShipmentIds={String(editingSale.shipment_ids||"").split(",").map(x=>x.trim()).filter(Boolean)}/>}
@@ -4685,10 +4700,10 @@ function SalesTab({shipments, customers}) {
        <div style={{fontSize:12,marginTop:6}}>Click "+ Add Sale" to record your first sale.</div>
      </div> :
      <div style={{flex:1,overflow:"auto"}}>
-       <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:10,overflow:"hidden",border:`1px solid ${G.border}`}}>
+       <table style={{width:"100%",borderCollapse:"collapse",background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
          <thead>
            <tr style={{background:"#1A1816",color:G.gold,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase"}}>
-             <th style={{textAlign:"left",padding:"10px 12px"}}>Date</th>
+             <th style={{textAlign:"left",padding:"10px 12px",borderTopLeftRadius:10}}>Date</th>
              <th style={{textAlign:"left",padding:"10px 12px"}}>Buyer</th>
              <th style={{textAlign:"left",padding:"10px 12px"}}>Items</th>
              <th style={{textAlign:"left",padding:"10px 12px"}}>Payment</th>
@@ -4697,7 +4712,7 @@ function SalesTab({shipments, customers}) {
              <th style={{textAlign:"right",padding:"10px 12px"}}>Fees</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Profit</th>
              <th style={{textAlign:"right",padding:"10px 12px"}}>Margin</th>
-             <th style={{padding:"10px 12px"}}/>
+             <th style={{padding:"10px 12px",borderTopRightRadius:10}}/>
            </tr>
          </thead>
          <tbody>
@@ -4741,6 +4756,27 @@ function SalesTab({shipments, customers}) {
              </tr>;
            })}
          </tbody>
+         {(()=>{
+           const ft = {position:"sticky",bottom:0,background:"#F5EFE6",borderTop:`2px solid ${G.border}`,padding:"10px 12px",fontWeight:700,fontSize:13,zIndex:1};
+           const num = {...ft,textAlign:"right"};
+           return <tfoot>
+             <tr>
+               <td colSpan={4} style={{...ft,borderBottomLeftRadius:10}}>
+                 {typeFilter==="expected" ? "Projected total" : "Total"}
+                 <span style={{fontWeight:400,color:G.muted,marginLeft:8,fontSize:12}}>
+                   {shown.length} row{shown.length!==1?"s":""}
+                   {footSkipped>0 ? ` · excludes ${footSkipped} expected` : ""}
+                 </span>
+               </td>
+               <td style={num}>${foot.cost.toFixed(2)}</td>
+               <td style={num}>${foot.gross.toFixed(2)}</td>
+               <td style={{...num,color:foot.fees>0?G.red:G.muted,fontSize:12}}>{foot.fees>0 ? "−$"+foot.fees.toFixed(2) : "—"}</td>
+               <td style={{...num,color:foot.profit>=0?G.green:G.red}}>${foot.profit.toFixed(2)}</td>
+               <td style={num}/>
+               <td style={{...ft,borderBottomRightRadius:10}}/>
+             </tr>
+           </tfoot>;
+         })()}
        </table>
        {shown.some(sl=>summarizeSale(sl).imputed) && <div style={{padding:"10px 12px",fontSize:12,color:G.muted,fontStyle:"italic"}}>
          <span style={{color:G.gold,fontWeight:700}}>*</span> No linked shipment (refiner, bulk melt, or unmatched), so cost is <b>assumed</b> from a margin % (default {UNLINKED_DEFAULT_MARGIN}%, editable per sale via Edit) — not a recorded cost. Link a shipment to replace the assumption with the real purchase price. eBay fees are auto-calculated at {EBAY_FEE_PCT}% of gross and deducted before profit.
