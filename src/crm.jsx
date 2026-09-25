@@ -2141,6 +2141,154 @@ function BinNumberPromptModal({shipment, onSaved, onSkip}) {
 
 // "Open label PDF" — asks the backend (getLabelUrl) for the existing Shippo/EasyPost
 // label URL on click; the URL isn't stored on the shipment.
+// ═══════════════════════════════════════════════════════════════
+//  ADDRESS LABEL (Sep 25) — 4x6 for the DYMO 4XL: FROM on the top half,
+//  a cut line, the customer's address in large type on the bottom half. For
+//  envelopes and hand-packed returns, where there's no carrier label to print.
+//  The only copy of our return address in the frontend; anything else that
+//  needs it should read this, not retype it.
+// ═══════════════════════════════════════════════════════════════
+const RETURN_ADDRESS = {
+  name:    "Snappy Gold",
+  company: "DW5 LLC",
+  street:  "1686 S Federal Hwy #318",
+  city:    "Delray Beach",
+  state:   "FL",
+  zip:     "33483",
+};
+
+const ADDR_STATE_NAMES = {alabama:"AL",alaska:"AK",arizona:"AZ",arkansas:"AR",california:"CA",colorado:"CO",connecticut:"CT",delaware:"DE","district of columbia":"DC",florida:"FL",georgia:"GA",hawaii:"HI",idaho:"ID",illinois:"IL",indiana:"IN",iowa:"IA",kansas:"KS",kentucky:"KY",louisiana:"LA",maine:"ME",maryland:"MD",massachusetts:"MA",michigan:"MI",minnesota:"MN",mississippi:"MS",missouri:"MO",montana:"MT",nebraska:"NE",nevada:"NV","new hampshire":"NH","new jersey":"NJ","new mexico":"NM","new york":"NY","north carolina":"NC","north dakota":"ND",ohio:"OH",oklahoma:"OK",oregon:"OR",pennsylvania:"PA","puerto rico":"PR","rhode island":"RI","south carolina":"SC","south dakota":"SD",tennessee:"TN",texas:"TX",utah:"UT",vermont:"VT",virginia:"VA",washington:"WA","west virginia":"WV",wisconsin:"WI",wyoming:"WY"};
+const ADDR_STATE_CODES = new Set(Object.values(ADDR_STATE_NAMES));
+function addrStateCode(tok){
+  const t = String(tok||"").replace(/\./g,"").trim();
+  if(t.length===2 && ADDR_STATE_CODES.has(t.toUpperCase())) return t.toUpperCase();
+  return ADDR_STATE_NAMES[t.toLowerCase()] || "";
+}
+// Customers store one freeform address string, so the label has to take it apart
+// to print USPS-style. Anything it can't find is reported by name rather than
+// guessed — a label with the city missing is worse than no label.
+function parseUsAddress(raw){
+  // Newlines are separators, not spaces — a pasted three-line address would
+  // otherwise collapse into one run with no comma to split city from street.
+  const txt = String(raw||"").replace(/\r/g,"").replace(/\s*\n+\s*/g,", ")
+    .replace(/\s+/g," ").replace(/\s*,\s*/g,", ").trim();
+  const out = {street:"",city:"",state:"",zip:""};
+  if(txt){
+    const zipM = txt.match(/\b(\d{5})(?:-(\d{4}))?\b\s*(?:,?\s*(?:U\.?S\.?A?\.?|United States))?\s*$/i);
+    let rest = txt;
+    if(zipM){ out.zip = zipM[2] ? `${zipM[1]}-${zipM[2]}` : zipM[1]; rest = txt.slice(0, zipM.index); }
+    rest = rest.replace(/[,\s]+$/,"").trim();
+    // State: the last token, or the last two for "New York" / "North Carolina".
+    // Two words are tried first so "York" can't win over "New York".
+    const toks = rest.split(/[,\s]+/).filter(Boolean);
+    for(let n=2; n>=1; n--){
+      if(toks.length <= n) continue;                     // never eat the whole address
+      const cand = toks.slice(toks.length-n).join(" ");
+      const code = addrStateCode(cand);
+      if(code){
+        out.state = code;
+        const cut = rest.toLowerCase().lastIndexOf(cand.toLowerCase());
+        rest = (cut > 0 ? rest.slice(0, cut) : "").replace(/[,\s]+$/,"").trim();
+        break;
+      }
+    }
+    const parts = rest.split(",").map(x=>x.trim()).filter(Boolean);
+    if(parts.length >= 2){ out.city = parts[parts.length-1]; out.street = parts.slice(0,-1).join(", "); }
+    // One part left and no comma to go on: a leading digit reads as a street,
+    // anything else as a city. Whichever it isn't gets reported as missing.
+    else if(parts.length === 1){ if(/^\d/.test(parts[0])) out.street = parts[0]; else out.city = parts[0]; }
+  }
+  const missing = [];
+  if(!out.street) missing.push("street");
+  if(!out.city)   missing.push("city");
+  if(!out.state)  missing.push("state");
+  if(!out.zip)    missing.push("ZIP");
+  return {...out, missing};
+}
+
+function addrEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function openAddressLabel(customer){
+  const name = String(customer?.name||"").trim();
+  const a = parseUsAddress(customer?.address);
+  const missing = (name ? [] : ["name"]).concat(a.missing);
+  if(missing.length){
+    alert("Can't print the address label — missing "+missing.join(", ")+".\n\n"+
+      "On file:\n  name: "+(name||"—")+
+      "\n  address: "+(String(customer?.address||"").trim()||"—")+
+      "\n\nFix the customer record (Edit customer) and try again.");
+    return;
+  }
+  const from = RETURN_ADDRESS;
+  // @page sizes it for the 4XL. On a sheet printer the label block keeps its
+  // exact 4x6 and prints in the top-left corner instead of scaling.
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Address label — ${addrEsc(name)}</title>
+<style>
+  @page { size: 4in 6in; margin: 0; }
+  html, body { margin:0; padding:0; background:#f4f1ec; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .bar { position:fixed; top:0; left:0; right:0; padding:8px 10px; background:#1A1816; color:#C8953C;
+         font:600 13px/1.3 -apple-system,Segoe UI,Roboto,sans-serif; display:flex; gap:10px; align-items:center; z-index:9; }
+  .bar button { font:700 13px/1 inherit; padding:7px 14px; border:none; border-radius:6px; background:#C8953C; color:#fff; cursor:pointer; }
+  .bar span { color:#8B7D70; font-weight:400; font-size:11px; }
+  .sheet { margin:52px auto 24px; }
+  .label { width:4in; height:6in; box-sizing:border-box; background:#fff; margin:0 auto;
+           font-family:Helvetica,Arial,sans-serif; color:#000; overflow:hidden; }
+  .from { height:3in; box-sizing:border-box; padding:0.28in 0.3in; font-size:9.5pt; line-height:1.45; }
+  .from .lead { font-weight:700; font-size:11pt; }
+  .to { height:3in; box-sizing:border-box; padding:0.3in; border-top:2px dashed #000; position:relative; }
+  .to .who { font-size:20pt; font-weight:700; line-height:1.25; text-transform:uppercase; letter-spacing:0.2pt; }
+  .to .who .st { font-size:0.9em; }
+  .note { position:absolute; left:0.3in; right:0.3in; bottom:0.26in; font-size:11pt; min-height:1.3em;
+          border-bottom:1px dotted #999; outline:none; }
+  @media screen { .label { box-shadow:0 2px 14px rgba(0,0,0,0.18); } }
+  @media print {
+    html, body { background:#fff; }
+    .bar { display:none !important; }
+    .sheet { margin:0; }
+    .label { box-shadow:none; }
+    .note { border-bottom:none; }
+  }
+</style></head><body>
+  <div class="bar">
+    <button onclick="window.print()">Print</button>
+    <span>4&times;6 &middot; DYMO 4XL &middot; the note line is editable before you print</span>
+  </div>
+  <div class="sheet"><div class="label">
+    <div class="from">
+      <div class="lead">${addrEsc(from.name)}</div>
+      <div>${addrEsc(from.company)}</div>
+      <div>${addrEsc(from.street)}</div>
+      <div>${addrEsc(from.city)}, ${addrEsc(from.state)} ${addrEsc(from.zip)}</div>
+    </div>
+    <div class="to">
+      <div class="who">
+        <div>${addrEsc(name)}</div>
+        <div class="st">${addrEsc(a.street)}</div>
+        <div class="st">${addrEsc(a.city)}, ${addrEsc(a.state)} ${addrEsc(a.zip)}</div>
+      </div>
+      <div class="note" contenteditable="true" spellcheck="false">Check enclosed</div>
+    </div>
+  </div></div>
+  <script>
+  // A long name plus an apartment line can push the address past the cut at
+  // 6in and over the note. Step the TO type down until it fits — still large,
+  // but on the label. 20pt covers virtually everything; this is the tail.
+  (function(){
+    var who=document.querySelector('.who'), note=document.querySelector('.note');
+    var size=20;
+    while(size>11 && who.getBoundingClientRect().bottom > note.getBoundingClientRect().top - 4){
+      size -= 0.5;
+      who.style.fontSize = size + 'pt';
+    }
+  })();
+  </script>
+</body></html>`;
+  const w = window.open("", "_blank", "width=470,height=800");
+  if(!w){ alert("Popup blocked — allow popups for this site to print address labels."); return; }
+  w.document.open(); w.document.write(html); w.document.close(); w.focus();
+}
+
 function LabelPdfLink({shipmentId}) {
   const [busy,setBusy]=useState(false);
   const [msg,setMsg]=useState("");
@@ -2902,6 +3050,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
         {actions.map((a,i)=><Btn key={i} v={a.v} small onClick={()=>a.stage?quickStage(a.stage):setModal(a.action)}>{a.label}</Btn>)}
         {shipment.stage==="pending_response"&&<Btn v="orange" small onClick={resendOfferEmail}>📧 Resend offer email</Btn>}
         <Btn v="ghost" small onClick={generateReturnLabel}>📦 Return label</Btn>
+        <Btn v="ghost" small onClick={()=>openAddressLabel(customer)}>🏷 Address label</Btn>
         <div style={{marginLeft:"auto",display:"flex",gap:8}}>
           {/* SEP 14: thumbs-down on a triage fulfillment → auto:triage-override Contact Log row (weekly review) */}
           {(()=>{
