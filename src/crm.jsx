@@ -6821,6 +6821,9 @@ function InventoryTab({onOpenShipment}) {
   const [loading,setLoading] = useState(true);
   const [err,setErr]         = useState("");
   const [readyOnly,setReadyOnly] = useState(false);
+  const [status,setStatus]   = useState("all");   // all | owned | pending
+  const [window_,setWindow]  = useState("any");   // any | 7 | 30 | 90 | older30
+  const [showEmpty,setShowEmpty] = useState(false);
   const [editing,setEditing] = useState(false);
   const [busy,setBusy]       = useState("");      // shipment_id being written
   const [moved,setMoved]     = useState({});      // shipment_id → new bin, applied locally until the next load
@@ -6867,9 +6870,35 @@ function InventoryTab({onOpenShipment}) {
     (byBin[key] = byBin[key] || []).push({...x, bin:key});
   }));
   const shelves = data?.all_bins||[];
-  const rows = bin => { const list = byBin[bin]||[]; return readyOnly ? list.filter(x=>x.ready) : list; };
+  // The date filter reads whichever date the item is actually dated by: the
+  // purchase date once it's ours, the arrival date while it isn't. An item with
+  // neither can't be placed in a window, so a window filter drops it.
+  const ageDays = x => {
+    const iso = x.purchased ? x.paid_at : x.arrived_at;
+    if(!iso) return null;
+    const t = new Date(iso).getTime();
+    return isNaN(t) ? null : Math.floor((Date.now()-t)/86400000);
+  };
+  const keep = x => {
+    if(readyOnly && !x.ready) return false;
+    if(status==="owned" && !x.purchased) return false;
+    if(status==="pending" && x.purchased) return false;
+    if(window_!=="any"){
+      const d = ageDays(x);
+      if(d===null) return false;
+      if(window_==="older30" ? d <= 30 : d > parseInt(window_,10)) return false;
+    }
+    return true;
+  };
+  const rows = bin => (byBin[bin]||[]).filter(keep);
   const s = data?.summary;
+  // Empty means the shelf really holds nothing — a shelf hidden by a filter is
+  // not empty, it just has nothing matching.
   const emptyShelves = shelves.filter(b=>!(byBin[b]||[]).length);
+  const shownBins = shelves.filter(b=>rows(b).length);
+  const shownItems = shownBins.flatMap(rows);
+  const shownOwned = shownItems.filter(x=>x.purchased);
+  const filtered = readyOnly || status!=="all" || window_!=="any";
 
   const card = {background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"};
   const th   = {padding:"8px 10px",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",textAlign:"right"};
@@ -6919,16 +6948,34 @@ function InventoryTab({onOpenShipment}) {
       </div>
     </div>}
 
-    {loading && !data ? <div style={{color:G.muted}}>Loading…</div> :
-     shelves.map(bin=>{
+    {data && <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+      <span style={{fontSize:11,color:G.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Status</span>
+      {[["all","All"],["owned","Owned"],["pending","Not yet purchased"]].map(([v,label])=>{
+        const on = status===v;
+        return <button key={v} onClick={()=>setStatus(v)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+          background:on?G.gold:"transparent",color:on?"#fff":G.muted,border:`1px solid ${on?G.gold:G.border}`}}>{label}</button>;
+      })}
+      <span style={{fontSize:11,color:G.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginLeft:8}}
+        title="Purchase date for owned items, arrival date for anything not yet purchased">Date</span>
+      {[["any","Any"],["7","Last 7d"],["30","Last 30d"],["90","Last 90d"],["older30","Older than 30d"]].map(([v,label])=>{
+        const on = window_===v;
+        return <button key={v} onClick={()=>setWindow(v)} style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+          background:on?G.dark:"transparent",color:on?G.cream:G.muted,border:`1px solid ${on?G.dark:G.border}`}}>{label}</button>;
+      })}
+      {filtered && <button onClick={()=>{setStatus("all");setWindow("any");setReadyOnly(false);}}
+        style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",background:"transparent",color:G.muted,border:`1px dashed ${G.border}`}}>Clear filters</button>}
+    </div>}
+
+    {loading && !data ? <div style={{color:G.muted}}>Loading…</div> : <>
+     {!shownBins.length && <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`,marginBottom:16}}>
+       <div style={{fontSize:32,marginBottom:12}}>📦</div>
+       <div style={{fontSize:14}}>{filtered?"Nothing matches these filters.":"Every bin is empty."}</div>
+     </div>}
+     {shownBins.map(bin=>{
        const items = rows(bin);
        const owned = items.filter(x=>x.purchased);
        const paid = owned.reduce((t,x)=>t+(parseFloat(x.paid)||0),0);
        const appraised = items.reduce((t,x)=>t+(parseFloat(x.appraised)||0),0);
-       if(!items.length) return <div key={bin} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 14px",marginBottom:6,background:"#FBFAF8",border:`1px dashed ${G.border}`,borderRadius:8}}>
-         <span style={{fontSize:12,fontWeight:700,color:G.muted}}>Bin {bin}</span>
-         <span style={{fontSize:11,color:G.light||G.muted}}>empty</span>
-       </div>;
        return <div key={bin} style={{marginBottom:16,background:"#fff",border:`1px solid ${G.border}`,borderRadius:10}}>
          <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"10px 14px",borderBottom:`1px solid ${G.border}`,flexWrap:"wrap"}}>
            <span style={{fontSize:14,fontWeight:700,color:G.text}}>Bin {bin}</span>
@@ -6983,6 +7030,30 @@ function InventoryTab({onOpenShipment}) {
          </table>
        </div>;
      })}
+
+     {/* Totals for whatever the filters are showing */}
+     {!!shownItems.length && <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"12px 14px",marginBottom:12,background:"#F5EFE6",border:`1px solid ${G.border}`,borderRadius:10,flexWrap:"wrap",fontWeight:700,fontSize:13,color:G.text}}>
+       <span>Total{filtered?" (filtered)":""}</span>
+       <span style={{fontWeight:400,color:G.muted,fontSize:12}}>
+         {shownItems.length} item{shownItems.length!==1?"s":""} in {shownBins.length} bin{shownBins.length!==1?"s":""} · {shownOwned.length} owned
+       </span>
+       <div style={{flex:1}}/>
+       <span>{invMoney(shownOwned.reduce((t,x)=>t+(parseFloat(x.paid)||0),0))} paid</span>
+       <span style={{color:G.muted}}>·</span>
+       <span>{invMoney(shownItems.reduce((t,x)=>t+(parseFloat(x.appraised)||0),0))} appraised</span>
+     </div>}
+
+     {/* Empty shelves live at the bottom, out of the way until asked for */}
+     {!!emptyShelves.length && <div style={{background:"#FBFAF8",border:`1px dashed ${G.border}`,borderRadius:10,padding:"10px 14px"}}>
+       <div onClick={()=>setShowEmpty(v=>!v)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,fontWeight:700,color:G.muted}}>
+         <span style={{display:"inline-block",width:12,transform:showEmpty?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▸</span>
+         {emptyShelves.length} empty bin{emptyShelves.length!==1?"s":""}
+       </div>
+       {showEmpty && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
+         {emptyShelves.map(b=><span key={b} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:6,padding:"3px 9px",fontSize:12,color:G.muted}}>{b}</span>)}
+       </div>}
+     </div>}
+    </>}
   </div>;
 }
 
