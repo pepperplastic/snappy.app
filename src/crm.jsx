@@ -6814,6 +6814,7 @@ function RulesCopy({c}) {
 // ═══════════════════════════════════════════════════════════════
 function invMoney(v){ const n=parseFloat(v)||0; return "$"+n.toLocaleString(undefined,{maximumFractionDigits:0}); }
 function invDays(n){ return n===null||n===undefined ? "—" : n+"d"; }
+function listedDays(x){ const t=new Date(x.listed_at).getTime(); return isNaN(t)?0:Math.max(0,Math.floor((Date.now()-t)/86400000)); }
 
 function InventoryTab({onOpenShipment}) {
   const isMobile = useIsMobile();
@@ -6826,6 +6827,8 @@ function InventoryTab({onOpenShipment}) {
   const [showEmpty,setShowEmpty] = useState(false);
   const [editing,setEditing] = useState(false);
   const [busy,setBusy]       = useState("");      // shipment_id being written
+  const [listing,setListing] = useState(null);   // shipment_id whose List form is open
+  const [lForm,setLForm]     = useState({where:"eBay", other:"", price:"", url:""});
   const [moved,setMoved]     = useState({});      // shipment_id → new bin, applied locally until the next load
 
   const load = useCallback(async ()=>{
@@ -6859,6 +6862,23 @@ function InventoryTab({onOpenShipment}) {
     for(const it of items) await setBin(it, "");
   }
 
+  // Listing writes go through setListing, then the tab reloads so what's on
+  // screen is what the sheet says — no optimistic listing state to drift.
+  async function saveListing(item, listed_on, listed_price, listed_url){
+    setBusy(item.shipment_id);
+    try{
+      const r = await apiPost({action:"setListing", shipment_id:item.shipment_id,
+        listed_on:listed_on||"", listed_price:listed_price||"", listed_url:listed_url||""});
+      if(r && r.success){ setListing(null); await load(); }
+      else alert("Couldn't save the listing: "+((r&&r.error)||"no response"));
+    }catch(e){ alert("Couldn't save the listing: "+(e.message||e)); }
+    setBusy("");
+  }
+  function openList(item){
+    setLForm({where:"eBay", other:"", price: item.appraised ? String(item.appraised) : "", url:""});
+    setListing(item.shipment_id);
+  }
+
   const norm = v => { const t=String(v==null?"":v).trim(); const m=t.match(/^(?:bin\s*)?(\d+)$/i); return m?String(parseInt(m[1],10)):t.toUpperCase(); };
   // Apply local moves, then lay every shelf out — empty ones included.
   const byBin = {};
@@ -6883,6 +6903,7 @@ function InventoryTab({onOpenShipment}) {
     if(readyOnly && !x.ready) return false;
     if(status==="owned" && !x.purchased) return false;
     if(status==="pending" && x.purchased) return false;
+    if(status==="listed" && !x.listed_on) return false;
     if(window_!=="any"){
       const d = ageDays(x);
       if(d===null) return false;
@@ -6899,6 +6920,9 @@ function InventoryTab({onOpenShipment}) {
   const shownItems = shownBins.flatMap(rows);
   const shownOwned = shownItems.filter(x=>x.purchased);
   const filtered = readyOnly || status!=="all" || window_!=="any";
+  const allItems = Object.values(byBin).flat();
+  const listedItems = allItems.filter(x=>x.listed_on);
+  const listedAsking = listedItems.reduce((t,x)=>t+(parseFloat(x.listed_price)||0),0);
 
   const card = {background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"};
   const th   = {padding:"8px 10px",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",textAlign:"right"};
@@ -6926,7 +6950,7 @@ function InventoryTab({onOpenShipment}) {
       A shipment with no bin drops off this tab entirely — the shipment itself is untouched, and its sale (if there was one) still belongs in the Sales tab.
     </div>}
 
-    {s && <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
+    {s && <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(4,1fr)",gap:10,marginBottom:16}}>
       <div style={card}>
         <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Owned</div>
         <div style={{fontSize:22,fontWeight:700,color:G.text,marginTop:2}}>{s.owned_count}</div>
@@ -6946,11 +6970,16 @@ function InventoryTab({onOpenShipment}) {
         </div>
         <div style={{fontSize:11,color:G.muted,marginTop:2}}>owned items only · {emptyShelves.length} empty bin{emptyShelves.length!==1?"s":""}</div>
       </div>
+      <div style={card}>
+        <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Listed</div>
+        <div style={{fontSize:22,fontWeight:700,color:listedItems.length?G.blue:G.text,marginTop:2}}>{listedItems.length}</div>
+        <div style={{fontSize:11,color:G.muted,marginTop:2}}>{invMoney(listedAsking)} asking</div>
+      </div>
     </div>}
 
     {data && <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
       <span style={{fontSize:11,color:G.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Status</span>
-      {[["all","All"],["owned","Owned"],["pending","Not yet purchased"]].map(([v,label])=>{
+      {[["all","All"],["owned","Owned"],["pending","Not yet purchased"],["listed","Listed"]].map(([v,label])=>{
         const on = status===v;
         return <button key={v} onClick={()=>setStatus(v)} style={{padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
           background:on?G.gold:"transparent",color:on?"#fff":G.muted,border:`1px solid ${on?G.gold:G.border}`}}>{label}</button>;
@@ -6998,7 +7027,7 @@ function InventoryTab({onOpenShipment}) {
              {editing && <th style={{...th,textAlign:"left"}}>Bin</th>}
            </tr></thead>
            <tbody>
-             {items.map(x=><tr key={x.shipment_id}
+             {items.flatMap(x=>[<tr key={x.shipment_id}
                onClick={editing?undefined:()=>onOpenShipment&&onOpenShipment(x.shipment_id)}
                title={editing?"":"Open this shipment in its queue"}
                style={{cursor:editing?"default":"pointer",opacity:busy===x.shipment_id?0.5:1}}
@@ -7011,10 +7040,22 @@ function InventoryTab({onOpenShipment}) {
                <td style={td}>{x.purchased?invMoney(x.paid):<span style={{color:G.muted}}>—</span>}</td>
                <td style={td}>{x.appraised?invMoney(x.appraised):<span style={{color:G.muted}}>—</span>}</td>
                <td style={{...td,color:G.muted}}>{invDays(x.days_since_arrival)}</td>
-               <td style={{...td,textAlign:"left"}}>
-                 {x.purchased
+               <td style={{...td,textAlign:"left"}} onClick={x.purchased?(e=>e.stopPropagation()):undefined}>
+                 {x.listed_on
+                   ? <span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                       {x.listed_url
+                         ? <a href={x.listed_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{textDecoration:"none"}}>
+                             {chip("#E8F0FF",G.blue,`LISTED · ${x.listed_on}${x.listed_price?" · "+invMoney(x.listed_price):""} · ${listedDays(x)}d`,"Open the listing")}
+                           </a>
+                         : chip("#E8F0FF",G.blue,`LISTED · ${x.listed_on}${x.listed_price?" · "+invMoney(x.listed_price):""} · ${listedDays(x)}d`,`Listed ${String(x.listed_at).slice(0,10)}`)}
+                       <Btn v="ghost" small disabled={busy===x.shipment_id} onClick={()=>saveListing(x,"")}>Unlist</Btn>
+                     </span>
+                   : x.purchased
                    ? (x.ready
-                       ? chip("#E8F5E9",G.green,"READY",`Hold cleared ${String(x.hold_clears_on).slice(0,10)}`)
+                       ? <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                           {chip("#E8F5E9",G.green,"READY",`Hold cleared ${String(x.hold_clears_on).slice(0,10)}`)}
+                           <Btn v="ghost" small disabled={busy===x.shipment_id} onClick={()=>openList(x)}>List</Btn>
+                         </span>
                        : chip("#FFF4E5",G.orange,`HOLD ${x.hold_days_left}d`,`Hold clears ${String(x.hold_clears_on).slice(0,10)}`))
                    : chip("#F0EDE8",G.muted,"NOT READY","Not purchased yet — the hold clock starts at purchase")}
                </td>
@@ -7025,7 +7066,43 @@ function InventoryTab({onOpenShipment}) {
                    placeholder="—"
                    style={{width:64,padding:"5px 8px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
                </td>}
-             </tr>)}
+             </tr>,
+             listing===x.shipment_id && <tr key={x.shipment_id+"_list"}>
+               <td colSpan={editing?9:8} style={{...td,textAlign:"left",background:"#F7FAFF"}} onClick={e=>e.stopPropagation()}>
+                 <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
+                   <div>
+                     <div style={{fontSize:10,color:G.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Where</div>
+                     <div style={{display:"flex",gap:6}}>
+                       {["eBay","Beached Gold","Other"].map(w=>{
+                         const on = lForm.where===w;
+                         return <button key={w} onClick={()=>setLForm(f=>({...f,where:w}))} style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",
+                           background:on?G.blue:"transparent",color:on?"#fff":G.muted,border:`1px solid ${on?G.blue:G.border}`}}>{w}</button>;
+                       })}
+                     </div>
+                   </div>
+                   {lForm.where==="Other" && <div>
+                     <div style={{fontSize:10,color:G.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Name</div>
+                     <input value={lForm.other} onChange={e=>setLForm(f=>({...f,other:e.target.value}))} placeholder="where"
+                       style={{width:130,padding:"6px 9px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
+                   </div>}
+                   <div>
+                     <div style={{fontSize:10,color:G.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Asking $</div>
+                     <input value={lForm.price} onChange={e=>setLForm(f=>({...f,price:e.target.value}))} type="number" placeholder="0.00"
+                       style={{width:110,padding:"6px 9px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
+                   </div>
+                   <div style={{flex:1,minWidth:180}}>
+                     <div style={{fontSize:10,color:G.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>URL (optional)</div>
+                     <input value={lForm.url} onChange={e=>setLForm(f=>({...f,url:e.target.value}))} placeholder="https://…"
+                       style={{width:"100%",boxSizing:"border-box",padding:"6px 9px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
+                   </div>
+                   <Btn v="gold" small disabled={busy===x.shipment_id || (lForm.where==="Other" && !lForm.other.trim())}
+                     onClick={()=>saveListing(x, lForm.where==="Other"?lForm.other.trim():lForm.where, lForm.price, lForm.url)}>
+                     {busy===x.shipment_id?"Saving…":"Save listing"}
+                   </Btn>
+                   <Btn v="ghost" small onClick={()=>setListing(null)}>Cancel</Btn>
+                 </div>
+               </td>
+             </tr>])}
            </tbody>
          </table>
        </div>;

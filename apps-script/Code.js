@@ -58,7 +58,8 @@ var COLS = {
     'shipping_cost','shipping_service','easypost_shipment_id','label_qr_url','self_serve_submitted_at',
     'offer_price','paid_at','shippo_transaction_id','ship_followups_sent','capi_shipped_sent',
             'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent','triage_flag','completed_at',
-            'relabel_requested_at','winback_a_sent_at','winback_a_sms_at'
+            'relabel_requested_at','winback_a_sent_at','winback_a_sms_at',
+            'listed_on','listed_price','listed_at','listed_url'
   ],
   CONTACT_LOG: [
     'log_id','customer_id','timestamp','type','notes','shipment_id','direction','source','kind'
@@ -272,7 +273,7 @@ function doPost(e) {
       'getMarketingRoi','getAdSpend','addAdSpend','deleteAdSpend','syncMetaSpend','getSetting','setSetting',
       'getCommsDashboard','addDoNotContact','getLabelUrl','getRules','explainRegistration',
       'getMarketingRoiRecords',
-      'getInventoryByBin',
+      'getInventoryByBin','setListing',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
       if (!CRM_SECRET_KEY || (parsed.key || '') !== CRM_SECRET_KEY) {
@@ -306,6 +307,7 @@ function doPost(e) {
     if (action === 'getMarketingRoi') return jsonResponse(handleGetMarketingRoi(parsed));
     if (action === 'getMarketingRoiRecords') return jsonResponse(handleGetMarketingRoiRecords(parsed));
     if (action === 'getInventoryByBin') return jsonResponse(handleGetInventoryByBin(parsed));
+    if (action === 'setListing')        return jsonResponse(handleSetListing(parsed));
     if (action === 'getAdSpend')      return jsonResponse({ success: true, rows: getAdSpend(parsed) });
     if (action === 'addAdSpend')      return jsonResponse(handleAddAdSpend(parsed));
     if (action === 'deleteAdSpend')   return jsonResponse(handleDeleteAdSpend(parsed));

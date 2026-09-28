@@ -148,6 +148,10 @@ function getInventoryByBin() {
       hold_clears_on: _invIso(holdClears),
       hold_days_left: holdDaysLeft,
       ready: ready,
+      listed_on: String(s.listed_on || '').trim(),
+      listed_price: parseFloat(s.listed_price) || 0,
+      listed_at: _invIso(_invDate(s.listed_at)),
+      listed_url: String(s.listed_url || '').trim(),
     });
 
     if (purchased) {
@@ -210,4 +214,63 @@ function testInventoryByBin() {
   Logger.log('  owned: ' + s.owned_count + ' · paid $' + s.owned_paid + ' · appraised $' + s.owned_appraised);
   Logger.log('  not yet purchased: ' + s.unpurchased_count + ' · appraised $' + s.unpurchased_appraised);
   Logger.log('  ' + s.ready + ' ready · ' + s.hold + ' on hold');
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  LISTING — where an item is up for sale, at what price, since when.
+//  Lives on the shipment row so the Inventory tab needs no second read; the
+//  write goes through updateShipment, which maps by header name and mirrors to
+//  Postgres. None of these four are in ACTIVITY_FIELDS, so listing something
+//  doesn't reorder the Fulfill queue.
+// ═══════════════════════════════════════════════════════════════════════
+var INV_LISTING_COLS = ['listed_on', 'listed_price', 'listed_at', 'listed_url'];
+
+// Same idempotent header add ensureAllColumns() does, narrowed to these four so
+// the action works on a sheet that predates them without a separate migration.
+function _invEnsureListingColumns() {
+  var sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var added = [];
+  INV_LISTING_COLS.forEach(function (col) {
+    if (headers.indexOf(col) >= 0) return;
+    var next = sheet.getLastColumn() + 1;
+    sheet.getRange(1, next).setValue(col).setFontWeight('bold').setBackground('#1A1816').setFontColor('#C8953C');
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    added.push(col);
+  });
+  if (added.length) Logger.log('setListing: added column(s) ' + added.join(', ') + ' to ' + TAB.SHIPMENTS);
+  return added;
+}
+
+function setListing(parsed) {
+  parsed = parsed || {};
+  var id = String(parsed.shipment_id || '').trim();
+  if (!id) return { success: false, error: 'shipment_id required' };
+  _invEnsureListingColumns();
+
+  var where = String(parsed.listed_on || '').trim();
+  var updates;
+  if (!where) {
+    // Unlisting clears all four — a stale price or URL on an unlisted item is
+    // worse than none.
+    updates = { listed_on: '', listed_price: '', listed_at: '', listed_url: '' };
+  } else {
+    var price = parseFloat(parsed.listed_price);
+    updates = {
+      listed_on: where.slice(0, 40),
+      listed_price: isNaN(price) ? '' : String(Math.round(price * 100) / 100),
+      listed_at: new Date().toISOString(),
+      listed_url: String(parsed.listed_url || '').trim().slice(0, 500),
+    };
+  }
+  var ok = updateShipment(id, updates);
+  if (ok === false) return { success: false, error: 'shipment ' + id + ' not found' };
+  Logger.log('setListing ' + id + ' → ' + (where ? (where + ' $' + updates.listed_price) : 'unlisted'));
+  return { success: true, shipment_id: id, listed: !!where, listing: updates };
+}
+
+function handleSetListing(parsed) {
+  try { return setListing(parsed); }
+  catch (e) { return { success: false, error: String(e && e.message || e) }; }
 }

@@ -72,7 +72,7 @@ const WRITE_ACTIONS = new Set([
   'deleteAffiliate', 'getAffiliateStats', 'getAffiliateRecords',
   'getMarketingRoi', 'getMarketingRoiRecords', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend','getSetting','setSetting',
   'getCommsDashboard', 'addDoNotContact', 'getLabelUrl', 'getRules', 'explainRegistration',
-  'getInventoryByBin',
+  'getInventoryByBin', 'setListing',
 ]);
 
 const UPSTREAM_TIMEOUT_MS = 55_000;
