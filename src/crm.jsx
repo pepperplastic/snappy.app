@@ -4582,15 +4582,18 @@ function SalesTab({shipments, customers}) {
     return raw.slice(0,10);
   }
 
-  // AUG 3: a row is now one of three kinds.
-  //   sale     — money actually received (the default; everything pre-existing)
-  //   loss     — item paid for that will never produce revenue (breakage, lost
-  //              in transit, gifted). Cost counts against you, revenue is 0.
-  //   expected — anticipated revenue not yet realised. Kept OUT of actuals so
-  //              the real numbers stay honest; totalled separately.
+  // AUG 3: a row is now one of four kinds.
+  //   sale          — money actually received (the default; everything pre-existing)
+  //   loss          — item paid for that will never produce revenue (breakage, lost
+  //                   in transit). Cost counts against you, revenue is 0.
+  //   expected      — anticipated revenue not yet realised. Kept OUT of actuals so
+  //                   the real numbers stay honest; totalled separately.
+  //   discretionary — gifted or kept. Realized, not projected: the item left
+  //                   inventory at a known value, so it counts in gross and
+  //                   profit. No marketplace fee — nothing was listed or sold.
   function saleType(sale) {
     const t = String(sale.sale_type || "").toLowerCase().trim();
-    return (t === "loss" || t === "expected") ? t : "sale";
+    return (t === "loss" || t === "expected" || t === "discretionary") ? t : "sale";
   }
 
   function summarizeSale(sale) {
@@ -4638,6 +4641,10 @@ function SalesTab({shipments, customers}) {
   const totalCostAll = actual.reduce((sum, s) => sum + summarizeSale(s).totalCost, 0);
   const totalLost    = lossRows.reduce((sum, s) => sum + summarizeSale(s).totalCost, 0);
   const totalExpected= expRows.reduce((sum, s) => sum + (parseFloat(s.amount)||0), 0);
+  // Discretionary is inside actual/gross/profit above — this is just its own
+  // visible subtotal, so "how much did we give away or keep" stays answerable.
+  const discRows     = sales.filter(s => saleType(s) === "discretionary");
+  const totalDiscretionary = discRows.reduce((sum, s) => sum + (parseFloat(s.amount)||0), 0);
   const roiPct       = totalCostAll > 0 ? (totalProfit / totalCostAll) * 100 : null;
 
   const shown = sales.filter(s => typeFilter === "all" ? true : saleType(s) === typeFilter);
@@ -4676,7 +4683,7 @@ function SalesTab({shipments, customers}) {
 
     {/* Type filter + the two side ledgers kept out of actuals */}
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-      {[["all","All"],["sale","Sales"],["loss","Losses"],["expected","Expected"]].map(([v,label])=>{
+      {[["all","All"],["sale","Sales"],["loss","Losses"],["expected","Expected"],["discretionary","Discretionary"]].map(([v,label])=>{
         const on = typeFilter===v;
         const n = v==="all" ? sales.length : sales.filter(x=>saleType(x)===v).length;
         return <button key={v} onClick={()=>setTypeFilter(v)} style={{
@@ -4690,6 +4697,9 @@ function SalesTab({shipments, customers}) {
       </span>}
       {totalExpected>0 && <span style={{fontSize:12,color:G.blue,marginLeft:12}}>
         Expected: <strong>${totalExpected.toFixed(2)}</strong>
+      </span>}
+      {discRows.length>0 && <span style={{fontSize:12,color:G.purple,marginLeft:12}} title="Gifted or kept. Counted in Gross and Profit above — shown here so it can be told apart from money received.">
+        Discretionary: <strong>{discRows.length} · ${totalDiscretionary.toFixed(2)}</strong>
       </span>}
     </div>
 
@@ -4718,11 +4728,13 @@ function SalesTab({shipments, customers}) {
          <tbody>
            {shown.slice().sort((a,b)=>new Date(b.sale_date||b.created_at)-new Date(a.sale_date||a.created_at)).map(sale => {
              const s = summarizeSale(sale);
-             const tint = s.type==="loss" ? "#FFF6F6" : s.type==="expected" ? "#F5F8FF" : "#fff";
+             const tint = s.type==="loss" ? "#FFF6F6" : s.type==="expected" ? "#F5F8FF" : s.type==="discretionary" ? "#FAF4FF" : "#fff";
              const chip = s.type==="loss"
                ? <span style={{background:"#FFE8E8",color:G.red,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>LOSS</span>
                : s.type==="expected"
                ? <span style={{background:"#E8F0FF",color:G.blue,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>EXPECTED</span>
+               : s.type==="discretionary"
+               ? <span style={{background:"#F3E8FF",color:G.purple,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>DISCRETIONARY</span>
                : null;
              return <tr key={sale.sale_id} style={{borderBottom:`1px solid ${G.border}`,fontSize:13,background:tint}}>
                <td style={{padding:"10px 12px",color:G.muted}}>{fmtSaleDate(sale.sale_date || sale.created_at)}</td>
@@ -4910,10 +4922,10 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   // shipment (many items pooled into one melt), so allow recording without a link.
   const [refinerSale, setRefinerSale] = useState(!!(sale && String(sale.shipment_ids||"").trim()==="" ));
   const [marginAssumption, setMarginAssumption] = useState(sale?.margin_assumption ?? "");
-  // sale | loss | expected
+  // sale | loss | expected | discretionary
   const [entryType, setEntryType] = useState(() => {
     const t = String(sale?.sale_type || "").toLowerCase().trim();
-    return (t === "loss" || t === "expected") ? t : "sale";
+    return (t === "loss" || t === "expected" || t === "discretionary") ? t : "sale";
   });
   // Typed-in cost for rows with no linked shipment — a loss usually has no SHP
   // to point at, but you still know roughly what you paid.
@@ -4984,14 +4996,15 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
 
       <div style={{marginBottom:14}}>
         <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5}}>Entry type</label>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {[["sale","💵 Sale","Money received"],
-            ["loss","⚠️ Loss","Paid for, no revenue — breakage, lost, gifted"],
-            ["expected","📈 Expected","Anticipated, not yet realised"]].map(([v,label,hint])=>{
+            ["loss","⚠️ Loss","Paid for, no revenue — breakage, lost in transit"],
+            ["expected","📈 Expected","Anticipated, not yet realised"],
+            ["discretionary","🎁 Discretionary","Gifted or kept — record what it could have sold for"]].map(([v,label,hint])=>{
             const on = entryType===v;
-            const col = v==="loss"?G.red:v==="expected"?G.blue:G.green;
+            const col = v==="loss"?G.red:v==="expected"?G.blue:v==="discretionary"?G.purple:G.green;
             return <div key={v} onClick={()=>setEntryType(v)} title={hint} style={{
-              flex:1,textAlign:"center",padding:"9px 6px",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",
+              flex:1,minWidth:130,textAlign:"center",padding:"9px 6px",borderRadius:6,fontSize:13,fontWeight:600,cursor:"pointer",
               border:`1px solid ${on?col:G.border}`,background:on?col+"18":"#fff",color:on?col:G.muted}}>{label}</div>;
           })}
         </div>
@@ -4999,6 +5012,7 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
           {entryType==="sale" && "Counts toward revenue and profit."}
           {entryType==="loss" && "No revenue — the cost below counts against profit. Amount is ignored."}
           {entryType==="expected" && "Kept out of actual revenue and profit; totalled separately so projections never inflate the real numbers."}
+          {entryType==="discretionary" && "Gifted or kept. Counts toward gross and profit like a sale — no marketplace fees, since nothing was listed."}
         </div>
       </div>
 
@@ -5029,7 +5043,9 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
           <input value={buyerName} onChange={e=>setBuyerName(e.target.value)} placeholder="e.g. Barry's Pawn" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
         </div>
         <div>
-          <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Sale amount ($)</label>
+          <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>
+            {entryType==="discretionary" ? "Value (what it could have sold for)" : "Sale amount ($)"}
+          </label>
           <input type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="535.00" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
         </div>
         <div>
@@ -5733,7 +5749,7 @@ function computeRealizedMargin(sales, shipments, excludeOver, inventoryRec) {
   const PURCHASED = ["complete","pending_payment","pending_leadsonline"];
   const shipById = {}; shipments.forEach(s=>{ shipById[s.shipment_id]=s; });
   const isExcluded = s => excludeOver>0 && (parseFloat(s.purchase_price)||0) > excludeOver;
-  const typeOf = sale => { const t=String(sale.sale_type||"").toLowerCase().trim(); return (t==="loss"||t==="expected")?t:"sale"; };
+  const typeOf = sale => { const t=String(sale.sale_type||"").toLowerCase().trim(); return (t==="loss"||t==="expected"||t==="discretionary")?t:"sale"; };
 
   let gross=0, fees=0, expected=0, lossCost=0, excludedSales=0;
   sales.forEach(sale=>{
@@ -5749,7 +5765,9 @@ function computeRealizedMargin(sales, shipments, excludeOver, inventoryRec) {
       return;
     }
     gross += amt;
-    if (/ebay/i.test(String(sale.buyer_name||""))) fees += amt*(EBAY_FEE_PCT/100);
+    // Discretionary items were gifted or kept — realized like a sale, but never
+    // listed, so no marketplace fee comes off them.
+    if (t!=="discretionary" && /ebay/i.test(String(sale.buyer_name||""))) fees += amt*(EBAY_FEE_PCT/100);
   });
 
   let paid=0, purchases=0, excludedPaid=0;
