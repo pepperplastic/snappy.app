@@ -6821,42 +6821,81 @@ function InventoryTab({onOpenShipment}) {
   const [loading,setLoading] = useState(true);
   const [err,setErr]         = useState("");
   const [readyOnly,setReadyOnly] = useState(false);
+  const [editing,setEditing] = useState(false);
+  const [busy,setBusy]       = useState("");      // shipment_id being written
+  const [moved,setMoved]     = useState({});      // shipment_id → new bin, applied locally until the next load
 
   const load = useCallback(async ()=>{
     setLoading(true); setErr("");
     try{
       const r=await apiPost({action:"getInventoryByBin"});
-      if(r&&r.success) setData(r); else setErr((r&&r.error)||"Couldn't load inventory");
+      if(r&&r.success){ setData(r); setMoved({}); } else setErr((r&&r.error)||"Couldn't load inventory");
     }catch(e){ setErr(e.message||String(e)); }
     setLoading(false);
   },[]);
   useEffect(()=>{ load(); },[load]);
 
-  // The toggle filters the list; the summary above always describes the whole
-  // shelf, so "X ready · Y on hold" still says what's waiting.
-  const bins = (data?.bins||[])
-    .map(b=>({...b, items: readyOnly ? b.items.filter(x=>x.ready) : b.items}))
-    .filter(b=>b.items.length);
+  // Bin edits go through the ordinary updateShipment path — the same write the
+  // bin prompt uses, with its guard against timestamp values. Nothing else on
+  // the row is touched.
+  async function setBin(item, nextBin){
+    const next = String(nextBin||"").trim();
+    if(next === String(item.bin)) return;
+    setBusy(item.shipment_id);
+    try{
+      const r = await apiPost({action:"updateShipment", shipment_id:item.shipment_id, updates:{bin_number: next}});
+      const ok = r===true || (r && typeof r==="object" && !r.error);
+      if(ok) setMoved(m=>({...m,[item.shipment_id]: next}));
+      else alert("Couldn't move "+item.shipment_id+": "+((r&&r.error)||"no response"));
+    }catch(e){ alert("Couldn't move "+item.shipment_id+": "+(e.message||e)); }
+    setBusy("");
+  }
+  async function emptyBin(bin, items){
+    if(!items.length) return;
+    if(!confirm(`Clear bin ${bin}?\n\n${items.length} item${items.length!==1?"s":""} lose their bin and drop off Inventory — a shipment with no bin isn't on the shelf any more. The shipments themselves are untouched.`)) return;
+    for(const it of items) await setBin(it, "");
+  }
+
+  const norm = v => { const t=String(v==null?"":v).trim(); const m=t.match(/^(?:bin\s*)?(\d+)$/i); return m?String(parseInt(m[1],10)):t.toUpperCase(); };
+  // Apply local moves, then lay every shelf out — empty ones included.
+  const byBin = {};
+  (data?.bins||[]).forEach(b=>b.items.forEach(x=>{
+    const edited = moved[x.shipment_id]!==undefined ? norm(moved[x.shipment_id]) : null;
+    // No bin, no inventory — same rule the server applies on the next load.
+    if(edited==="") return;
+    const key = edited===null ? x.bin : edited;
+    (byBin[key] = byBin[key] || []).push({...x, bin:key});
+  }));
+  const shelves = data?.all_bins||[];
+  const rows = bin => { const list = byBin[bin]||[]; return readyOnly ? list.filter(x=>x.ready) : list; };
   const s = data?.summary;
+  const emptyShelves = shelves.filter(b=>!(byBin[b]||[]).length);
 
   const card = {background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"};
   const th   = {padding:"8px 10px",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",textAlign:"right"};
   const td   = {padding:"9px 10px",fontSize:13,borderTop:`1px solid ${G.border}`,textAlign:"right"};
-  const chip = (bg,color,text)=><span style={{background:bg,color,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{text}</span>;
+  const chip = (bg,color,text,title)=><span title={title||""} style={{background:bg,color,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{text}</span>;
 
   return <div style={{flex:1,overflow:"auto",padding:isMobile?12:24,background:G.bg}}>
     <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
       <h2 style={{margin:0,fontSize:22,color:G.text}}>Inventory</h2>
-      <div style={{fontSize:11,color:G.muted}}>on the shelf and unsold · {data?`${data.hold_days}-day hold from the purchase date`:""}</div>
+      <div style={{fontSize:11,color:G.muted}}>
+        {data?`${data.bin_count} bins · unsold stock · ${data.hold_days}-day hold from the purchase date`:"on the shelf and unsold"}
+      </div>
       <div style={{flex:1}}/>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:G.text,cursor:"pointer"}}>
         <input type="checkbox" checked={readyOnly} onChange={e=>setReadyOnly(e.target.checked)} style={{width:15,height:15}}/>
         Ready only
       </label>
+      <Btn v={editing?"gold":"ghost"} small onClick={()=>setEditing(v=>!v)}>{editing?"✓ Done editing":"✎ Edit bins"}</Btn>
       <Btn v="ghost" small onClick={load} disabled={loading}>{loading?"…":"⟳ Refresh"}</Btn>
     </div>
 
     {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+    {editing && <div style={{background:"#FFF8E6",border:`1px solid ${G.gold}66`,borderRadius:8,padding:"10px 12px",fontSize:12,color:G.text,lineHeight:1.5,marginBottom:12}}>
+      Type a bin number on any row to move it, blank it to take it off the shelf, or use <b>Clear bin</b> on a header.
+      A shipment with no bin drops off this tab entirely — the shipment itself is untouched, and its sale (if there was one) still belongs in the Sales tab.
+    </div>}
 
     {s && <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
       <div style={card}>
@@ -6876,25 +6915,28 @@ function InventoryTab({onOpenShipment}) {
           <span style={{color:G.muted,fontWeight:400,fontSize:16}}> · </span>
           <span style={{color:G.orange}}>{s.hold} on hold</span>
         </div>
-        <div style={{fontSize:11,color:G.muted,marginTop:2}}>owned items only</div>
+        <div style={{fontSize:11,color:G.muted,marginTop:2}}>owned items only · {emptyShelves.length} empty bin{emptyShelves.length!==1?"s":""}</div>
       </div>
     </div>}
 
     {loading && !data ? <div style={{color:G.muted}}>Loading…</div> :
-     !bins.length ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
-       <div style={{fontSize:32,marginBottom:12}}>📦</div>
-       <div style={{fontSize:14}}>{readyOnly?"Nothing has cleared its hold yet.":"Nothing on the shelf."}</div>
-     </div> :
-     bins.map(b=>{
-       const owned = b.items.filter(x=>x.purchased);
+     shelves.map(bin=>{
+       const items = rows(bin);
+       const owned = items.filter(x=>x.purchased);
        const paid = owned.reduce((t,x)=>t+(parseFloat(x.paid)||0),0);
-       const appraised = b.items.reduce((t,x)=>t+(parseFloat(x.appraised)||0),0);
-       return <div key={b.bin} style={{marginBottom:16,background:"#fff",border:`1px solid ${G.border}`,borderRadius:10}}>
+       const appraised = items.reduce((t,x)=>t+(parseFloat(x.appraised)||0),0);
+       if(!items.length) return <div key={bin} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 14px",marginBottom:6,background:"#FBFAF8",border:`1px dashed ${G.border}`,borderRadius:8}}>
+         <span style={{fontSize:12,fontWeight:700,color:G.muted}}>Bin {bin}</span>
+         <span style={{fontSize:11,color:G.light||G.muted}}>empty</span>
+       </div>;
+       return <div key={bin} style={{marginBottom:16,background:"#fff",border:`1px solid ${G.border}`,borderRadius:10}}>
          <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"10px 14px",borderBottom:`1px solid ${G.border}`,flexWrap:"wrap"}}>
-           <span style={{fontSize:14,fontWeight:700,color:G.text}}>{b.bin==="No bin"?"No bin":"Bin "+b.bin}</span>
+           <span style={{fontSize:14,fontWeight:700,color:G.text}}>Bin {bin}</span>
            <span style={{fontSize:11,color:G.muted}}>
-             {b.items.length} item{b.items.length!==1?"s":""} · {owned.length} owned · {invMoney(paid)} paid · {invMoney(appraised)} appraised
+             {items.length} item{items.length!==1?"s":""} · {owned.length} owned · {invMoney(paid)} paid · {invMoney(appraised)} appraised
            </span>
+           <div style={{flex:1}}/>
+           {editing && <Btn v="ghost" small onClick={()=>emptyBin(bin, items)}>Clear bin</Btn>}
          </div>
          <table style={{width:"100%",borderCollapse:"collapse"}}>
            <thead><tr>
@@ -6905,26 +6947,37 @@ function InventoryTab({onOpenShipment}) {
              <th style={th}>Paid</th>
              <th style={th}>Appraised</th>
              <th style={th}>Days</th>
-             <th style={{...th,textAlign:"right"}}/>
+             <th style={{...th,textAlign:"left"}}>Ready</th>
+             {editing && <th style={{...th,textAlign:"left"}}>Bin</th>}
            </tr></thead>
            <tbody>
-             {b.items.map(x=><tr key={x.shipment_id} onClick={()=>onOpenShipment&&onOpenShipment(x.shipment_id)}
-               title="Open this shipment in its queue"
-               style={{cursor:"pointer"}}
-               onMouseEnter={e=>e.currentTarget.style.background="#FBF8F3"}
-               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+             {items.map(x=><tr key={x.shipment_id}
+               onClick={editing?undefined:()=>onOpenShipment&&onOpenShipment(x.shipment_id)}
+               title={editing?"":"Open this shipment in its queue"}
+               style={{cursor:editing?"default":"pointer",opacity:busy===x.shipment_id?0.5:1}}
+               onMouseEnter={e=>{ if(!editing) e.currentTarget.style.background="#FBF8F3"; }}
+               onMouseLeave={e=>{ if(!editing) e.currentTarget.style.background="transparent"; }}>
                <td style={{...td,textAlign:"left",fontWeight:600}}>{x.shipment_id}</td>
                <td style={{...td,textAlign:"left"}}>{x.customer||"—"}</td>
-               <td style={{...td,textAlign:"left",color:G.muted,maxWidth:280,whiteSpace:"normal"}}>{x.item||"—"}</td>
+               <td style={{...td,textAlign:"left",color:G.muted,maxWidth:260,whiteSpace:"normal"}}>{x.item||"—"}</td>
                <td style={{...td,textAlign:"left"}}><Badge stage={x.stage} sm/></td>
                <td style={td}>{x.purchased?invMoney(x.paid):<span style={{color:G.muted}}>—</span>}</td>
                <td style={td}>{x.appraised?invMoney(x.appraised):<span style={{color:G.muted}}>—</span>}</td>
                <td style={{...td,color:G.muted}}>{invDays(x.days_since_arrival)}</td>
-               <td style={{...td,textAlign:"right"}}>
+               <td style={{...td,textAlign:"left"}}>
                  {x.purchased
-                   ? (x.ready ? chip("#E8F5E9",G.green,"READY") : chip("#FFF4E5",G.orange,`HOLD ${x.hold_days_left}d`))
-                   : chip("#F0EDE8",G.muted,`${SL[x.stage]||x.stage} · ${invDays(x.days_since_arrival)}`)}
+                   ? (x.ready
+                       ? chip("#E8F5E9",G.green,"READY",`Hold cleared ${String(x.hold_clears_on).slice(0,10)}`)
+                       : chip("#FFF4E5",G.orange,`HOLD ${x.hold_days_left}d`,`Hold clears ${String(x.hold_clears_on).slice(0,10)}`))
+                   : chip("#F0EDE8",G.muted,"NOT READY","Not purchased yet — the hold clock starts at purchase")}
                </td>
+               {editing && <td style={{...td,textAlign:"left"}} onClick={e=>e.stopPropagation()}>
+                 <input defaultValue={x.bin} disabled={busy===x.shipment_id}
+                   onBlur={e=>setBin(x,e.target.value)}
+                   onKeyDown={e=>{ if(e.key==="Enter") e.currentTarget.blur(); }}
+                   placeholder="—"
+                   style={{width:64,padding:"5px 8px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
+               </td>}
              </tr>)}
            </tbody>
          </table>

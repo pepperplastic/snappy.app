@@ -6,6 +6,9 @@
 //  being inspected, out for an offer, waiting on a return, or bought and
 //  sitting out its 30-day hold.
 //
+//  A BIN IS THE TEST. A shipment with no bin is not inventory, bought or not:
+//  a blank bin on something we own means it was cleared to the refiner.
+//
 //  SOLD = any Sales row that names the shipment in shipment_ids, whatever its
 //  sale_type. A refiner lot with no ids named can't release anything, so its
 //  items stay listed until they're linked.
@@ -15,6 +18,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 var INV_PURCHASED_STAGES = ['pending_payment', 'pending_leadsonline', 'complete'];
+// The physical shelf: bins 1..N always render, empty ones included, so a bin
+// that should be empty can be seen to be empty. Script Property
+// INVENTORY_BIN_COUNT overrides it without a deploy.
+var INV_BIN_COUNT = 67;
 var INV_HOLD_DAYS = 30;
 var INV_ITEM_CHARS = 60;
 
@@ -29,6 +36,23 @@ function _invBinColumn(headers) {
     if (/(^|_)bins?(_|$)/i.test(String(headers[h] || ''))) return headers[h];
   }
   return '';
+}
+
+function _invBinCount() {
+  try {
+    var v = parseInt(PropertiesService.getScriptProperties().getProperty('INVENTORY_BIN_COUNT'), 10);
+    if (!isNaN(v) && v > 0 && v <= 500) return v;
+  } catch (e) {}
+  return INV_BIN_COUNT;
+}
+// "1", "01" and "Bin 1" are the same shelf. Anything non-numeric keeps its own
+// label, uppercased, so A1 and a1 don't split into two bins either.
+function _invBinKey(raw) {
+  var t = String(raw === null || raw === undefined ? '' : raw).trim();
+  if (!t) return '';
+  var m = t.match(/^(?:bin\s*)?(\d+)$/i);
+  if (m) return String(parseInt(m[1], 10));
+  return t.toUpperCase();
 }
 
 function _invDate(v) {
@@ -95,12 +119,11 @@ function getInventoryByBin() {
     if (!id || sold[id]) return;
     var stage = String(s.stage || '').toLowerCase().trim();
     var purchased = INV_PURCHASED_STAGES.indexOf(stage) !== -1;
-    var bin = String(s[binCol] === null || s[binCol] === undefined ? '' : s[binCol]).trim();
-    // A bin means it's on the shelf, whatever the stage. A purchased shipment
-    // with no bin is still ours and still on a hold clock, so it gets listed
-    // too — under "No bin", which is exactly the prompt to go and bin it.
-    if (!bin && !purchased) return;
-    var key = bin || 'No bin';
+    var bin = _invBinKey(s[binCol]);
+    // A bin means it's on the shelf, whatever the stage; no bin means it isn't
+    // here any more.
+    if (!bin) return;
+    var key = bin;
 
     var arrived = _invDate(s.received_at);
     var paidDate = purchased ? (_invDate(s.purchased_at) || _invDate(s.paid_at)) : null;
@@ -135,11 +158,7 @@ function getInventoryByBin() {
     }
   });
 
-  var keys = Object.keys(bins).sort(function (a, b) {
-    if (a === 'No bin') return 1;
-    if (b === 'No bin') return -1;
-    return _invBinSort(a, b);
-  });
+  var keys = Object.keys(bins).sort(_invBinSort);
   var out = keys.map(function (k) {
     var items = bins[k].sort(function (a, b) {
       if (!a.arrived_at) return 1;
@@ -153,9 +172,17 @@ function getInventoryByBin() {
     summary[k] = Math.round(summary[k] * 100) / 100;
   });
 
+  // Every shelf, not just the occupied ones — the frontend renders the empties
+  // too, and any bin found in the data outside 1..N is appended.
+  var count = _invBinCount();
+  var universe = [];
+  for (var n = 1; n <= count; n++) universe.push(String(n));
+  keys.forEach(function (k) { if (universe.indexOf(k) === -1) universe.push(k); });
+
   return {
     success: true, generated_at: now.toISOString(), hold_days: INV_HOLD_DAYS,
-    bin_column: binCol, bins: out, summary: summary,
+    bin_column: binCol, bin_count: count, all_bins: universe,
+    bins: out, summary: summary,
   };
 }
 
