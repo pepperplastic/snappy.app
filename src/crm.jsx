@@ -5946,6 +5946,14 @@ function RoiTab({shipments}) {
   });
   const pct = v => v==null ? "—" : Math.round(v)+"%";
   const cost = v => v==null ? "—" : money(v);
+  // Tooltip fragments. Kept beside the arithmetic they describe so a change to
+  // one is visible next to the other.
+  const tipOutlier = excludeOn
+    ? `With the outlier guard on, a purchase over ${money(parseFloat(excludeOver)||0)} keeps its count but its dollars are left out.`
+    : "The outlier guard is off, so every purchase counts in full.";
+  const tipCohort = view==="mature"
+    ? `Mature view counts only cohorts registered ${matureDays}+ days ago.`
+    : "All cohorts count, however recent.";
   const weeks = data ? data.weekly.filter(w=>V==="all"||w.mature).map(w=>{
     if(!channel) return w;
     const b=(w.by&&w.by[channel])||{spend:0,regs:0,arrived:0,purchased:0,paid:0};
@@ -6045,15 +6053,24 @@ function RoiTab({shipments}) {
     {loading && !data ? <div style={{color:G.muted}}>Loading…</div> : data && <>
       {/* Headline numbers */}
       {(()=>{ const p=per(tot); const cards=[
-        ["Spend", money(tot.spend), null],
-        ["Registrations", tot.regs, cost(p.costReg)+" each"],
-        ["Fulfilled", tot.fulfilled||0, pct(p.fulfilledPct)+" of regs · "+cost(p.costFulfilled)+" each"],
-        ["Arrived", tot.arrived, pct(p.shipPct)+" of fulfilled · "+cost(p.costArrival)+" each"],
-        ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each"],
-        ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null],
-        ["Shipping", money(p.shipping), `${tot.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,tot.arrived-tot.purchased)} returns × $${ROI_SHIP_RET}`],
-        ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid"],
-        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend"],
+        ["Spend", money(tot.spend), null,
+          `Ad Spend rows dated inside this window, matched to a channel by its ?ref= code. ${view==="mature"?"Mature view counts only spend dated on or before the cutoff. ":""}The First-time/Repeat chip never splits spend.`],
+        ["Registrations", tot.regs, cost(p.costReg)+" each",
+          `One per email whose first completed registration — address and shipping method both present — falls in this window, credited first-touch to the channel that introduced them, including the ones recovered by session or IP. ${tipCohort} The First-time/Repeat chip never splits registrations.`],
+        ["Fulfilled", tot.fulfilled||0, pct(p.fulfilledPct)+" of regs · "+cost(p.costFulfilled)+" each",
+          "Shipments from those registrants that got a prepaid label — stage outbound_complete or beyond, or any outbound tracking number on the row. Counted per shipment, so one person sending two boxes counts twice."],
+        ["Arrived", tot.arrived, pct(p.shipPct)+" of fulfilled · "+cost(p.costArrival)+" each",
+          "Shipments that reached us: stage received, inspected, pending response, pending payment, pending LeadsOnline, complete or returned — or any row carrying a received date."],
+        ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each",
+          "Shipments we bought: stage pending payment, pending LeadsOnline or complete. The buy rate is over arrivals, not registrations."],
+        ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null,
+          `What we paid customers for those purchases, summed from each shipment's purchase price. ${tipOutlier}`],
+        ["Shipping", money(p.shipping), `${tot.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,tot.arrived-tot.purchased)} returns × $${ROI_SHIP_RET}`,
+          "An assumption, not a ledger — no carrier invoice is read. Every arrival is charged inbound postage, and every arrival we didn't buy is charged return postage on top."],
+        ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid",
+          `Appraised value minus what we paid, summed over purchased shipments that actually carry an appraisal — a blank appraised_value contributes nothing, so this reads low until those are graded. ${tipOutlier}`],
+        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend",
+          `Margin − spend − shipping. ROI % is that net divided by marketing spend alone; the shipping assumption is subtracted from the net but never enters the denominator. ${tipOutlier}`],
       ];
       return <>
       <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
@@ -6061,7 +6078,7 @@ function RoiTab({shipments}) {
         <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"}{custType!=="all"?` · ${custType==="first"?"first-time":"repeat"} shipments only`:""} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(9,1fr)",gap:10,marginBottom:16}}>
-        {cards.map(([l,v,sub])=><div key={l} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
+        {cards.map(([l,v,sub,tip])=><div key={l} title={tip||""} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
           <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
           <div style={{fontSize:22,fontWeight:700,color:l==="Net"?(p.net>=0?G.green:G.red):G.text,marginTop:2}}>{v}</div>
           {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
@@ -6074,14 +6091,22 @@ function RoiTab({shipments}) {
       {realized && (()=>{ const r=realized; const costs = allSpend==null ? null : allSpend+allShipping.cost; const net = costs==null ? null : r.margin-costs;
         const roi = allSpend ? (r.margin-costs)/allSpend*100 : null;
         const cards=[
-          ["Gross sales", money(r.gross), "Sales tab, recorded gross"],
-          ["Fees", "−"+money(r.fees), "15% on eBay sales"],
-          ["Expected", money(r.expected), "expected-type sale rows"],
-          ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab (shared across devices)"],
-          ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":"")],
-          ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid"],
-          ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`],
-          ["Net", net==null?"—":money(net), net==null?"all-time spend didn't load — hit Recompute":pct(roi)+" ROI on "+money(allSpend)+" spend"],
+          ["Gross sales", money(r.gross), "Sales tab, recorded gross",
+            `Sum of the amount on sale and discretionary rows — gifted or kept items are realized, so they count; expected and loss rows never do. Gross means before fees. ${excludeOn?"A sale whose linked shipments are all outliers drops out with them.":""}`],
+          ["Fees", "−"+money(r.fees), "15% on eBay sales",
+            `${EBAY_FEE_PCT}% of that row's gross, charged only when the buyer name contains "eBay" — the amount recorded stays gross so it reconciles against eBay's own report. No other buyer is charged a fee, and discretionary rows never are.`],
+          ["Expected", money(r.expected), "expected-type sale rows",
+            "Sum of the amount on rows marked expected. It is added into realized margin below, so that figure includes money not yet received."],
+          ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab (shared across devices)",
+            "Your own estimate of unsold stock on hand — nothing computes it. It is added to realized margin as typed, so that figure moves the moment you change it."],
+          ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":""),
+            `What we paid customers for every shipment the business has bought — stage pending payment, pending LeadsOnline or complete, all-time and unaffected by the filters above — plus the typed cost of loss rows that have no linked shipment. ${tipOutlier}`],
+          ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid",
+            "Marketing spend and shipping are not in this figure — they come off in Net. Expected and inventory are estimates, so it sits above cash actually banked."],
+          ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`,
+            "The same assumption as the Appraised strip, but over every shipment in the business rather than this window's cohort: inbound postage on each arrival, plus return postage on each arrival we didn't buy."],
+          ["Net", net==null?"—":money(net), net==null?"all-time spend didn't load — hit Recompute":pct(roi)+" ROI on "+money(allSpend)+" spend",
+            `Realized margin − all-time marketing spend − shipping. ROI % is net ÷ marketing spend only; shipping is subtracted from the net but stays out of the denominator.${view==="mature"?` In Mature view, spend from the last ${matureDays} days is left out — its results haven't landed yet.`:""}`],
         ];
         return <>
           <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
@@ -6090,8 +6115,8 @@ function RoiTab({shipments}) {
               {r.excludedSales>0 && ` · ${r.excludedSales} outlier sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded`}</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(8,1fr)",gap:10,marginBottom:16}}>
-            {cards.map(([l,v,sub],i)=>{ const isMargin=i===5, isNet=i===7; const val=isMargin?r.margin:isNet?net:null;
-              return <div key={l} style={{background:isMargin||isNet?"#FBF8F3":"#fff",border:`1px solid ${isMargin||isNet?G.gold+"66":G.border}`,borderRadius:10,padding:"12px 14px"}}>
+            {cards.map(([l,v,sub,tip],i)=>{ const isMargin=i===5, isNet=i===7; const val=isMargin?r.margin:isNet?net:null;
+              return <div key={l} title={tip||""} style={{background:isMargin||isNet?"#FBF8F3":"#fff",border:`1px solid ${isMargin||isNet?G.gold+"66":G.border}`,borderRadius:10,padding:"12px 14px"}}>
                 <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
                 <div style={{fontSize:22,fontWeight:700,marginTop:2,color:val==null?G.text:(val>=0?G.green:G.red)}}>{v}</div>
                 {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
