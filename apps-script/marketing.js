@@ -700,8 +700,19 @@ function getMarketingRoi(parsed) {
     return { key: ch.key, label: ch.label, all: ch.all, mature: ch.mature, adsets: adsets };
   }).sort(function (a, b) { return (b.all.spend || 0) - (a.all.spend || 0) || b.all.regs - a.all.regs; });
 
+  // Inventory on hand, live. getInventoryByBin is the one definition of what
+  // we're holding — owned, no Sales link, non-blank bin — so this reads its
+  // summary rather than repeating the rules and drifting from the tab.
+  var invValue = 0, invCount = 0;
+  try {
+    var invRes = getInventoryByBin();
+    if (invRes && invRes.success) { invValue = invRes.summary.owned_appraised; invCount = invRes.summary.owned_count; }
+    else Logger.log('ROI inventory value: ' + (invRes && invRes.error));
+  } catch (e) { Logger.log('ROI inventory value unavailable: ' + e); }
+
   var out = {
     success: true, from: from, to: to, mature_days: matureDays, exclude_over: excludeOver, generated_at: now.toISOString(),
+    inventory_value: invValue, inventory_count: invCount,
     excluded: excluded, index_source: idx.source,
     excluded_tests: { count: testsExcluded.length, emails: testsExcluded.sort() },
     repeat_sources: Object.keys(repeatSources).map(function (k) { return repeatSources[k]; }).sort(function (a, b) { return b.fulfilled - a.fulfilled; }),

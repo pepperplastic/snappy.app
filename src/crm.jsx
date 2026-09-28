@@ -5809,12 +5809,10 @@ function RoiTab({shipments}) {
   const [sales,setSales]     = useState(null);        // all Sales rows, for realized margin
   const [spendRows,setSpendRows] = useState(null);     // all-time spend rows, for realized net
   const [sideErr,setSideErr]     = useState("");       // sales / spend fetch problems
-  const [invRec,setInvRec]       = useState(null);     // inventory estimate (server-side setting)
   const [drill,setDrill]         = useState(null);     // count drill-down (RecordsDrawer)
 
   const loadSide = useCallback(async ()=>{
     const errs=[];
-    try{ const r=await apiPost({action:"getSetting", key_name:"inventory_estimate"}); if(r&&r.success) setInvRec(r.value||{value:0,updated:""}); else errs.push("inventory: "+((r&&r.error)||"no response")); }catch(e){ errs.push("inventory: "+(e.message||e)); }
     try{ const r=await apiPost({action:"getSales"}); if(r&&r.success) setSales(r.sales||[]); else errs.push("sales: "+((r&&r.error)||"no response")); }catch(e){ errs.push("sales: "+(e.message||e)); }
     try{ const r=await apiPost({action:"getAdSpend"}); if(r&&r.success) setSpendRows(r.rows||[]); else errs.push("spend: "+((r&&r.error)||"no response")); }catch(e){ errs.push("spend: "+(e.message||e)); }
     setSideErr(errs.join(" · "));
@@ -5827,7 +5825,9 @@ function RoiTab({shipments}) {
     const cutoff = view==="mature" ? roiDateStr(new Date(Date.now()-matureDays*86400000)) : null;
     return spendRows.reduce((sum,x)=> (cutoff && String(x.date)>cutoff) ? sum : sum+(parseFloat(x.spend)||0), 0);
   },[spendRows,view,matureDays]);
-  const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0, invRec) : null, [sales,shipments,excludeOn,excludeOver,invRec]);
+  // Inventory comes from getMarketingRoi now — the appraised value of what's
+  // actually on the shelf — not the hand-typed estimate on the Sales tab.
+  const realized = useMemo(()=> sales ? computeRealizedMargin(sales, shipments||[], excludeOn?(parseFloat(excludeOver)||0):0, {value: data?.inventory_value||0, updated:""}) : null, [sales,shipments,excludeOn,excludeOver,data]);
   const allShipping = useMemo(()=>{
     const ARR=["received","inspected","pending_response","pending_payment","pending_leadsonline","complete","returned"];
     const PUR=["complete","pending_payment","pending_leadsonline"];
@@ -6097,8 +6097,8 @@ function RoiTab({shipments}) {
             `${EBAY_FEE_PCT}% of that row's gross, charged only when the buyer name contains "eBay" — the amount recorded stays gross so it reconciles against eBay's own report. No other buyer is charged a fee, and discretionary rows never are.`],
           ["Expected", money(r.expected), "expected-type sale rows",
             "Sum of the amount on rows marked expected. It is added into realized margin below, so that figure includes money not yet received."],
-          ["Inventory", money(r.inventory), r.inventory ? "estimate set "+String(r.inventoryUpdated).slice(0,10) : "set it on the Sales tab (shared across devices)",
-            "Your own estimate of unsold stock on hand — nothing computes it. It is added to realized margin as typed, so that figure moves the moment you change it."],
+          ["Inventory", money(r.inventory), `${data.inventory_count||0} owned item${(data.inventory_count||0)===1?"":"s"} · appraised`,
+            "Live from the Inventory tab's own rule: the appraised value of everything we've bought that hasn't sold and still sits in a bin. A purchase with a blank appraisal adds nothing, so this reads low until those are graded. It is added to realized margin as-is."],
           ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":""),
             `What we paid customers for every shipment the business has bought — stage pending payment, pending LeadsOnline or complete, all-time and unaffected by the filters above — plus the typed cost of loss rows that have no linked shipment. ${tipOutlier}`],
           ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid",
