@@ -6805,6 +6805,134 @@ function RulesCopy({c}) {
   </div>;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  INVENTORY (Sep 28) — what's on the shelf, by bin. Read-only.
+//  Server-side getInventoryByBin decides what's here and what's sold; this
+//  only groups, filters and renders. Clicking a row hands the shipment id to
+//  the same deep-link path /crm?shp=SHP-1234 uses, so it opens in whichever
+//  queue holds it.
+// ═══════════════════════════════════════════════════════════════
+function invMoney(v){ const n=parseFloat(v)||0; return "$"+n.toLocaleString(undefined,{maximumFractionDigits:0}); }
+function invDays(n){ return n===null||n===undefined ? "—" : n+"d"; }
+
+function InventoryTab({onOpenShipment}) {
+  const isMobile = useIsMobile();
+  const [data,setData]       = useState(null);
+  const [loading,setLoading] = useState(true);
+  const [err,setErr]         = useState("");
+  const [readyOnly,setReadyOnly] = useState(false);
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr("");
+    try{
+      const r=await apiPost({action:"getInventoryByBin"});
+      if(r&&r.success) setData(r); else setErr((r&&r.error)||"Couldn't load inventory");
+    }catch(e){ setErr(e.message||String(e)); }
+    setLoading(false);
+  },[]);
+  useEffect(()=>{ load(); },[load]);
+
+  // The toggle filters the list; the summary above always describes the whole
+  // shelf, so "X ready · Y on hold" still says what's waiting.
+  const bins = (data?.bins||[])
+    .map(b=>({...b, items: readyOnly ? b.items.filter(x=>x.ready) : b.items}))
+    .filter(b=>b.items.length);
+  const s = data?.summary;
+
+  const card = {background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"};
+  const th   = {padding:"8px 10px",fontSize:11,color:G.muted,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",textAlign:"right"};
+  const td   = {padding:"9px 10px",fontSize:13,borderTop:`1px solid ${G.border}`,textAlign:"right"};
+  const chip = (bg,color,text)=><span style={{background:bg,color,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{text}</span>;
+
+  return <div style={{flex:1,overflow:"auto",padding:isMobile?12:24,background:G.bg}}>
+    <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
+      <h2 style={{margin:0,fontSize:22,color:G.text}}>Inventory</h2>
+      <div style={{fontSize:11,color:G.muted}}>on the shelf and unsold · {data?`${data.hold_days}-day hold from the purchase date`:""}</div>
+      <div style={{flex:1}}/>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:G.text,cursor:"pointer"}}>
+        <input type="checkbox" checked={readyOnly} onChange={e=>setReadyOnly(e.target.checked)} style={{width:15,height:15}}/>
+        Ready only
+      </label>
+      <Btn v="ghost" small onClick={load} disabled={loading}>{loading?"…":"⟳ Refresh"}</Btn>
+    </div>
+
+    {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+
+    {s && <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10,marginBottom:16}}>
+      <div style={card}>
+        <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Owned</div>
+        <div style={{fontSize:22,fontWeight:700,color:G.text,marginTop:2}}>{s.owned_count}</div>
+        <div style={{fontSize:11,color:G.muted,marginTop:2}}>{invMoney(s.owned_paid)} paid · {invMoney(s.owned_appraised)} appraised</div>
+      </div>
+      <div style={card}>
+        <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Not yet purchased</div>
+        <div style={{fontSize:22,fontWeight:700,color:G.text,marginTop:2}}>{s.unpurchased_count}</div>
+        <div style={{fontSize:11,color:G.muted,marginTop:2}}>{invMoney(s.unpurchased_appraised)} appraised</div>
+      </div>
+      <div style={card}>
+        <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Hold status</div>
+        <div style={{fontSize:22,fontWeight:700,marginTop:2}}>
+          <span style={{color:G.green}}>{s.ready} ready</span>
+          <span style={{color:G.muted,fontWeight:400,fontSize:16}}> · </span>
+          <span style={{color:G.orange}}>{s.hold} on hold</span>
+        </div>
+        <div style={{fontSize:11,color:G.muted,marginTop:2}}>owned items only</div>
+      </div>
+    </div>}
+
+    {loading && !data ? <div style={{color:G.muted}}>Loading…</div> :
+     !bins.length ? <div style={{padding:48,textAlign:"center",color:G.muted,background:"#fff",borderRadius:10,border:`1px solid ${G.border}`}}>
+       <div style={{fontSize:32,marginBottom:12}}>📦</div>
+       <div style={{fontSize:14}}>{readyOnly?"Nothing has cleared its hold yet.":"Nothing on the shelf."}</div>
+     </div> :
+     bins.map(b=>{
+       const owned = b.items.filter(x=>x.purchased);
+       const paid = owned.reduce((t,x)=>t+(parseFloat(x.paid)||0),0);
+       const appraised = b.items.reduce((t,x)=>t+(parseFloat(x.appraised)||0),0);
+       return <div key={b.bin} style={{marginBottom:16,background:"#fff",border:`1px solid ${G.border}`,borderRadius:10}}>
+         <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"10px 14px",borderBottom:`1px solid ${G.border}`,flexWrap:"wrap"}}>
+           <span style={{fontSize:14,fontWeight:700,color:G.text}}>{b.bin==="No bin"?"No bin":"Bin "+b.bin}</span>
+           <span style={{fontSize:11,color:G.muted}}>
+             {b.items.length} item{b.items.length!==1?"s":""} · {owned.length} owned · {invMoney(paid)} paid · {invMoney(appraised)} appraised
+           </span>
+         </div>
+         <table style={{width:"100%",borderCollapse:"collapse"}}>
+           <thead><tr>
+             <th style={{...th,textAlign:"left"}}>SHP</th>
+             <th style={{...th,textAlign:"left"}}>Customer</th>
+             <th style={{...th,textAlign:"left"}}>Item</th>
+             <th style={{...th,textAlign:"left"}}>Stage</th>
+             <th style={th}>Paid</th>
+             <th style={th}>Appraised</th>
+             <th style={th}>Days</th>
+             <th style={{...th,textAlign:"right"}}/>
+           </tr></thead>
+           <tbody>
+             {b.items.map(x=><tr key={x.shipment_id} onClick={()=>onOpenShipment&&onOpenShipment(x.shipment_id)}
+               title="Open this shipment in its queue"
+               style={{cursor:"pointer"}}
+               onMouseEnter={e=>e.currentTarget.style.background="#FBF8F3"}
+               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+               <td style={{...td,textAlign:"left",fontWeight:600}}>{x.shipment_id}</td>
+               <td style={{...td,textAlign:"left"}}>{x.customer||"—"}</td>
+               <td style={{...td,textAlign:"left",color:G.muted,maxWidth:280,whiteSpace:"normal"}}>{x.item||"—"}</td>
+               <td style={{...td,textAlign:"left"}}><Badge stage={x.stage} sm/></td>
+               <td style={td}>{x.purchased?invMoney(x.paid):<span style={{color:G.muted}}>—</span>}</td>
+               <td style={td}>{x.appraised?invMoney(x.appraised):<span style={{color:G.muted}}>—</span>}</td>
+               <td style={{...td,color:G.muted}}>{invDays(x.days_since_arrival)}</td>
+               <td style={{...td,textAlign:"right"}}>
+                 {x.purchased
+                   ? (x.ready ? chip("#E8F5E9",G.green,"READY") : chip("#FFF4E5",G.orange,`HOLD ${x.hold_days_left}d`))
+                   : chip("#F0EDE8",G.muted,`${SL[x.stage]||x.stage} · ${invDays(x.days_since_arrival)}`)}
+               </td>
+             </tr>)}
+           </tbody>
+         </table>
+       </div>;
+     })}
+  </div>;
+}
+
 function RulesTab() {
   const isMobile = useIsMobile();
   const [data,setData]       = useState(null);
@@ -7197,6 +7325,9 @@ useEffect(()=>{
     else if(COMPLETE_STAGES.includes(st)) setTab("complete");
     try{ window.history.replaceState(null,"",window.location.pathname); }catch{}
   },[deepLink,shipments]);
+  // Inventory rows reuse the deep-link path above. Clearing first means clicking
+  // the same row twice still routes — the effect keys off deepLink changing.
+  function openShipmentFromTab(id){ setDeepLink(null); setTimeout(()=>setDeepLink(id),0); }
   const [tsFlash,setTsFlash]=useState(false);
 
   // Auto-refresh every 5 minutes when tab is visible
@@ -7262,7 +7393,7 @@ useEffect(()=>{
     if(cache) setCache({...cache,shipments:[newShipment,...cache.shipments]});
   }
 
-  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold},{id:"comms",label:"Comms",color:G.blue},{id:"rules",label:"Rules",color:G.muted}];
+  const TABS=[{id:"fulfill",label:"Fulfill",color:G.purple},{id:"outbound",label:"Outbound",color:G.purple},{id:"received",label:"Received",color:G.teal},{id:"complete",label:"Complete",color:G.green},{id:"urgent",label:"Urgent",color:G.red},{id:"leads",label:"Incomplete Leads",color:G.orange},{id:"sales",label:"Sales",color:G.green},{id:"customers",label:"Customers",color:G.blue},{id:"marketing",label:"Marketing",color:G.teal},{id:"roi",label:"ROI",color:G.gold},{id:"analytics",label:"Analytics",color:G.gold},{id:"comms",label:"Comms",color:G.blue},{id:"inventory",label:"Inventory",color:G.teal},{id:"rules",label:"Rules",color:G.muted}];
   const [followUpCount,setFollowUpCount]=useState(0);
 
   const fulfillCount=shipments.filter(s=>s.stage==="ready_to_fulfill").length;
@@ -7313,6 +7444,7 @@ if(!unlocked) return <PinGate onUnlock={()=>setUnlocked(true)}/>;
       {tab==="roi"      &&<RoiTab shipments={shipments}/>}
       {tab==="analytics"&&<AnalyticsTab shipments={shipments} customers={customers}/>}
       {tab==="comms"    &&<CommsTab/>}
+      {tab==="inventory"&&<InventoryTab onOpenShipment={openShipmentFromTab}/>}
       {tab==="rules"    &&<RulesTab/>}
     </div>
   </div>;
