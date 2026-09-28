@@ -6071,7 +6071,7 @@ function RoiTab({shipments}) {
         const paidV   = pending ? null : (R ? R.paid + R.lossCost : tot.paid);
         const shipV   = pending ? null : (R ? allShipping.cost : p.shipping);
         const marginV = pending ? null : (R ? (grossV - feesV + invV - paidV) : tot.margin);
-        const netV    = (marginV==null || shipV==null) ? null : marginV - shipV;
+        const netV    = (marginV==null || shipV==null) ? null : marginV - shipV - (tot.spend||0);
         const roiPct  = (netV!=null && tot.spend) ? netV/tot.spend*100 : null;
 
         const cards=[
@@ -6115,8 +6115,8 @@ function RoiTab({shipments}) {
             ? "What the realized numbers leave once the money we paid out is taken off. Marketing spend and shipping are not in here — they come off in Net. Expected sales and inventory are estimates, so it sits above cash actually banked."
             : `Appraised value minus what we paid, over purchased shipments that actually carry an appraisal — a blank appraised_value contributes nothing, so this reads low until those are graded. ${tipOutlier}`],
         ["Net", show(netV, v=>money(v)),
-          mark(roiPct==null ? (tot.spend?"":"no spend") : pct(roiPct)+" ROI on spend"),
-          `Margin − shipping. ROI % is that net divided by the Spend card${realizedBasis?"":" for this slice"}; the shipping assumption comes off the net but never enters the denominator. ${tipOutlier}`],
+          mark(netV==null ? null : (tot.spend ? `after ${money(tot.spend)} spend · ${pct(roiPct)} ROI` : "no spend")),
+          `Margin − shipping − spend: what the Margin card shows, less the shipping assumption, less the ${money(tot.spend)} on the Spend card. ROI % is that net divided by the same spend${realizedBasis?"":" for this slice"}; shipping comes off the net but never enters the denominator. ${tipOutlier}`],
       ];
       return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:10,marginBottom:16}}>
         {cards.map(([l,v,sub,tip])=>{ const hero = l==="Margin"||l==="Net";
