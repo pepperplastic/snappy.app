@@ -6051,8 +6051,30 @@ function RoiTab({shipments}) {
     </div>}
 
     {loading && !data ? <div style={{color:G.muted}}>Loading…</div> : data && <>
-      {/* Headline numbers */}
-      {(()=>{ const p=per(tot); const cards=[
+      {/* ONE strip. The funnel cards always follow the filters. The money cards
+          switch basis: with nothing filtered away (all time, all sources, both
+          customer types) they are the realized Sales-tab numbers; otherwise
+          they are the appraised-basis figures for the slice on screen, and each
+          one says so in its subtitle. */}
+      {(()=>{
+        const p = per(tot);
+        const realizedBasis = preset==="all" && !channel && custType==="all";
+        const R = realizedBasis ? realized : null;
+        const pending = realizedBasis && !realized;          // Sales rows still loading
+        const mark = t => realizedBasis ? t : [t,"appraised basis · filtered"].filter(Boolean).join(" · ");
+        const dash = <span style={{color:G.muted}}>—</span>;
+        const show = (v,render) => pending ? dash : (v==null ? dash : render(v));
+
+        const grossV  = pending ? null : (R ? R.gross + R.expected : tot.appraised);
+        const feesV   = pending ? null : (R ? R.fees : null);
+        const invV    = pending ? null : (R ? R.inventory : null);
+        const paidV   = pending ? null : (R ? R.paid + R.lossCost : tot.paid);
+        const shipV   = pending ? null : (R ? allShipping.cost : p.shipping);
+        const marginV = pending ? null : (R ? (grossV - feesV + invV - paidV) : tot.margin);
+        const netV    = (marginV==null || shipV==null) ? null : marginV - shipV;
+        const roiPct  = (netV!=null && tot.spend) ? netV/tot.spend*100 : null;
+
+        const cards=[
         ["Spend", money(tot.spend), null,
           `Ad Spend rows dated inside this window, matched to a channel by its ?ref= code. ${view==="mature"?"Mature view counts only spend dated on or before the cutoff. ":""}The First-time/Repeat chip never splits spend.`],
         ["Registrations", tot.regs, cost(p.costReg)+" each",
@@ -6063,66 +6085,48 @@ function RoiTab({shipments}) {
           "Shipments that reached us: stage received, inspected, pending response, pending payment, pending LeadsOnline, complete or returned — or any row carrying a received date."],
         ["Purchased", tot.purchased, pct(p.buyPct)+" buy · "+cost(p.costPurchase)+" each",
           "Shipments we bought: stage pending payment, pending LeadsOnline or complete. The buy rate is over arrivals, not registrations."],
-        ["Paid out", money(tot.paid), tot.purchased?money(tot.paid/tot.purchased)+" avg":null,
-          `What we paid customers for those purchases, summed from each shipment's purchase price. ${tipOutlier}`],
-        ["Shipping", money(p.shipping), `${tot.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,tot.arrived-tot.purchased)} returns × $${ROI_SHIP_RET}`,
-          "An assumption, not a ledger — no carrier invoice is read. Every arrival is charged inbound postage, and every arrival we didn't buy is charged return postage on top."],
-        ["Margin", money(tot.margin), data.excluded&&data.excluded.count?`${data.excluded.count} outlier${data.excluded.count>1?"s":""} excluded (${money(data.excluded.paid)} paid)`:tot.missingAppr?`${tot.missingAppr} purchase${tot.missingAppr>1?"s":""} missing appraisal`:"appraised − paid",
-          `Appraised value minus what we paid, summed over purchased shipments that actually carry an appraisal — a blank appraised_value contributes nothing, so this reads low until those are graded. ${tipOutlier}`],
-        ["Net", money(p.net), p.roi==null?"no spend":pct(p.roi)+" ROI on spend",
-          `Margin − spend − shipping. ROI % is that net divided by marketing spend alone; the shipping assumption is subtracted from the net but never enters the denominator. ${tipOutlier}`],
+        ["Paid", show(paidV, v=>"−"+money(v)),
+          mark(R ? `${R.purchases} purchases`+(R.lossCost?" + losses":"") : (tot.purchased?money(tot.paid/tot.purchased)+" avg":null)),
+          R
+            ? `What we paid customers for every shipment the business has bought — stage pending payment, pending LeadsOnline or complete, all-time — plus the typed cost of loss rows with no linked shipment. ${tipOutlier}`
+            : `What we paid customers for the purchases in this slice, summed from each shipment's purchase price. ${tipOutlier}`],
+        ["Gross sales", show(grossV, v=>money(v)),
+          mark(R ? ("sale + discretionary"+(R.expected>0?` · incl. ${money(R.expected)} expected`:"")) : "appraised value of this slice"),
+          R
+            ? `Sum of the amount on Sales tab rows of type sale and discretionary — gifted or kept items are realized, so they count; loss rows never do. Gross means before fees.${R.expected>0?` It also carries ${money(R.expected)} of expected-type rows, which is money not yet received.`:""} All-time and business-wide.`
+            : "On the appraised basis there are no sales to total, so this is the appraised value of the purchased shipments in the filtered slice — what they're worth to us, not what anything sold for."],
+        ["Fees", show(feesV, v=>"−"+money(v)),
+          mark(R ? `${EBAY_FEE_PCT}% on eBay sales` : "not applicable"),
+          R
+            ? `${EBAY_FEE_PCT}% of that row's gross, charged only when the buyer name contains "eBay" — the amount recorded stays gross so it reconciles against eBay's own report. No other buyer is charged a fee, and discretionary rows never are.`
+            : "Marketplace fees only exist once something actually sells, so they have no meaning on the appraised basis. Clear the filters to see them."],
+        ["Inventory", show(invV, v=>money(v)),
+          mark(R ? `${data.inventory_count||0} owned item${(data.inventory_count||0)===1?"":"s"} · appraised` : "whole-business figure"),
+          R
+            ? "Live from the Inventory tab's own rule: the appraised value of everything we've bought that hasn't sold and still sits in a bin. A purchase with a blank appraisal adds nothing, so this reads low until those are graded."
+            : "Inventory on hand is a whole-business figure with no source or date to filter by, so it's left out of a filtered slice — and out of the appraised margin, which is already appraised minus paid."],
+        ["Shipping", show(shipV, v=>"−"+money(v)),
+          mark(R ? `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,allShipping.arrived-allShipping.purchased)} returns × $${ROI_SHIP_RET}`
+                 : `${tot.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,tot.arrived-tot.purchased)} returns × $${ROI_SHIP_RET}`),
+          `An assumption, not a ledger — no carrier invoice is read. Every arrival is charged inbound postage, and every arrival we didn't buy is charged return postage on top.${R?" Counted over every shipment in the business, not just this window.":""}`],
+        ["Margin", show(marginV, v=>money(v)),
+          mark(R ? "gross − fees + inventory − paid" : "appraised − paid"),
+          R
+            ? "What the realized numbers leave once the money we paid out is taken off. Marketing spend and shipping are not in here — they come off in Net. Expected sales and inventory are estimates, so it sits above cash actually banked."
+            : `Appraised value minus what we paid, over purchased shipments that actually carry an appraisal — a blank appraised_value contributes nothing, so this reads low until those are graded. ${tipOutlier}`],
+        ["Net", show(netV, v=>money(v)),
+          mark(roiPct==null ? (tot.spend?"":"no spend") : pct(roiPct)+" ROI on spend"),
+          `Margin − shipping. ROI % is that net divided by the Spend card${realizedBasis?"":" for this slice"}; the shipping assumption comes off the net but never enters the denominator. ${tipOutlier}`],
       ];
-      return <>
-      <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
-        <span style={{fontSize:12,fontWeight:700,color:G.text}}>Appraised</span>
-        <span style={{fontSize:11,color:G.muted}}>{chanSel?chanSel.label+" only":"all sources"}{custType!=="all"?` · ${custType==="first"?"first-time":"repeat"} shipments only`:""} · this window, {V==="mature"?"mature cohorts":"all cohorts"} · margin = appraised value − paid</span>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(9,1fr)",gap:10,marginBottom:16}}>
-        {cards.map(([l,v,sub,tip])=><div key={l} title={tip||""} style={{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"}}>
-          <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
-          <div style={{fontSize:22,fontWeight:700,color:l==="Net"?(p.net>=0?G.green:G.red):G.text,marginTop:2}}>{v}</div>
-          {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
-        </div>)}
-      </div>
-      </>;})()}
-
-      {/* Realized margin — business-level, all-time, from the Sales tab. Same card
-          strip as the appraised row above so the two bases read side by side. */}
-      {realized && (()=>{ const r=realized; const costs = allSpend==null ? null : allSpend+allShipping.cost; const net = costs==null ? null : r.margin-costs;
-        const roi = allSpend ? (r.margin-costs)/allSpend*100 : null;
-        const cards=[
-          ["Gross sales", money(r.gross), "Sales tab, recorded gross",
-            `Sum of the amount on sale and discretionary rows — gifted or kept items are realized, so they count; expected and loss rows never do. Gross means before fees. ${excludeOn?"A sale whose linked shipments are all outliers drops out with them.":""}`],
-          ["Fees", "−"+money(r.fees), "15% on eBay sales",
-            `${EBAY_FEE_PCT}% of that row's gross, charged only when the buyer name contains "eBay" — the amount recorded stays gross so it reconciles against eBay's own report. No other buyer is charged a fee, and discretionary rows never are.`],
-          ["Expected", money(r.expected), "expected-type sale rows",
-            "Sum of the amount on rows marked expected. It is added into realized margin below, so that figure includes money not yet received."],
-          ["Inventory", money(r.inventory), `${data.inventory_count||0} owned item${(data.inventory_count||0)===1?"":"s"} · appraised`,
-            "Live from the Inventory tab's own rule: the appraised value of everything we've bought that hasn't sold and still sits in a bin. A purchase with a blank appraisal adds nothing, so this reads low until those are graded. It is added to realized margin as-is."],
-          ["Paid", "−"+money(r.paid+r.lossCost), `${r.purchases} purchases`+(r.lossCost?" + losses":""),
-            `What we paid customers for every shipment the business has bought — stage pending payment, pending LeadsOnline or complete, all-time and unaffected by the filters above — plus the typed cost of loss rows that have no linked shipment. ${tipOutlier}`],
-          ["Realized margin", money(r.margin), "gross − fees + expected + inventory − paid",
-            "Marketing spend and shipping are not in this figure — they come off in Net. Expected and inventory are estimates, so it sits above cash actually banked."],
-          ["Shipping", "−"+money(allShipping.cost), `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${allShipping.arrived-allShipping.purchased} returns × $${ROI_SHIP_RET}`,
-            "The same assumption as the Appraised strip, but over every shipment in the business rather than this window's cohort: inbound postage on each arrival, plus return postage on each arrival we didn't buy."],
-          ["Net", net==null?"—":money(net), net==null?"all-time spend didn't load — hit Recompute":pct(roi)+" ROI on "+money(allSpend)+" spend",
-            `Realized margin − all-time marketing spend − shipping. ROI % is net ÷ marketing spend only; shipping is subtracted from the net but stays out of the denominator.${view==="mature"?` In Mature view, spend from the last ${matureDays} days is left out — its results haven't landed yet.`:""}`],
-        ];
-        return <>
-          <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"2px 0 8px"}}>
-            <span style={{fontSize:12,fontWeight:700,color:G.text}}>Realized</span>
-            <span style={{fontSize:11,color:G.muted}}>all-time, from the Sales tab · whole business regardless of the source/date filters (refiner lots carry no attribution){view==="mature"?` · spend from the last ${matureDays} days excluded, matching Mature`:""}
-              {r.excludedSales>0 && ` · ${r.excludedSales} outlier sale${r.excludedSales>1?"s":""} and ${money(r.excludedPaid)} paid excluded`}</span>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(8,1fr)",gap:10,marginBottom:16}}>
-            {cards.map(([l,v,sub,tip],i)=>{ const isMargin=i===5, isNet=i===7; const val=isMargin?r.margin:isNet?net:null;
-              return <div key={l} title={tip||""} style={{background:isMargin||isNet?"#FBF8F3":"#fff",border:`1px solid ${isMargin||isNet?G.gold+"66":G.border}`,borderRadius:10,padding:"12px 14px"}}>
-                <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
-                <div style={{fontSize:22,fontWeight:700,marginTop:2,color:val==null?G.text:(val>=0?G.green:G.red)}}>{v}</div>
-                {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
-              </div>;})}
-          </div>
-        </>;})()}
+      return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:10,marginBottom:16}}>
+        {cards.map(([l,v,sub,tip])=>{ const hero = l==="Margin"||l==="Net";
+          const num = l==="Margin" ? marginV : l==="Net" ? netV : null;
+          return <div key={l} title={tip||""} style={{background:hero?"#FBF8F3":"#fff",border:`1px solid ${hero?G.gold+"66":G.border}`,borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:11,color:G.muted,fontWeight:600}}>{l}</div>
+            <div style={{fontSize:22,fontWeight:700,marginTop:2,color:num==null?G.text:(num>=0?G.green:G.red)}}>{v}</div>
+            {sub&&<div style={{fontSize:11,color:G.muted,marginTop:2}}>{sub}</div>}
+          </div>;})}
+      </div>;})()}
 
       {/* Weekly trend */}
       {weeks.length>1 && <RoiWeeklyChart weeks={weeks}/>}
