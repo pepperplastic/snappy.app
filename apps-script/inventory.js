@@ -152,6 +152,7 @@ function getInventoryByBin() {
       listed_price: parseFloat(s.listed_price) || 0,
       listed_at: _invIso(_invDate(s.listed_at)),
       listed_url: String(s.listed_url || '').trim(),
+      plan: String(s.plan || '').trim(),
     });
 
     if (purchased) {
@@ -272,5 +273,42 @@ function setListing(parsed) {
 
 function handleSetListing(parsed) {
   try { return setListing(parsed); }
+  catch (e) { return { success: false, error: String(e && e.message || e) }; }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  PLAN — what we intend to do with an item: list it on eBay, melt it, send
+//  it to Beached Gold, or hold it. One `plan` column on the shipment row,
+//  written through updateShipment exactly like the listing fields.
+// ═══════════════════════════════════════════════════════════════════════
+var INV_PLANS = ['', 'ebay', 'melt', 'beached', 'hold'];
+
+function _invEnsurePlanColumn() {
+  var sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('plan') >= 0) return false;
+  var next = sheet.getLastColumn() + 1;
+  sheet.getRange(1, next).setValue('plan').setFontWeight('bold').setBackground('#1A1816').setFontColor('#C8953C');
+  Logger.log('setInventoryPlan: added column plan to ' + TAB.SHIPMENTS);
+  return true;
+}
+
+function setInventoryPlan(parsed) {
+  parsed = parsed || {};
+  var id = String(parsed.shipment_id || '').trim();
+  if (!id) return { success: false, error: 'shipment_id required' };
+  var plan = String(parsed.plan || '').trim().toLowerCase();
+  if (INV_PLANS.indexOf(plan) === -1) return { success: false, error: 'unknown plan: ' + plan };
+  _invEnsurePlanColumn();
+
+  var ok = updateShipment(id, { plan: plan });
+  if (ok === false) return { success: false, error: 'shipment ' + id + ' not found' };
+  Logger.log('setInventoryPlan ' + id + ' → ' + (plan || 'none'));
+  return { success: true, shipment_id: id, plan: plan };
+}
+
+function handleSetInventoryPlan(parsed) {
+  try { return setInventoryPlan(parsed); }
   catch (e) { return { success: false, error: String(e && e.message || e) }; }
 }
