@@ -1767,7 +1767,7 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
   const [value, setValue] = useState(existing!==null ? existing : suggested!==null ? String(suggested) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [ai, setAi] = useState(null);          // {value, rationale, confidence, basis}
+  const [ai, setAi] = useState(null);          // {value, lines, total_line, confidence, basis}
   const [aiState, setAiState] = useState("loading"); // loading | ok | error
   const canSave = value!=="" && !isNaN(parseFloat(value));
 
@@ -1807,7 +1807,7 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
     try {
       const v = Math.round(parseFloat(value)*100)/100;
       const updates = {appraised_value:String(v)};
-      if (ai) { updates.appraised_ai = ai.value; updates.appraised_ai_note = `${ai.confidence} · ${ai.basis} — ${ai.rationale}`; }
+      if (ai) { updates.appraised_ai = ai.value; updates.appraised_ai_note = [`${ai.confidence} · ${ai.basis}`, ...(ai.lines||[]), ai.total_line].filter(Boolean).join(" | "); }
       const res = await apiPost({action:"updateShipment", shipment_id:shipment.shipment_id, updates});
       const ok = res === true || (res && typeof res === "object" && !res.error) || res === "true";
       if (!ok) { setError("Save failed: " + ((res && res.error) || "no response")); setSaving(false); return; }
@@ -1831,10 +1831,14 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
         {aiState==="error" && <div style={{color:G.muted}}>Suggestion unavailable · <span onClick={fetchSuggestion} style={{cursor:"pointer",textDecoration:"underline"}}>Re-suggest</span></div>}
         {aiState==="ok" && ai && <>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <strong>Suggested: {fmt$(ai.value)} · {ai.confidence} · {ai.basis}</strong>
+            <strong>Suggested: {fmt$(ai.value)}</strong>
             <button onClick={()=>setValue(String(ai.value))} style={{marginLeft:"auto",background:G.gold,color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Use this</button>
           </div>
-          {ai.rationale && <div style={{color:G.muted,fontSize:12,marginTop:4}}>{ai.rationale}</div>}
+          <div style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:11,lineHeight:1.5,marginTop:6,color:G.text,whiteSpace:"pre-wrap"}}>
+            {(ai.lines||[]).map((l,i)=><div key={i}>{l}</div>)}
+            {ai.total_line && <div style={{borderTop:`1px solid ${G.border}`,marginTop:3,paddingTop:3,fontWeight:700}}>{ai.total_line}</div>}
+            <div style={{color:G.muted}}>{ai.confidence} confidence · {ai.basis}</div>
+          </div>
           <div style={{marginTop:4}}><span onClick={fetchSuggestion} style={{fontSize:12,color:G.muted,cursor:"pointer",textDecoration:"underline"}}>Re-suggest</span></div>
         </>}
       </div>
