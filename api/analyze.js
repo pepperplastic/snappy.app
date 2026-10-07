@@ -310,6 +310,8 @@ function computeAppraisal(inspection, modelItems, gold, silver) {
     const melt = r2(fine * (spot / 31.1035));
     let prem = parseFloat(m.premium_usd);
     prem = Number.isFinite(prem) && prem > 0 ? r2(prem) : 0;
+    const capped = prem > melt;
+    if (capped) prem = melt;
     if (ded > 0) anyDeduction = true;
     if (prem > 0) anyPremium = true;
     const value = r2(melt + prem);
@@ -317,6 +319,7 @@ function computeAppraisal(inspection, modelItems, gold, silver) {
     lines.push(`${label} — ${r2(net)}g ${purityLabel} → ${r2(fine)}g fine → $${melt.toFixed(2)}`
       + (ded > 0 ? ` (−${r2(ded)}g stones from ${w}g)` : '')
       + (prem > 0 ? ` + $${prem.toFixed(2)} premium${flag ? `: ${flag}` : ''}` : '')
+      + (capped ? ' [premium capped]' : '')
       + sfx);
   });
   total = r2(total);

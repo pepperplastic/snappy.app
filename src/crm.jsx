@@ -1831,8 +1831,8 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
         {aiState==="error" && <div style={{color:G.muted}}>Suggestion unavailable · <span onClick={fetchSuggestion} style={{cursor:"pointer",textDecoration:"underline"}}>Re-suggest</span></div>}
         {aiState==="ok" && ai && <>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <strong>Suggested: {fmt$(ai.value)}</strong>
-            <button onClick={()=>setValue(String(ai.value))} style={{marginLeft:"auto",background:G.gold,color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Use this</button>
+            <strong>{ai.value>0 ? `Suggested: ${fmt$(ai.value)}` : "No valued items"}</strong>
+            <button onClick={()=>setValue(String(ai.value))} disabled={!(ai.value>0)} style={{marginLeft:"auto",background:G.gold,color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:12,fontWeight:600,cursor:ai.value>0?"pointer":"not-allowed",opacity:ai.value>0?1:0.4}}>Use this</button>
           </div>
           <div style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:11,lineHeight:1.5,marginTop:6,color:G.text,whiteSpace:"pre-wrap"}}>
             {(ai.lines||[]).map((l,i)=><div key={i}>{l}</div>)}
