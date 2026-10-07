@@ -1763,7 +1763,8 @@ function appraisedBlank(s){ return !String((s && s.appraised_value) ?? "").trim(
 // it at the one moment the information is in front of you.
 function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
   const suggested = inspectionItemSum(shipment.inspection_json);
-  const [value, setValue] = useState(suggested!==null ? String(suggested) : "");
+  const existing = appraisedBlank(shipment) ? null : String(shipment.appraised_value).replace(/[^0-9.]/g,"");
+  const [value, setValue] = useState(existing!==null ? existing : suggested!==null ? String(suggested) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [ai, setAi] = useState(null);          // {value, rationale, confidence, basis}
@@ -1823,7 +1824,7 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
       <div style={{fontWeight:700,fontSize:17,marginBottom:6,color:G.text}}>Appraised value for this purchase</div>
       <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
         What {shipment.item||"this lot"} is worth to us — margin is this minus what we pay.
-        {suggested!==null && <span> Pre-filled with the inspection item total.</span>}
+        {existing===null && suggested!==null && <span> Pre-filled with the inspection item total.</span>}
       </div>
       <div style={{background:"#FBF7F0",border:`1px solid ${G.border}`,borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13,color:G.text,lineHeight:1.5}}>
         {aiState==="loading" && <div style={{color:G.muted}}>Getting AI suggestion…</div>}
@@ -3135,6 +3136,10 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Shipment · <span style={{cursor:"pointer",userSelect:"all"}} title="Click to copy" onClick={()=>{navigator.clipboard?.writeText(shipment.shipment_id);}}>{shipment.shipment_id}</span></div>
           <Field label="Item" value={shipment.item}/>
           <Field label="Estimate" value={shipment.estimate}/>
+          {["inspected","pending_response","pending_payment","pending_leadsonline","complete","returned","purchased","offer_made"].includes(shipment.stage)&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:G.text}}>
+            <span>Appraised value: {appraisedBlank(shipment) ? <span style={{color:G.muted}}>— not set</span> : <strong>{fmt$(shipment.appraised_value)}</strong>}</span>
+            <button onClick={()=>setShowAppraisedPrompt(true)} title="Edit appraised value" style={{background:"none",border:`1px solid ${G.border}`,borderRadius:6,padding:"2px 8px",fontSize:13,color:G.gold,cursor:"pointer"}}>✎</button>
+          </div>}
           {shipment.purchase_price&&<div style={{background:"#F0FFF4",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.green}30`}}>
             <div style={{fontSize:10,fontWeight:700,color:G.green,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Purchase</div>
             <div style={{fontSize:18,fontWeight:700,color:G.green}}>{fmt$(shipment.purchase_price)}</div>
