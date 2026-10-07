@@ -1767,15 +1767,13 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
   const [value, setValue] = useState(existing!==null ? existing : suggested!==null ? String(suggested) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [ai, setAi] = useState(null);          // {value, lines, total_line, confidence, basis}
+  const [ai, setAi] = useState(null);          // {value, lines, total_line, confidence, basis, hint?}
   const [aiState, setAiState] = useState("loading"); // loading | ok | error
   const canSave = value!=="" && !isNaN(parseFloat(value));
 
   async function fetchSuggestion() {
     setAiState("loading");
     try {
-      let inspection = [];
-      try { const v = typeof shipment.inspection_json === "string" ? JSON.parse(shipment.inspection_json) : shipment.inspection_json; if (Array.isArray(v)) inspection = v; } catch(e) {}
       const manifest = Array.isArray(shipment.item_manifest) && shipment.item_manifest.length
         ? shipment.item_manifest.map(it=>({name:it.name||"", price:it.price||""}))
         : (shipment.item ? [{name:shipment.item, price:shipment.estimate||""}] : []);
@@ -1788,9 +1786,7 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
           mode:"appraise",
           photos:(photos||[]).map(p=>p.drive_url).filter(Boolean),
           inspection_notes:inspectionNotes,
-          manifest, inspection,
-          item:shipment.item||"",
-          offer_amount:shipment.offer_price||"",
+          manifest,
         })
       });
       if (!r.ok) throw new Error("HTTP "+r.status);
@@ -1836,6 +1832,7 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
           </div>
           <div style={{fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:11,lineHeight:1.5,marginTop:6,color:G.text,whiteSpace:"pre-wrap"}}>
             {(ai.lines||[]).map((l,i)=><div key={i}>{l}</div>)}
+            {ai.hint && <div style={{color:G.muted}}>{ai.hint}</div>}
             {ai.total_line && <div style={{borderTop:`1px solid ${G.border}`,marginTop:3,paddingTop:3,fontWeight:700}}>{ai.total_line}</div>}
             <div style={{color:G.muted}}>{ai.confidence} confidence · {ai.basis}</div>
           </div>
