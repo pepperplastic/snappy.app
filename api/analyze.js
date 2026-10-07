@@ -254,22 +254,82 @@ async function fetchDrivePhoto(url) {
 
 const clip = (v, n) => String(v == null ? '' : v).slice(0, n);
 
-// Pre-stone melt per inspection row (metal / purityDecimal / weight in grams),
-// so the model starts from fixed arithmetic instead of doing its own.
-// Platinum has no spot feed here; those rows come back with melt null.
-function meltFromInspection(items, gold, silver) {
-  return items.map((it, i) => {
-    const w = parseFloat(it.weight);
-    const p = parseFloat(it.purityDecimal);
+const r2 = n => Math.round(n * 100) / 100;
+
+// Purity label/number → decimal: "14K" → 14/24, "585" → .585, "0.585" → .585.
+function purityToDecimal(v) {
+  const t = String(v == null ? '' : v).trim().toLowerCase().replace(/\s+/g, '');
+  const k = t.match(/^(\d+(?:\.\d+)?)(k|kt|karat)$/);
+  if (k) return parseFloat(k[1]) / 24;
+  const n = parseFloat(t);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 1) return n;
+  if (n >= 100 && n <= 1000) return n / 1000;
+  return null;
+}
+
+// The model supplies judgment only (stone deduction, premium, flag); the math
+// is done here from the INSPECTION record, which wins over anything the model
+// echoes back. Items are matched by position — one per inspection row.
+function computeAppraisal(inspection, modelItems, gold, silver) {
+  const lines = [];
+  let total = 0, valued = 0, excluded = 0, verify = 0, anyDeduction = false, anyPremium = false;
+  inspection.forEach((it, i) => {
+    const m = (modelItems[i] && typeof modelItems[i] === 'object') ? modelItems[i] : {};
+    const name = clip(m.name, 40).trim();
+    const label = `Item ${i + 1}${name ? ` (${name})` : ''}`;
+    const purityLabel = String(it.purity || '').toUpperCase();
+    const w = it.weight > 0 ? it.weight : null;
+    const p = it.purityDecimal > 0 ? it.purityDecimal : null;
+
+    if (w === null || p === null) { excluded++; lines.push(`${label} — no weight recorded`); return; }
     const spot = it.metal === 'Gold' ? gold : it.metal === 'Silver' ? silver : null;
-    const fine = w > 0 && p > 0 ? w * p : null;
-    return {
-      n: i + 1, metal: it.metal, purity: it.purity, weight: w > 0 ? w : null,
-      hasStones: it.hasStones, stoneNote: it.stoneNote,
-      fine: fine === null ? null : Math.round(fine * 100) / 100,
-      melt: fine === null || !spot ? null : Math.round(fine * (spot / 31.1035) * 100) / 100,
-    };
+    if (!spot) { excluded++; lines.push(`${label} — ${w}g ${purityLabel} ${it.metal} — no spot price`); return; }
+
+    const notes = [];
+    const mw = parseFloat(m.weight_g);
+    if (Number.isFinite(mw) && Math.abs(mw - w) > 0.05) notes.push(`model said ${mw}g; using inspection ${w}g`);
+    if (m.karat_or_purity != null && String(m.karat_or_purity).trim()) {
+      const mp = purityToDecimal(m.karat_or_purity);
+      const sameLabel = String(m.karat_or_purity).trim().toLowerCase() === String(it.purity || '').trim().toLowerCase();
+      if (!sameLabel && (mp === null || Math.abs(mp - p) > 0.01)) notes.push(`model said ${clip(m.karat_or_purity, 12)}; using inspection ${purityLabel}`);
+    }
+    const flag = clip(m.flag, 80).trim();
+    const sfx = notes.length ? ` [${notes.join('; ')}]` : '';
+
+    if (/verify/i.test(flag)) {
+      verify++;
+      lines.push(`${label} — ${w}g ${purityLabel} → $0 — verify before offer${sfx}`);
+      return;
+    }
+
+    let ded = parseFloat(m.stone_deduction_g);
+    ded = Number.isFinite(ded) && ded > 0 ? Math.min(ded, w) : 0;
+    const net = w - ded;
+    const fine = net * p;
+    const melt = r2(fine * (spot / 31.1035));
+    let prem = parseFloat(m.premium_usd);
+    prem = Number.isFinite(prem) && prem > 0 ? r2(prem) : 0;
+    if (ded > 0) anyDeduction = true;
+    if (prem > 0) anyPremium = true;
+    const value = r2(melt + prem);
+    total += value; valued++;
+    lines.push(`${label} — ${r2(net)}g ${purityLabel} → ${r2(fine)}g fine → $${melt.toFixed(2)}`
+      + (ded > 0 ? ` (−${r2(ded)}g stones from ${w}g)` : '')
+      + (prem > 0 ? ` + $${prem.toFixed(2)} premium${flag ? `: ${flag}` : ''}` : '')
+      + sfx);
   });
+  total = r2(total);
+  const parts = [`${valued} valued`];
+  if (excluded) parts.push(`${excluded} excluded`);
+  if (verify) parts.push(`${verify} to verify`);
+  return {
+    value: total,
+    lines,
+    total_line: `Total — ${parts.join(', ')} → $${total.toFixed(2)}`,
+    confidence: (excluded || verify || !inspection.length) ? 'Low' : anyDeduction ? 'Medium' : 'High',
+    basis: anyPremium ? 'melt+premium' : 'melt',
+  };
 }
 
 async function handleAppraise(raw, res) {
@@ -288,35 +348,32 @@ async function handleAppraise(raw, res) {
 
   let gold = FALLBACK_GOLD, silver = FALLBACK_SILVER;
   try { const p = await getSpotPrices(); gold = p.gold; silver = p.silver; } catch {}
-  const rows = meltFromInspection(inspection, gold, silver);
-  const goldG = (gold / 31.1035).toFixed(2), silverG = (silver / 31.1035).toFixed(2);
+
+  // Nothing for the model to judge — skip the call, the server math stands alone.
+  if (!inspection.length) return res.status(200).json(computeAppraisal(inspection, [], gold, silver));
 
   const images = (await Promise.all(photos.map(fetchDrivePhoto))).filter(Boolean);
 
-  const prompt = `You compute a MELT-BASED suggested value for a precious-metal lot a gold buyer has inspected. This is arithmetic, not a narrative. You only adjust for stones and flag risks.
+  const prompt = `A gold buyer has inspected a lot. Our server computes melt from the inspection record. Your job is ONLY judgment per item: estimated stone weight to deduct, any premium, and risk flags. Do not compute melt or totals.
 
-Spot today: gold $${gold}/ozt = $${goldG}/g fine; silver $${silver}/ozt = $${silverG}/g fine. No platinum spot is available.
-
-Inspection rows (pre-computed before any stone deduction):
-${rows.length ? rows.map(r => `- Item ${r.n}: ${r.metal} ${r.purity || '?'}, ${r.weight === null ? 'NO WEIGHT' : r.weight + 'g'}${r.fine !== null ? `, ${r.fine}g fine` : ''}${r.melt !== null ? `, melt $${r.melt.toFixed(2)}` : ''}${r.hasStones ? `, stones: ${r.stoneNote || 'yes (unspecified)'}` : ''}`).join('\n') : '(no inspection rows)'}
+Inspection rows (authoritative — weight and karat come from here, never from photos):
+${inspection.map((r, i) => `- Item ${i + 1}: ${r.metal} ${r.purity || '(no karat)'}, ${r.weight > 0 ? r.weight + 'g' : '(no weight)'}${r.hasStones ? `, stones: ${r.stoneNote || 'yes (unspecified)'}` : ''}`).join('\n')}
 
 Inspection notes:
 ${notes.length ? notes.map(n => `- ${n}`).join('\n') : '(none)'}
 
-Context only (never a source of weight or karat): item description "${item || 'none'}"; manifest: ${manifest.length ? manifest.map(m => m.name).join('; ') : 'none'}; offer ${Number.isFinite(offer) ? '$' + offer.toFixed(2) : 'not set'}. ${images.length} photo(s) attached, for judging stone size and hallmarks only.
+Context only: item description "${item || 'none'}"; manifest: ${manifest.length ? manifest.map(m => m.name).join('; ') : 'none'}; offer ${Number.isFinite(offer) ? '$' + offer.toFixed(2) : 'not set'}. ${images.length} photo(s) attached, for judging stone size and hallmarks only.
 
 Rules:
-1. Per item: melt = weight × purity × spot per gram. One line per item, exactly in the form "Item N — 4.8g 14K → 2.81g fine → $XXX". Use the pre-computed figures above unless a stone deduction changes the weight.
-2. Stones are dead weight. Subtract an estimated stone weight (small melee ≈0.1g total; a visible center stone ≈0.2–1.0g depending on its size in the photos), recompute, and append what you subtracted, e.g. "(−0.3g center stone)".
-3. Stones get NO value unless BOTH (a) a meaningful stone (≥~0.5ct center, apparent diamond/sapphire/ruby/emerald) AND (b) a brand/provenance signal (hallmark, maker, cert in notes or photos) are present. Then add a conservative premium on that item's line and name the reason in one phrase.
-4. If the notes raise doubt about an item (e.g. "not sure if solid or plated", "untested", missing stamp), value it at $0, append "verify before offer", and do not average it in.
-5. If an item has no weight or no karat/purity (or no spot price for its metal), its line is "Item N — no weight recorded" (or "— no spot price"), excluded from the total. Never estimate weight or karat from photos.
-6. value = sum of item values (plus any premium). total_line is one line, e.g. "Total — 2 items valued, 1 excluded → $XXX".
-7. basis = "melt", or "melt+premium" if any premium was applied.
-8. confidence = "Low" if any item is unverified (rule 4) or missing weight/karat (rule 5); otherwise "High" if no stone deductions were estimated, else "Medium".
+1. Return exactly one entry per inspection row, in the same order (${inspection.length} entries).
+2. weight_g and karat_or_purity: copy them from the inspection row. If a row has none, return null — never estimate from photos.
+3. stone_deduction_g: stones are dead weight. Small melee ≈0.1g total; a visible center stone ≈0.2–1.0g depending on its size in the photos. 0 if no stones.
+4. premium_usd: 0 unless BOTH (a) a meaningful stone (≥~0.5ct center, apparent diamond/sapphire/ruby/emerald) AND (b) a brand/provenance signal (hallmark, maker, cert in notes or photos). Then a conservative amount, and put the reason as one phrase in flag.
+5. flag: "verify" if the notes raise doubt about that item (e.g. "not sure if solid or plated", "untested", missing stamp); the premium reason if a premium applies; otherwise "".
+6. name: a 1–3 word label for the item (e.g. "ring", "chain").
 
 Respond with JSON only — no markdown, no backticks, no other text:
-{"value": <number>, "lines": ["<one string per item>"], "total_line": "<string>", "confidence": "High|Medium|Low", "basis": "melt|melt+premium"}`;
+{"items": [{"name": "<string>", "weight_g": <number|null>, "karat_or_purity": "<string|null>", "stone_deduction_g": <number>, "premium_usd": <number>, "flag": "<string>"}]}`;
 
   const body = {
     model: DEFAULT_MODEL,
@@ -348,18 +405,8 @@ Respond with JSON only — no markdown, no backticks, no other text:
     console.error('appraise: unparseable model output:', text.slice(0, 300));
     return res.status(502).json({ error: 'Unparseable suggestion' });
   }
-  const value = parseFloat(String(out.value).replace(/[^0-9.]/g, ''));
-  if (!Number.isFinite(value) || value < 0) return res.status(502).json({ error: 'No value in suggestion' });
-  const confidence = ['High', 'Medium', 'Low'].find(c => c.toLowerCase() === String(out.confidence || '').toLowerCase()) || 'Low';
-  const basis = String(out.basis || '').toLowerCase() === 'melt+premium' ? 'melt+premium' : 'melt';
-  const lines = (Array.isArray(out.lines) ? out.lines : []).slice(0, 30).map(l => clip(l, 200).trim()).filter(Boolean);
-  return res.status(200).json({
-    value: Math.round(value * 100) / 100,
-    lines,
-    total_line: clip(out.total_line, 200).trim(),
-    confidence,
-    basis,
-  });
+  const modelItems = Array.isArray(out && out.items) ? out.items : [];
+  return res.status(200).json(computeAppraisal(inspection, modelItems, gold, silver));
 }
 
 export default async function handler(req, res) {
