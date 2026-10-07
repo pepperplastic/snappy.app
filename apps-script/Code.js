@@ -59,7 +59,8 @@ var COLS = {
     'offer_price','paid_at','shippo_transaction_id','ship_followups_sent','capi_shipped_sent',
             'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent','triage_flag','completed_at',
             'relabel_requested_at','winback_a_sent_at','winback_a_sms_at',
-            'listed_on','listed_price','listed_at','listed_url','plan'
+            'listed_on','listed_price','listed_at','listed_url','plan',
+            'appraised_ai','appraised_ai_note'
   ],
   CONTACT_LOG: [
     'log_id','customer_id','timestamp','type','notes','shipment_id','direction','source','kind'
@@ -285,7 +286,7 @@ function doPost(e) {
     if (action === 'migrate')         return handleMigration(parsed);
     if (action === 'upsertCustomer')  return jsonResponse(upsertCustomer(parsed.data));
     if (action === 'createShipment')  return jsonResponse(createShipment(parsed.data));
-    if (action === 'updateShipment')  return jsonResponse(updateShipment(parsed.shipment_id, parsed.updates));
+    if (action === 'updateShipment')  { _prepAppraisedAi(parsed.updates); return jsonResponse(updateShipment(parsed.shipment_id, parsed.updates)); }
     if (action === 'resendLabelEmail') return jsonResponse(handleResendLabelEmail(parsed));
     if (action === 'getLabelUrl')     return jsonResponse(handleGetLabelUrl(parsed));
     // ── Rules tab (rules.gs, read-only) ──
@@ -1643,6 +1644,28 @@ function testCapiEvent() {
 
 // PATCH: Auto-stamp received_at / purchased_at / returned_at when stage transitions.
 // Only sets if the column is empty so we never overwrite a manually-set timestamp.
+// The appraised-value modal sends the AI suggestion alongside the appraisal.
+// Adds the two columns on first use (updateShipment drops unknown headers) and
+// coerces the types: appraised_ai a number, appraised_ai_note a short string.
+var APPRAISED_AI_COLS = ['appraised_ai', 'appraised_ai_note'];
+function _prepAppraisedAi(updates) {
+  if (!updates || (updates.appraised_ai === undefined && updates.appraised_ai_note === undefined)) return;
+  if (updates.appraised_ai !== undefined) {
+    var n = parseFloat(updates.appraised_ai);
+    updates.appraised_ai = isNaN(n) ? '' : Math.round(n * 100) / 100;
+  }
+  if (updates.appraised_ai_note !== undefined) updates.appraised_ai_note = String(updates.appraised_ai_note || '').slice(0, 1500);
+  var sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  APPRAISED_AI_COLS.forEach(function(col) {
+    if (headers.indexOf(col) >= 0) return;
+    var next = sheet.getLastColumn() + 1;
+    sheet.getRange(1, next).setValue(col).setFontWeight('bold').setBackground('#1A1816').setFontColor('#C8953C');
+    headers.push(col);
+    Logger.log('updateShipment: added column ' + col + ' to ' + TAB.SHIPMENTS);
+  });
+}
+
 function updateShipment(shipmentId, updates) {
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.SHIPMENTS);

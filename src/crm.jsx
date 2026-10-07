@@ -1761,19 +1761,53 @@ function appraisedBlank(s){ return !String((s && s.appraised_value) ?? "").trim(
 // Margin and Net across the ROI and Marketing tabs are appraised_value − paid,
 // so a purchase with no appraisal drags every number that reads it. This catches
 // it at the one moment the information is in front of you.
-function AppraisedValuePromptModal({shipment, onSaved, onSkip}) {
+function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
   const suggested = inspectionItemSum(shipment.inspection_json);
   const [value, setValue] = useState(suggested!==null ? String(suggested) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [ai, setAi] = useState(null);          // {value, rationale, confidence, basis}
+  const [aiState, setAiState] = useState("loading"); // loading | ok | error
   const canSave = value!=="" && !isNaN(parseFloat(value));
+
+  async function fetchSuggestion() {
+    setAiState("loading");
+    try {
+      let inspection = [];
+      try { const v = typeof shipment.inspection_json === "string" ? JSON.parse(shipment.inspection_json) : shipment.inspection_json; if (Array.isArray(v)) inspection = v; } catch(e) {}
+      const manifest = Array.isArray(shipment.item_manifest) && shipment.item_manifest.length
+        ? shipment.item_manifest.map(it=>({name:it.name||"", price:it.price||""}))
+        : (shipment.item ? [{name:shipment.item, price:shipment.estimate||""}] : []);
+      const inspectionNotes = (logs||[])
+        .filter(l=>l.shipment_id===shipment.shipment_id && /^Inspection:/i.test(String(l.notes||"")))
+        .map(l=>String(l.notes).replace(/^Inspection:\s*/i,""));
+      const r = await fetch("/api/analyze", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          mode:"appraise",
+          photos:(photos||[]).map(p=>p.drive_url).filter(Boolean),
+          inspection_notes:inspectionNotes,
+          manifest, inspection,
+          item:shipment.item||"",
+          offer_amount:shipment.offer_price||"",
+        })
+      });
+      if (!r.ok) throw new Error("HTTP "+r.status);
+      const d = await r.json();
+      if (!d || typeof d.value!=="number") throw new Error("bad response");
+      setAi(d); setAiState("ok");
+    } catch(e) { setAi(null); setAiState("error"); }
+  }
+  useEffect(()=>{ fetchSuggestion(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },[shipment.shipment_id]);
 
   async function save() {
     if (!canSave) return;
     setError(""); setSaving(true);
     try {
       const v = Math.round(parseFloat(value)*100)/100;
-      const res = await apiPost({action:"updateShipment", shipment_id:shipment.shipment_id, updates:{appraised_value:String(v)}});
+      const updates = {appraised_value:String(v)};
+      if (ai) { updates.appraised_ai = ai.value; updates.appraised_ai_note = `${ai.confidence} · ${ai.basis} — ${ai.rationale}`; }
+      const res = await apiPost({action:"updateShipment", shipment_id:shipment.shipment_id, updates});
       const ok = res === true || (res && typeof res === "object" && !res.error) || res === "true";
       if (!ok) { setError("Save failed: " + ((res && res.error) || "no response")); setSaving(false); return; }
       onSaved(v);
@@ -1790,6 +1824,18 @@ function AppraisedValuePromptModal({shipment, onSaved, onSkip}) {
       <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
         What {shipment.item||"this lot"} is worth to us — margin is this minus what we pay.
         {suggested!==null && <span> Pre-filled with the inspection item total.</span>}
+      </div>
+      <div style={{background:"#FBF7F0",border:`1px solid ${G.border}`,borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13,color:G.text,lineHeight:1.5}}>
+        {aiState==="loading" && <div style={{color:G.muted}}>Getting AI suggestion…</div>}
+        {aiState==="error" && <div style={{color:G.muted}}>Suggestion unavailable · <span onClick={fetchSuggestion} style={{cursor:"pointer",textDecoration:"underline"}}>Re-suggest</span></div>}
+        {aiState==="ok" && ai && <>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <strong>Suggested: {fmt$(ai.value)} · {ai.confidence} · {ai.basis}</strong>
+            <button onClick={()=>setValue(String(ai.value))} style={{marginLeft:"auto",background:G.gold,color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Use this</button>
+          </div>
+          {ai.rationale && <div style={{color:G.muted,fontSize:12,marginTop:4}}>{ai.rationale}</div>}
+          <div style={{marginTop:4}}><span onClick={fetchSuggestion} style={{fontSize:12,color:G.muted,cursor:"pointer",textDecoration:"underline"}}>Re-suggest</span></div>
+        </>}
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
         <span style={{fontSize:18,fontWeight:700,color:G.gold}}>$</span>
@@ -2958,6 +3004,8 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
     {showAppraisedPrompt && (
       <AppraisedValuePromptModal
         shipment={shipment}
+        photos={photos}
+        logs={localLogs}
         onSaved={(value)=>{
           setShowAppraisedPrompt(false);
           onUpdate({...shipment, appraised_value: String(value)});
