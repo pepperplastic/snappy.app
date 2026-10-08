@@ -4679,7 +4679,10 @@ function SalesTab({shipments, customers}) {
     const margin = totalCost > 0 ? (profit / totalCost) * 100 : null;
     const customerNames = [...new Set(ships.map(s => custById[s.customer_id]?.name).filter(Boolean))].join(", ");
     const items = ships.map(s => s.item || s.shipment_id).filter(Boolean);
-    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct, fees, netRevenue, isEbay, type, hasManual };
+    // Back end still to come on a sale (auction/consignment). Projection only —
+    // never in revenue, fees or profit above.
+    const expectedExtra = type === "sale" ? Math.max(0, parseFloat(sale.expected_extra) || 0) : 0;
+    return { ids, ships, totalCost, profit, margin, customerNames, items, imputed, assumedPct, fees, netRevenue, isEbay, type, hasManual, expectedExtra };
   }
 
   // Actuals exclude "expected" rows entirely — projections must never inflate
@@ -4694,7 +4697,8 @@ function SalesTab({shipments, customers}) {
   const totalFees    = actual.reduce((sum, s) => sum + summarizeSale(s).fees, 0);
   const totalCostAll = actual.reduce((sum, s) => sum + summarizeSale(s).totalCost, 0);
   const totalLost    = lossRows.reduce((sum, s) => sum + summarizeSale(s).totalCost, 0);
-  const totalExpected= expRows.reduce((sum, s) => sum + (parseFloat(s.amount)||0), 0);
+  const totalExpected= expRows.reduce((sum, s) => sum + (parseFloat(s.amount)||0), 0)
+                     + sales.reduce((sum, s) => sum + summarizeSale(s).expectedExtra, 0);
   // Discretionary is inside actual/gross/profit above — this is just its own
   // visible subtotal, so "how much did we give away or keep" stays answerable.
   const discRows     = sales.filter(s => saleType(s) === "discretionary");
@@ -4714,8 +4718,9 @@ function SalesTab({shipments, customers}) {
     t.fees   += v.fees;
     t.cost   += v.totalCost;
     t.profit += v.profit;
+    t.expected += v.expectedExtra;
     return t;
-  }, {gross:0, fees:0, cost:0, profit:0});
+  }, {gross:0, fees:0, cost:0, profit:0, expected:0});
   const footSkipped = shown.length - footerRows.length;   // expected rows in view but not in the totals
 
   return <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:24,background:G.bg}}>
@@ -4749,7 +4754,7 @@ function SalesTab({shipments, customers}) {
       {totalLost>0 && <span style={{fontSize:12,color:G.red}}>
         Lost: <strong>−${totalLost.toFixed(2)}</strong>
       </span>}
-      {totalExpected>0 && <span style={{fontSize:12,color:G.blue,marginLeft:12}}>
+      {totalExpected>0 && <span style={{fontSize:12,color:G.blue,marginLeft:12}} title="Expected-type rows plus the expected back end on sale rows. Not in Gross or Profit.">
         Expected: <strong>${totalExpected.toFixed(2)}</strong>
       </span>}
       {discRows.length>0 && <span style={{fontSize:12,color:G.purple,marginLeft:12}} title="Gifted or kept. Counted in Gross and Profit above — shown here so it can be told apart from money received.">
@@ -4803,6 +4808,7 @@ function SalesTab({shipments, customers}) {
                </td>
                <td style={{padding:"10px 12px",textAlign:"right",fontWeight:600,fontStyle:s.type==="expected"?"italic":"normal",color:s.type==="loss"?G.muted:G.text}}>
                  {s.type==="loss" ? "—" : "$"+(parseFloat(sale.amount)||0).toFixed(2)}
+                 {s.expectedExtra>0 && <div style={{fontSize:11,fontWeight:400,fontStyle:"italic",color:G.blue}}>+${s.expectedExtra.toFixed(2)} expected</div>}
                </td>
                <td style={{padding:"10px 12px",textAlign:"right",color:G.muted,fontSize:12}} title={s.isEbay?`eBay fee auto-calculated at ${EBAY_FEE_PCT}% of gross`:"No marketplace fee"}>
                  {s.fees>0 ? "−$"+s.fees.toFixed(2) : "—"}
@@ -4835,7 +4841,7 @@ function SalesTab({shipments, customers}) {
                  </span>
                </td>
                <td style={num}>${foot.cost.toFixed(2)}</td>
-               <td style={num}>${foot.gross.toFixed(2)}</td>
+               <td style={num}>${foot.gross.toFixed(2)}{foot.expected>0 && <div style={{fontSize:11,fontWeight:400,fontStyle:"italic",color:G.blue}}>+${foot.expected.toFixed(2)} expected</div>}</td>
                <td style={{...num,color:foot.fees>0?G.red:G.muted,fontSize:12}}>{foot.fees>0 ? "−$"+foot.fees.toFixed(2) : "—"}</td>
                <td style={{...num,color:foot.profit>=0?G.green:G.red}}>${foot.profit.toFixed(2)}</td>
                <td style={num}/>
@@ -4984,6 +4990,7 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
   // Typed-in cost for rows with no linked shipment — a loss usually has no SHP
   // to point at, but you still know roughly what you paid.
   const [manualCost, setManualCost] = useState(sale?.manual_cost ?? "");
+  const [expectedExtra, setExpectedExtra] = useState(sale?.expected_extra ?? "");
 
   const custById = useMemo(() => {
     const m = {}; customers.forEach(c => m[c.customer_id] = c); return m;
@@ -5027,6 +5034,8 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
       const marginStr = unlinked ? String(marginAssumption ?? "").trim() : "";
       const fields = {buyer_name:buyerName.trim(),amount:parseFloat(amount).toFixed(2),payment_method:paymentMethod,sale_date:saleDate,notes:noteStr,shipment_ids:shipIdsStr,margin_assumption:marginStr,
         sale_type: entryType,
+        // Only a sale carries a back end; clear it if the row is re-typed.
+        expected_extra: entryType === "sale" && parseFloat(expectedExtra) > 0 ? parseFloat(expectedExtra).toFixed(2) : "",
         manual_cost: String(manualCost ?? "").trim() === "" ? "" : String(parseFloat(manualCost) || "")};
       const payload = isEdit
         ? {action,sale_id:sale.sale_id,updates:fields}
@@ -5101,6 +5110,11 @@ function SaleModal({shipments, customers, sale, onSave, onCancel, initialShipmen
             {entryType==="discretionary" ? "Value (what it could have sold for)" : "Sale amount ($)"}
           </label>
           <input type="number" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="535.00" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+          {entryType==="sale" && <div style={{marginTop:10}}>
+            <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Expected back-end ($)</label>
+            <input type="number" step="0.01" value={expectedExtra} onChange={e=>setExpectedExtra(e.target.value)} placeholder="optional" style={{width:"100%",padding:"10px 12px",fontSize:14,border:`1px solid ${G.border}`,borderRadius:6,boxSizing:"border-box"}}/>
+            <div style={{fontSize:11,color:G.muted,marginTop:4,lineHeight:1.45}}>Additional revenue you expect later (auction/consignment back end). Not counted as actual until you move it into Sale amount.</div>
+          </div>}
         </div>
         <div>
           <label style={{display:"block",fontSize:11,fontWeight:600,color:G.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>Payment method</label>
@@ -5795,7 +5809,7 @@ const roiShipping = (arrived, purchased) => (arrived||0)*ROI_SHIP_IN + Math.max(
 // ── Realized margin (business-level, all-time) ─────────────────────────
 // DW's formula: gross sales − fees + expected + inventory on hand − what was paid.
 // Mirrors the Sales tab's rules exactly (15% eBay fee on gross, `expected` rows
-// counted here, `loss` rows contribute cost only, inventory from the Sales
+// and sale rows' expected_extra back end counted here, `loss` rows contribute cost only, inventory from the Sales
 // tab's hand-entered estimate) so the two tabs never disagree.
 // Not attributable by channel/window — a refiner lot doesn't know which ad it
 // came from — so this is one figure for the whole business.
@@ -5819,6 +5833,9 @@ function computeRealizedMargin(sales, shipments, excludeOver, inventoryRec) {
       return;
     }
     gross += amt;
+    // A sale's expected back end is a projection like an expected row: it goes
+    // to `expected`, never gross, and no fee comes off it.
+    if (t==="sale") expected += Math.max(0, parseFloat(sale.expected_extra)||0);
     // Discretionary items were gifted or kept — realized like a sale, but never
     // listed, so no marketplace fee comes off them.
     if (t!=="discretionary" && /ebay/i.test(String(sale.buyer_name||""))) fees += amt*(EBAY_FEE_PCT/100);
@@ -6147,7 +6164,7 @@ function RoiTab({shipments}) {
         ["Gross sales", show(grossV, v=>money(v)),
           mark(R ? ("sale + discretionary"+(R.expected>0?` · incl. ${money(R.expected)} expected`:"")) : "appraised value of this slice"),
           R
-            ? `Sum of the amount on Sales tab rows of type sale and discretionary — gifted or kept items are realized, so they count; loss rows never do. Gross means before fees.${R.expected>0?` It also carries ${money(R.expected)} of expected-type rows, which is money not yet received.`:""} All-time and business-wide.`
+            ? `Sum of the amount on Sales tab rows of type sale and discretionary — gifted or kept items are realized, so they count; loss rows never do. Gross means before fees.${R.expected>0?` It also carries ${money(R.expected)} expected — expected-type rows plus the expected back end on sale rows — which is money not yet received.`:""} All-time and business-wide.`
             : "On the appraised basis there are no sales to total, so this is the appraised value of the purchased shipments in the filtered slice — what they're worth to us, not what anything sold for."],
         ["Fees", show(feesV, v=>"−"+money(v)),
           mark(R ? `${EBAY_FEE_PCT}% on eBay sales` : "not applicable"),

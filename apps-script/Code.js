@@ -84,7 +84,8 @@ var COLS = {
   //   margin_assumption: for refiner/bulk sales with no linked shipment, the
   //   assumed margin % used to impute a cost. Blank = use the 20% default.
  SALES: [
-    'sale_id','shipment_ids','buyer_name','amount','sale_date','notes','created_at','payment_method','margin_assumption','sale_type','manual_cost'
+    'sale_id','shipment_ids','buyer_name','amount','sale_date','notes','created_at','payment_method','margin_assumption','sale_type','manual_cost',
+    'expected_extra'   // sale rows only: revenue still expected later (auction/consignment back end)
   ]
 };
 
