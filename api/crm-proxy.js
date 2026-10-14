@@ -51,6 +51,7 @@ const READ_ACTIONS = new Set([
   'getShipmentsLite',
   'getShipmentAttribution',
   'getContactLog',
+  'getLatestInspectionNote',
   'getPhotos',
   'getSales',
   'crm_leads',

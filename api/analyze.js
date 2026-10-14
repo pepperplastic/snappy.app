@@ -338,6 +338,8 @@ async function handleAppraise(raw, res) {
     return res.status(200).json({ value: 0, lines: [], total_line: '', confidence: 'Low', basis: 'melt', hint: APPRAISE_EMPTY_HINT });
   }
 
+  // Spot is the live daily price (metalpriceapi, else the fallback) — never the
+  // CRM's per-browser "Spot & payout" inspection field, which can be blank/0.
   let gold = FALLBACK_GOLD, silver = FALLBACK_SILVER;
   try { const p = await getSpotPrices(); gold = p.gold; silver = p.silver; } catch {}
 
@@ -395,7 +397,7 @@ Respond with JSON only — no markdown, no backticks, no other text:
     console.error('appraise: unparseable model output:', text.slice(0, 300));
     return res.status(502).json({ error: 'Unparseable suggestion' });
   }
-  return res.status(200).json(computeAppraisal(Array.isArray(out && out.items) ? out.items : [], gold, silver));
+  return res.status(200).json({ ...computeAppraisal(Array.isArray(out && out.items) ? out.items : [], gold, silver), spot: { gold, silver } });
 }
 
 export default async function handler(req, res) {

@@ -760,7 +760,7 @@ function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || '';
 
   var READ_ACTIONS = ['getCustomers','getShipments','getShipmentsLite',
-    'getShipmentAttribution','getContactLog','getPhotos','getSales'];
+    'getShipmentAttribution','getContactLog','getLatestInspectionNote','getPhotos','getSales'];
   if (READ_ACTIONS.indexOf(action) !== -1) {
     var key = (e && e.parameter && e.parameter.key) || '';
     if (!CRM_SECRET_KEY || key !== CRM_SECRET_KEY) {
@@ -775,6 +775,7 @@ function doGet(e) {
   if (action === 'getShipmentsLite')       return jsonResponse(getShipmentsLite(e.parameter.customer_id || null));
   if (action === 'getShipmentAttribution') return jsonResponse(getShipmentAttribution(e.parameter.shipment_id || null));
   if (action === 'getContactLog')return jsonResponse(getContactLog(e.parameter.customer_id || null));
+  if (action === 'getLatestInspectionNote') return jsonResponse(getLatestInspectionNote(e.parameter.shipment_id || null));
   if (action === 'getPhotos')    return jsonResponse(getPhotos(e.parameter.shipment_id || null));
   if (action === 'getSales')     return jsonResponse({ success: true, sales: getSales() });
 
@@ -1780,6 +1781,33 @@ function getContactLog(customerId) {
     return rows.filter(function(l) { return l.customer_id === customerId; });
   }
   return rows;
+}
+
+// Oct 14: type 'inspection' is the in-hand inspection note Appraise reads.
+// `type` is free-form (no allow-list), so 'inspection' needs no schema change.
+// Before Oct 14 these were type 'note' with an "Inspection: " prefix, and
+// those still count.
+function isInspectionLog(l) {
+  var type = String((l && l.type) || '').toLowerCase();
+  return type === 'inspection' || (type === 'note' && /^Inspection:/i.test(String(l.notes || '')));
+}
+
+// Most recent inspection note for a shipment: { log_id, timestamp, notes } or null.
+// notes has the legacy "Inspection: " prefix stripped.
+function getLatestInspectionNote(shipmentId) {
+  if (!shipmentId) return null;
+  var best = null;
+  getContactLog(null).forEach(function(l) {
+    if (String(l.shipment_id) !== String(shipmentId) || !isInspectionLog(l)) return;
+    var t = new Date(l.timestamp).getTime() || 0;
+    if (!best || t >= best.t) best = { t: t, l: l };
+  });
+  if (!best) return null;
+  return {
+    log_id: best.l.log_id,
+    timestamp: best.l.timestamp,
+    notes: String(best.l.notes || '').replace(/^Inspection:\s*/i, ''),
+  };
 }
 
 function addContactLog(data) {

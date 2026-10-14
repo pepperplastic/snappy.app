@@ -266,6 +266,60 @@ async function apiPost(body) {
 function getCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY)||"null"); } catch { return null; } }
 function setCache(data) { try { localStorage.setItem(CACHE_KEY,JSON.stringify({...data,_ts:Date.now()})); } catch {} }
 
+// ── Inspection notes (Oct 14) ── Contact Log type 'inspection'. Older ones are
+// type 'note' with an "Inspection: " prefix and still count. Mirrors
+// isInspectionLog() / getLatestInspectionNote() in Code.gs.
+function isInspectionLog(l){ const t=String(l?.type||"").toLowerCase(); return t==="inspection"||(t==="note"&&/^Inspection:/i.test(String(l?.notes||""))); }
+function inspectionNoteText(l){ return String(l?.notes||"").replace(/^Inspection:\s*/i,""); }
+function latestInspectionNote(logs, shipmentId){
+  let best=null;
+  (logs||[]).forEach(l=>{
+    if(!shipmentId||l.shipment_id!==shipmentId||!isInspectionLog(l)) return;
+    const t=new Date(l.timestamp).getTime()||0;
+    if(!best||t>=best.t) best={t,l};
+  });
+  return best?best.l:null;
+}
+
+// ── Drafts (Oct 14) ── In-progress text on the shipment detail survives a
+// background refresh or a remount: it lives in local state that the server
+// only overwrites while clean, and is mirrored to localStorage per
+// shipment + field until a successful save clears it.
+const DRAFT_PREFIX="snappy_draft:";
+function draftKey(shipmentId, field){ return DRAFT_PREFIX+(shipmentId||"")+":"+field; }
+function readDraft(k){ try{ const v=localStorage.getItem(k); return v==null?null:JSON.parse(v); }catch{ return null; } }
+function writeDraft(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
+function clearDraft(k){ try{ localStorage.removeItem(k); }catch{} }
+// value/setValue like useState, plus:
+//   restored — the value came from a saved draft (show the hint)
+//   saved(v) — after a successful save: drop the draft, go clean at v
+//   discard() — drop the draft, go back to the server value
+// isEmpty(v) true → nothing worth keeping, so no draft is stored.
+function useDraft(shipmentId, field, serverValue, isEmpty){
+  const k=draftKey(shipmentId, field);
+  const serverSig=JSON.stringify(serverValue??null);
+  const init=()=>{ const d=readDraft(k); return d!=null ? {k,value:d,dirty:true,restored:true} : {k,value:serverValue,dirty:false,restored:false}; };
+  let [st,setSt]=useState(init);
+  // Different shipment in the same mounted component: start from its own draft/server value.
+  if(st.k!==k){ st=init(); setSt(st); }
+  // Re-sync from the server only while clean.
+  useEffect(()=>{ setSt(s=>(s.dirty||s.k!==k)?s:{...s,value:serverValue}); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },[serverSig,k]);
+  const setValue=useCallback(v=>{
+    setSt(s=>{
+      const next=typeof v==="function"?v(s.value):v;
+      if(isEmpty&&isEmpty(next)) clearDraft(s.k); else writeDraft(s.k,next);
+      return {...s,value:next,dirty:true,restored:false};
+    });
+  /* eslint-disable-next-line react-hooks/exhaustive-deps */ },[]);
+  const saved=useCallback(v=>{ setSt(s=>{ clearDraft(s.k); return {...s,value:v===undefined?s.value:v,dirty:false,restored:false}; }); },[]);
+  const discard=useCallback(()=>{ clearDraft(k); setSt({k,value:serverValue,dirty:false,restored:false}); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },[k,serverSig]);
+  return {value:st.value,setValue,dirty:st.dirty,restored:st.restored,saved,discard};
+}
+function DraftHint({draft}){
+  if(!draft.restored) return null;
+  return <div style={{fontSize:11,color:G.muted,margin:"4px 0"}}>Draft restored · <span onClick={draft.discard} style={{cursor:"pointer",textDecoration:"underline"}}>discard</span></div>;
+}
+
 // ══════════════════════════════════════════════════════════
 // ATOMS
 // ══════════════════════════════════════════════════════════
@@ -450,19 +504,24 @@ function EditModal({shipment,customer,onSave,onClose}) {
 }
 
 function LogModal({shipment,customer,onSave,onClose}) {
-  const [type,setType]=useState("call"); const [notes,setNotes]=useState(""); const [saving,setSaving]=useState(false);
+  const draft=useDraft(shipment.shipment_id,"log",{type:"call",notes:""},v=>!String(v?.notes||"").trim());
+  const {type,notes}=draft.value;
+  const setType=t=>draft.setValue(v=>({...v,type:t}));
+  const setNotes=n=>draft.setValue(v=>({...v,notes:n}));
+  const [saving,setSaving]=useState(false);
   async function save(){
     if(!notes.trim())return; setSaving(true);
-    try { await apiPost({action:"addContactLog",data:{customer_id:shipment.customer_id,type,notes,shipment_id:shipment.shipment_id}}); onSave({type,notes,timestamp:new Date().toISOString(),shipment_id:shipment.shipment_id}); }
+    try { await apiPost({action:"addContactLog",data:{customer_id:shipment.customer_id,type,notes,shipment_id:shipment.shipment_id}}); draft.saved({type:"call",notes:""}); onSave({type,notes,timestamp:new Date().toISOString(),shipment_id:shipment.shipment_id}); }
     catch(e){alert("Failed: "+e.message);} setSaving(false);
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
     <div style={{background:"#fff",borderRadius:12,width:"min(460px,95vw)",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
       <div style={{fontWeight:700,fontSize:16,marginBottom:16,color:G.text}}>Log Contact · {customer?.name||"Customer"}</div>
       <div style={{display:"flex",gap:8,marginBottom:14}}>
-        {["call","text","email","note"].map(t=><button key={t} onClick={()=>setType(t)} style={{flex:1,padding:"6px 0",borderRadius:6,fontSize:12,fontWeight:600,background:type===t?G.gold:G.bg,color:type===t?"#fff":G.muted,border:`1px solid ${type===t?G.gold:G.border}`,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
+        {["call","text","email","note","inspection"].map(t=><button key={t} onClick={()=>setType(t)} style={{flex:1,padding:"6px 0",borderRadius:6,fontSize:12,fontWeight:600,background:type===t?G.gold:G.bg,color:type===t?"#fff":G.muted,border:`1px solid ${type===t?G.gold:G.border}`,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
       </div>
-      <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={4} placeholder="What happened?"/>
+      <DraftHint draft={draft}/>
+      <Inp label="Notes" value={notes} onChange={e=>setNotes(e.target.value)} rows={4} placeholder={type==="inspection"?"Weights, karat tests, stones, condition…":"What happened?"}/>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:16}}>
         <Btn v="ghost" onClick={onClose}>Cancel</Btn>
         <Btn v="gold" onClick={save} disabled={saving||!notes.trim()}>{saving?"Saving…":"Save Log"}</Btn>
@@ -1582,7 +1641,11 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
 
 // CONTACT LOG LIST with inline edit
 function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipments}) {
-  const [editingIdx, setEditingIdx] = useState(null);
+  // Edit target is held by log_id, not position: a background refresh can
+  // reorder/extend the list mid-edit, and an index would then point at (and
+  // save over) a different entry.
+  const [editingKey, setEditingKey] = useState(null);
+  const rowKey = (log, i) => log.log_id ? "id:"+log.log_id : "idx:"+i;
   const [editNotes, setEditNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -1604,7 +1667,7 @@ function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipmen
         await apiPost({action:'updateContactLog', log_id:log.log_id, updates:{notes:editNotes.trim()}});
       }
       onUpdate({...log, notes:editNotes.trim()}, idx);
-      setEditingIdx(null);
+      setEditingKey(null);
     } catch(e) {
       alert('Save failed: ' + e.message);
     }
@@ -1630,21 +1693,23 @@ function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipmen
         const logShip = log.shipment_id || "";
         const isOther = logShip && currentShipmentId && logShip !== currentShipmentId;
         const isThis = logShip && currentShipmentId && logShip === currentShipmentId;
-        return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12,opacity:isOther?0.55:1}}>
-        <span style={{background:G.bg,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700,color:G.muted,flexShrink:0,textTransform:"capitalize"}}>{log.type||"note"}</span>
+        const editing = editingKey === rowKey(log, i);
+        const insp = isInspectionLog(log);
+        return <div key={rowKey(log, i)} style={{display:"flex",gap:10,alignItems:"flex-start",fontSize:12,opacity:isOther?0.55:1}}>
+        <span style={{background:insp?"#FFF8EE":G.bg,borderRadius:4,padding:"2px 7px",fontSize:10,fontWeight:700,color:insp?G.gold:G.muted,border:insp?`1px solid ${G.gold}44`:"none",flexShrink:0,textTransform:"capitalize"}}>{insp?"🔍 Inspection":(log.type||"note")}</span>
         {log.source==="auto"&&<span title={log.kind?"Automated send: "+log.kind:"Automated send"} style={{background:"#EEF4FF",color:G.blue,border:`1px solid ${G.blue}30`,borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700,flexShrink:0}}>auto</span>}
         <div style={{flex:1}}>
-          {editingIdx===i
+          {editing
             ? <div style={{display:"flex",gap:6,alignItems:"center"}}>
                 <input
                   value={editNotes}
                   onChange={e=>setEditNotes(e.target.value)}
-                  onKeyDown={e=>{if(e.key==='Enter')saveEdit(log,i);if(e.key==='Escape')setEditingIdx(null);}}
+                  onKeyDown={e=>{if(e.key==='Enter')saveEdit(log,i);if(e.key==='Escape')setEditingKey(null);}}
                   style={{flex:1,fontSize:12,padding:"3px 6px",border:`1px solid ${G.gold}`,borderRadius:4,outline:"none"}}
                   autoFocus
                 />
                 <button onClick={()=>saveEdit(log,i)} disabled={saving} style={{fontSize:11,padding:"2px 8px",background:G.gold,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{saving?"…":"Save"}</button>
-                <button onClick={()=>setEditingIdx(null)} style={{fontSize:11,padding:"2px 6px",background:"none",border:`1px solid ${G.border}`,borderRadius:4,cursor:"pointer",color:G.muted}}>Cancel</button>
+                <button onClick={()=>setEditingKey(null)} style={{fontSize:11,padding:"2px 6px",background:"none",border:`1px solid ${G.border}`,borderRadius:4,cursor:"pointer",color:G.muted}}>Cancel</button>
               </div>
             : <span style={{color:G.text}}>
                 {log.source==="auto"&&log.kind&&<span style={{color:G.muted,marginRight:6}}>{log.kind}</span>}
@@ -1654,8 +1719,8 @@ function ContactLogList({logs, onUpdate, onDelete, currentShipmentId, allShipmen
           }
         </div>
         <div style={{color:G.muted,flexShrink:0,fontSize:10}}>{log.timestamp?new Date(log.timestamp).toLocaleDateString():""}</div>
-        {editingIdx!==i&&<div style={{display:"flex",gap:4,flexShrink:0}}>
-          <button onClick={()=>{setEditingIdx(i);setEditNotes(log.notes||'');}} title="Edit" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>✏️</button>
+        {!editing&&<div style={{display:"flex",gap:4,flexShrink:0}}>
+          <button onClick={()=>{setEditingKey(rowKey(log, i));setEditNotes(log.notes||'');}} title="Edit" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>✏️</button>
           <button onClick={()=>deleteLog(log,i)} title="Delete" style={{fontSize:10,padding:"1px 5px",background:"none",border:`1px solid ${G.border}`,borderRadius:3,cursor:"pointer",color:G.muted}}>🗑️</button>
         </div>}
       </div>;
@@ -1755,6 +1820,21 @@ function inspectionItemSum(raw){
     return found ? Math.round(sum*100)/100 : null;
   }catch(e){ return null; }
 }
+// Appraise fallback when the shipment has no inspection note: one line per
+// structured Inspection item that has a weight, written the way notes are.
+function inspectionItemsAsNotes(raw){
+  try{
+    const p=typeof raw==="string"?(raw?JSON.parse(raw):[]):raw;
+    if(!Array.isArray(p)) return [];
+    return p.map(it=>{
+      const w=parseFloat(it&&it.weight);
+      if(!(w>0)) return null;
+      const metal=it.metal||"Gold", d=parseFloat(it.purityDecimal);
+      const purity=metal==="Gold" ? String(it.purity||it.purityLabel||"").toUpperCase() : (d>0?String(Math.round(d*1000)):"");
+      return `${w}g ${purity} ${metal.toLowerCase()}`.replace(/\s+/g," ")+(it.hasStones?`, stones${it.stoneNote?": "+it.stoneNote:""}`:"");
+    }).filter(Boolean);
+  }catch(e){ return []; }
+}
 // Blank means never set. A real 0 is a value, not a gap.
 function appraisedBlank(s){ return !String((s && s.appraised_value) ?? "").trim(); }
 
@@ -1764,11 +1844,13 @@ function appraisedBlank(s){ return !String((s && s.appraised_value) ?? "").trim(
 function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
   const suggested = inspectionItemSum(shipment.inspection_json);
   const existing = appraisedBlank(shipment) ? null : String(shipment.appraised_value).replace(/[^0-9.]/g,"");
-  const [value, setValue] = useState(existing!==null ? existing : suggested!==null ? String(suggested) : "");
+  const draft = useDraft(shipment.shipment_id, "appraised", existing!==null ? existing : suggested!==null ? String(suggested) : "", v=>String(v??"").trim()==="");
+  const value = draft.value, setValue = draft.setValue;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [ai, setAi] = useState(null);          // {value, lines, total_line, confidence, basis, hint?}
+  const [ai, setAi] = useState(null);          // {value, lines, total_line, confidence, basis, hint?, spot?}
   const [aiState, setAiState] = useState("loading"); // loading | ok | error
+  const [aiSource, setAiSource] = useState(""); // what the suggestion read, for the card
   const canSave = value!=="" && !isNaN(parseFloat(value));
 
   async function fetchSuggestion() {
@@ -1777,9 +1859,14 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
       const manifest = Array.isArray(shipment.item_manifest) && shipment.item_manifest.length
         ? shipment.item_manifest.map(it=>({name:it.name||"", price:it.price||""}))
         : (shipment.item ? [{name:shipment.item, price:shipment.estimate||""}] : []);
-      const inspectionNotes = (logs||[])
-        .filter(l=>l.shipment_id===shipment.shipment_id && /^Inspection:/i.test(String(l.notes||"")))
-        .map(l=>String(l.notes).replace(/^Inspection:\s*/i,""));
+      // The most recent inspection note is the input; the structured
+      // Inspection items stand in only when there is no note at all.
+      const note = latestInspectionNote(logs, shipment.shipment_id);
+      const noteText = note ? inspectionNoteText(note).trim() : "";
+      const inspectionNotes = noteText ? [noteText] : inspectionItemsAsNotes(shipment.inspection_json);
+      setAiSource(noteText
+        ? "inspection note"+(note.timestamp?" "+new Date(note.timestamp).toLocaleDateString():"")
+        : inspectionNotes.length ? "inspection items" : "");
       const r = await fetch("/api/analyze", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
@@ -1807,6 +1894,7 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
       const res = await apiPost({action:"updateShipment", shipment_id:shipment.shipment_id, updates});
       const ok = res === true || (res && typeof res === "object" && !res.error) || res === "true";
       if (!ok) { setError("Save failed: " + ((res && res.error) || "no response")); setSaving(false); return; }
+      draft.saved(String(v));
       onSaved(v);
     } catch (err) {
       setError("Save failed: " + (err.message || String(err)));
@@ -1834,11 +1922,13 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
             {(ai.lines||[]).map((l,i)=><div key={i}>{l}</div>)}
             {ai.hint && <div style={{color:G.muted}}>{ai.hint}</div>}
             {ai.total_line && <div style={{borderTop:`1px solid ${G.border}`,marginTop:3,paddingTop:3,fontWeight:700}}>{ai.total_line}</div>}
-            <div style={{color:G.muted}}>{ai.confidence} confidence · {ai.basis}</div>
+            <div style={{color:G.muted}}>{ai.confidence} confidence · {ai.basis}{ai.spot&&ai.spot.gold?` · spot Au $${ai.spot.gold}`:""}</div>
+            <div style={{color:G.muted}}>source: {aiSource || "none — no inspection note or items"}</div>
           </div>
           <div style={{marginTop:4}}><span onClick={fetchSuggestion} style={{fontSize:12,color:G.muted,cursor:"pointer",textDecoration:"underline"}}>Re-suggest</span></div>
         </>}
       </div>
+      <DraftHint draft={draft}/>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
         <span style={{fontSize:18,fontWeight:700,color:G.gold}}>$</span>
         <input
@@ -1860,7 +1950,8 @@ function AppraisedValuePromptModal({shipment, photos, logs, onSaved, onSkip}) {
 }
 
 function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
-  const [notes, setNotes] = useState("");
+  const draft = useDraft(shipment.shipment_id, "inspection_note", "", v=>!String(v||"").trim());
+  const notes = draft.value, setNotes = draft.setValue;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -1872,11 +1963,12 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
       // error object on failure. Treat any truthy non-error response as success.
       const result = await apiPost({
         action: "addContactLog",
-        data: { customer_id: shipment.customer_id, type: "note", notes: "Inspection: " + notes.trim(), shipment_id: shipment.shipment_id }
+        data: { customer_id: shipment.customer_id, type: "inspection", notes: notes.trim(), shipment_id: shipment.shipment_id }
       });
       const isError = result && typeof result === "object" && result.error;
       if (!isError && result) {
-        onSaved({ type:"note", notes:"Inspection: "+notes.trim(), timestamp:new Date().toISOString(), shipment_id: shipment.shipment_id });
+        draft.saved("");
+        onSaved({ log_id: typeof result === "string" ? result : undefined, type:"inspection", notes:notes.trim(), timestamp:new Date().toISOString(), shipment_id: shipment.shipment_id });
       } else {
         setError("Save failed: " + (result?.error || "no response"));
       }
@@ -1893,6 +1985,7 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
       <div style={{fontSize:13,color:G.muted,lineHeight:1.5,marginBottom:14}}>
         What did you find? Weight, purity test results, condition, anything unexpected.
       </div>
+      <DraftHint draft={draft}/>
       <textarea
         value={notes}
         onChange={e=>setNotes(e.target.value)}
@@ -1911,8 +2004,11 @@ function InspectedNotesPromptModal({shipment, onSaved, onSkip}) {
 }
 
 function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
-  const [price, setPrice] = useState("");
-  const [desc, setDesc] = useState("");
+  // Cleared by the parent once the offer is saved to the shipment.
+  const draft = useDraft(shipment.shipment_id, "offer", {price:"", desc:""}, v=>!String(v?.price||"").trim() && !String(v?.desc||"").trim());
+  const {price, desc} = draft.value;
+  const setPrice = p => draft.setValue(v=>({...v, price:p}));
+  const setDesc = d => draft.setValue(v=>({...v, desc:d}));
   // No offer goes out before the lot is appraised — otherwise the purchase
   // lands in the funnel with margin it can never report.
   const needsAppraised = appraisedBlank(shipment);
@@ -1926,6 +2022,7 @@ function OfferPromptModal({shipment, customer, onSaved, onCancel}) {
         Set the offer for <strong>{shipment.item||"this item"}</strong>. This is the amount the customer sees on the self-serve acceptance page.
         {shipment.estimate && <span> AI estimate was <strong>{shipment.estimate}</strong> for reference.</span>}
       </div>
+      <DraftHint draft={draft}/>
       <div style={{marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:G.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Offer price</div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1983,14 +2080,36 @@ function inspSuggest(item, spot, payoutPct){
 }
 function inspMoney(n){ return "$"+(Math.round((n+Number.EPSILON)*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
+// Saved inspection_json rows carry purity/finalValue but not the editor's
+// id/purityLabel/overridden — rebuild those so the rows stay editable.
+function inspParseItems(v){
+  try{
+    if(!v) return [];
+    const p=typeof v==="string"?JSON.parse(v):v;
+    if(!Array.isArray(p)) return [];
+    return p.map((it,i)=>{
+      const fv=it.finalValue, sg=it.suggested;
+      const overridden=it.overridden!==undefined ? !!it.overridden : (fv!==undefined&&fv!==""&&sg!==undefined&&Math.abs(parseFloat(fv)-parseFloat(sg))>0.005);
+      return {hasStones:false,stoneNote:"",disposition:"TBD",...it,
+        id:it.id||"it_saved_"+i,
+        purityLabel:it.purityLabel||it.purity||"",
+        weight:it.weight===undefined||it.weight===null||it.weight===0?"":String(it.weight),
+        finalValue:overridden&&fv!==undefined?String(fv):"",
+        overridden};
+    });
+  }catch(e){ return []; }
+}
+
 function InspectionPanel({shipment, onUpdate}){
-  const parseItems=()=>{ try{ const v=shipment.inspection_json; if(!v) return []; const p=typeof v==="string"?JSON.parse(v):v; return Array.isArray(p)?p:[]; }catch(e){ return []; } };
-  const [items,setItems]=useState(parseItems());
+  const serverItems=useMemo(()=>inspParseItems(shipment.inspection_json),[shipment.inspection_json]);
+  const draft=useDraft(shipment.shipment_id,"inspection_items",serverItems);
+  const items=draft.value||[], setItems=draft.setValue;
   const [spot,setSpot]=useState(()=>{ try{ return JSON.parse(localStorage.getItem("snappy_spot")||'{"Gold":"","Silver":"","Platinum":""}'); }catch(e){ return {Gold:"",Silver:"",Platinum:""}; } });
   const [spotDate,setSpotDate]=useState(()=>localStorage.getItem("snappy_spot_date")||"");
   const [payout,setPayout]=useState(()=>localStorage.getItem("snappy_payout")||"80");
   const [saving,setSaving]=useState(false);
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(draft.restored);
+  useEffect(()=>{ if(draft.restored) setOpen(true); },[draft.restored,shipment.shipment_id]);
   const todayStr=new Date().toISOString().slice(0,10);
   const [spotOpen,setSpotOpen]=useState(!spot.Gold||spotDate!==todayStr);
   const spotStale=spotDate&&spotDate!==todayStr;
@@ -2013,7 +2132,9 @@ function InspectionPanel({shipment, onUpdate}){
     try{
       const payload=rows.map(r=>({metal:r.metal,purity:r.purityLabel,purityDecimal:r.purityDecimal,weight:parseFloat(r.weight)||0,hasStones:r.hasStones,stoneNote:r.stoneNote,disposition:r.disposition,suggested:Math.round(r.suggested*100)/100,finalValue:Math.round(r.final*100)/100}));
       const total=Math.round(totalOffer*100)/100;
-      await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{inspection_json:JSON.stringify(payload),appraised_value:String(total)}});
+      const res=await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates:{inspection_json:JSON.stringify(payload),appraised_value:String(total)}});
+      if(res&&typeof res==="object"&&res.error){ alert("Save failed: "+res.error+" — your rows are kept as a draft."); return; }
+      draft.saved();
       onUpdate&&onUpdate({...shipment,inspection_json:JSON.stringify(payload),appraised_value:String(total)});
     } finally { setSaving(false); }
   }
@@ -2030,6 +2151,7 @@ function InspectionPanel({shipment, onUpdate}){
         <span style={{color:G.muted}}>{open?"▲":"▼"}</span>
       </div>
       {open&&<div style={{marginTop:12}}>
+        <DraftHint draft={draft}/>
         <div style={{...card,background:spotStale?"#FFF6E9":"#FBF7F0",borderColor:spotStale?G.gold:G.border}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setSpotOpen(o=>!o)}>
             <div style={{fontWeight:700,color:G.dark,fontSize:13}}>Spot & payout{spotStale?" — update for today":""}</div>
@@ -2087,7 +2209,9 @@ function InlineBinEditor({shipment, onUpdate}) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(String(shipment.bin_number || ""));
   const [saving, setSaving] = useState(false);
-  useEffect(()=>{ setVal(String(shipment.bin_number || "")); }, [shipment.shipment_id, shipment.bin_number]);
+  // Re-sync from the server only while not editing (a refresh mid-edit would wipe the input).
+  useEffect(()=>{ if(!editing) setVal(String(shipment.bin_number || "")); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [shipment.shipment_id, shipment.bin_number]);
+  useEffect(()=>{ setEditing(false); setVal(String(shipment.bin_number || "")); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [shipment.shipment_id]);
 
   async function save(){
     const v = String(val).trim();
@@ -3025,6 +3149,7 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
             // 1) Persist the offer on the shipment + advance the stage.
             const updates={ stage:"pending_response", offer_price: offerPrice, offer_description: offerDesc };
             await apiPost({action:"updateShipment",shipment_id:shipment.shipment_id,updates});
+            clearDraft(draftKey(shipment.shipment_id,"offer"));
             // 2) ACTUALLY SEND THE OFFER: create a self-serve token + email the
             //    customer the acceptance link. Without this, the stage moves to
             //    "pending response" but the customer never hears about the offer.
@@ -3140,6 +3265,14 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
           {["inspected","pending_response","pending_payment","pending_leadsonline","complete","returned","purchased","offer_made"].includes(shipment.stage)&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:G.text}}>
             <span>Appraised value: {appraisedBlank(shipment) ? <span style={{color:G.muted}}>— not set</span> : <strong>{fmt$(shipment.appraised_value)}</strong>}</span>
             <button onClick={()=>setShowAppraisedPrompt(true)} title="Edit appraised value" style={{background:"none",border:`1px solid ${G.border}`,borderRadius:6,padding:"2px 8px",fontSize:13,color:G.gold,cursor:"pointer"}}>✎</button>
+            {(()=>{
+              const n=latestInspectionNote(localLogs, shipment.shipment_id);
+              if(!n) return <span style={{fontSize:12,color:G.muted}}>— no inspection note</span>;
+              const t=inspectionNoteText(n).replace(/\s+/g," ").trim();
+              return <span title={inspectionNoteText(n)} style={{fontSize:12,color:G.muted,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                Inspection: {t.length>60?t.slice(0,60)+"…":t}{n.timestamp?" · "+new Date(n.timestamp).toLocaleDateString():""}
+              </span>;
+            })()}
           </div>}
           {shipment.purchase_price&&<div style={{background:"#F0FFF4",borderRadius:6,padding:"8px 12px",border:`1px solid ${G.green}30`}}>
             <div style={{fontSize:10,fontWeight:700,color:G.green,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Purchase</div>
