@@ -706,7 +706,11 @@ function getMarketingRoi(parsed) {
   var invValue = 0, invCount = 0;
   try {
     var invRes = getInventoryByBin();
-    if (invRes && invRes.success) { invValue = invRes.summary.owned_appraised; invCount = invRes.summary.owned_count; }
+    // Manual items (Inventory Items tab) count here and only here.
+    if (invRes && invRes.success) {
+      invValue = Math.round(((invRes.summary.owned_appraised || 0) + (invRes.summary.manual_appraised || 0)) * 100) / 100;
+      invCount = (invRes.summary.owned_count || 0) + (invRes.summary.manual_count || 0);
+    }
     else Logger.log('ROI inventory value: ' + (invRes && invRes.error));
   } catch (e) { Logger.log('ROI inventory value unavailable: ' + e); }
 

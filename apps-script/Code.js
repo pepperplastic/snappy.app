@@ -276,6 +276,7 @@ function doPost(e) {
       'getCommsDashboard','addDoNotContact','getLabelUrl','getRules','explainRegistration',
       'getMarketingRoiRecords',
       'getInventoryByBin','setListing','setInventoryPlan',
+      'addInventoryItem','updateInventoryItem',
     ];
     if (CRM_WRITE_ACTIONS.indexOf(action) !== -1) {
       if (!CRM_SECRET_KEY || (parsed.key || '') !== CRM_SECRET_KEY) {
@@ -311,6 +312,8 @@ function doPost(e) {
     if (action === 'getInventoryByBin') return jsonResponse(handleGetInventoryByBin(parsed));
     if (action === 'setListing')        return jsonResponse(handleSetListing(parsed));
     if (action === 'setInventoryPlan')  return jsonResponse(handleSetInventoryPlan(parsed));
+    if (action === 'addInventoryItem')    return jsonResponse(handleAddInventoryItem(parsed));
+    if (action === 'updateInventoryItem') return jsonResponse(handleUpdateInventoryItem(parsed));
     if (action === 'getAdSpend')      return jsonResponse({ success: true, rows: getAdSpend(parsed) });
     if (action === 'addAdSpend')      return jsonResponse(handleAddAdSpend(parsed));
     if (action === 'deleteAdSpend')   return jsonResponse(handleDeleteAdSpend(parsed));

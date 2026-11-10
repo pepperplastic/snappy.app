@@ -6307,7 +6307,7 @@ function RoiTab({shipments}) {
         ["Inventory", show(invV, v=>money(v)),
           mark(R ? `${data.inventory_count||0} owned item${(data.inventory_count||0)===1?"":"s"} · appraised` : "whole-business figure"),
           R
-            ? "Live from the Inventory tab's own rule: the appraised value of everything we've bought that hasn't sold and still sits in a bin. A purchase with a blank appraisal adds nothing, so this reads low until those are graded."
+            ? "Live from the Inventory tab's own rule: the appraised value of everything we've bought that hasn't sold and still sits in a bin, plus manual items added on the Inventory tab. A purchase with a blank appraisal adds nothing, so this reads low until those are graded."
             : "Inventory on hand is a whole-business figure with no source or date to filter by, so it's left out of a filtered slice — and out of the appraised margin, which is already appraised minus paid."],
         ["Shipping", show(shipV, v=>"−"+money(v)),
           mark(R ? `${allShipping.arrived} in × $${ROI_SHIP_IN} + ${Math.max(0,allShipping.arrived-allShipping.purchased)} returns × $${ROI_SHIP_RET}`
@@ -7042,6 +7042,12 @@ function InventoryTab({onOpenShipment}) {
   const [moved,setMoved]     = useState({});      // shipment_id → new bin, applied locally until the next load
   const [view,setView]       = useState("age");   // age | bin
   const [planF,setPlanF]     = useState("all");   // all | ebay | melt | beached | hold | none
+  // Manual items (Inventory Items tab): the add form and the one row open for edit.
+  const blankItem = ()=>({description:"", cost:"", appraised:"", bin:"", acquired_date:new Date().toISOString().slice(0,10), note:""});
+  const [adding,setAdding]   = useState(false);
+  const [aForm,setAForm]     = useState(blankItem);
+  const [editItem,setEditItem] = useState(null);  // id of the manual item being edited
+  const [eForm,setEForm]     = useState(blankItem);
 
   const load = useCallback(async ()=>{
     setLoading(true); setErr("");
@@ -7061,7 +7067,9 @@ function InventoryTab({onOpenShipment}) {
     if(next === String(item.bin)) return;
     setBusy(item.shipment_id);
     try{
-      const r = await apiPost({action:"updateShipment", shipment_id:item.shipment_id, updates:{bin_number: next}});
+      const r = item.kind==="manual"
+        ? await apiPost({action:"updateInventoryItem", id:item.shipment_id, updates:{bin: next}})
+        : await apiPost({action:"updateShipment", shipment_id:item.shipment_id, updates:{bin_number: next}});
       const ok = r===true || (r && typeof r==="object" && !r.error);
       if(ok) setMoved(m=>({...m,[item.shipment_id]: next}));
       else alert("Couldn't move "+item.shipment_id+": "+((r&&r.error)||"no response"));
@@ -7094,6 +7102,31 @@ function InventoryTab({onOpenShipment}) {
       if(r && r.success) await load();
       else alert("Couldn't save the plan: "+((r&&r.error)||"no response"));
     }catch(e){ alert("Couldn't save the plan: "+(e.message||e)); }
+    setBusy("");
+  }
+  // Manual items: add / edit go straight to the Inventory Items tab, then reload.
+  async function addItem(){
+    setBusy("__add");
+    try{
+      const r = await apiPost({action:"addInventoryItem", data:aForm});
+      if(r && r.success){ setAdding(false); setAForm(blankItem()); await load(); }
+      else alert("Couldn't add the item: "+((r&&r.error)||"no response"));
+    }catch(e){ alert("Couldn't add the item: "+(e.message||e)); }
+    setBusy("");
+  }
+  function openEdit(x){
+    if(editItem===x.shipment_id){ setEditItem(null); return; }
+    setEForm({description:x.description||x.item||"", cost:x.cost?String(x.cost):"", appraised:x.appraised?String(x.appraised):"",
+      bin:x.bin||"", acquired_date:x.acquired_date||"", note:x.note||""});
+    setEditItem(x.shipment_id);
+  }
+  async function saveItem(x){
+    setBusy(x.shipment_id);
+    try{
+      const r = await apiPost({action:"updateInventoryItem", id:x.shipment_id, updates:eForm});
+      if(r && r.success){ setEditItem(null); await load(); }
+      else alert("Couldn't save "+x.shipment_id+": "+((r&&r.error)||"no response"));
+    }catch(e){ alert("Couldn't save "+x.shipment_id+": "+(e.message||e)); }
     setBusy("");
   }
   function openList(item){
@@ -7161,6 +7194,16 @@ function InventoryTab({onOpenShipment}) {
   const td   = {padding:"9px 10px",fontSize:13,borderTop:`1px solid ${G.border}`,textAlign:"right"};
   const chip = (bg,color,text,title)=><span title={title||""} style={{background:bg,color,borderRadius:4,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>{text}</span>;
 
+  const itemFields = (f, setF) => <div style={{display:"flex",alignItems:"flex-end",gap:10,flexWrap:"wrap"}}>
+    {[["description","Description",220,"text"],["cost","Cost $",90,"number"],["appraised","Appraised $",100,"number"],
+      ["bin","Bin",64,"text"],["acquired_date","Acquired",140,"date"],["note","Note",200,"text"]].map(([k,label,w,type])=>
+      <div key={k} style={k==="description"||k==="note"?{flex:1,minWidth:w}:undefined}>
+        <div style={{fontSize:10,color:G.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{label}</div>
+        <input value={f[k]} type={type} onChange={e=>{ const v=e.target.value; setF(p=>({...p,[k]:v})); }}
+          style={{width:(k==="description"||k==="note")?"100%":w,boxSizing:"border-box",padding:"6px 9px",fontSize:13,border:`1px solid ${G.border}`,borderRadius:6}}/>
+      </div>)}
+  </div>;
+
   const binInput = x => <td style={{...td,textAlign:"left"}} onClick={e=>e.stopPropagation()}>
     <input defaultValue={x.bin} disabled={busy===x.shipment_id}
       onBlur={e=>setBin(x,e.target.value)}
@@ -7186,18 +7229,22 @@ function InventoryTab({onOpenShipment}) {
       </tr></thead>
       <tbody>
         {items.flatMap(x=>[<tr key={x.shipment_id}
-          onClick={editing?undefined:()=>onOpenShipment&&onOpenShipment(x.shipment_id)}
-          title={editing?"":"Open this shipment in its queue"}
+          onClick={editing?undefined:(x.kind==="manual"?()=>openEdit(x):()=>onOpenShipment&&onOpenShipment(x.shipment_id))}
+          title={editing?"":(x.kind==="manual"?"Edit this manual item":"Open this shipment in its queue")}
           style={{cursor:editing?"default":"pointer",opacity:busy===x.shipment_id?0.5:1}}
           onMouseEnter={e=>{ if(!editing) e.currentTarget.style.background="#FBF8F3"; }}
           onMouseLeave={e=>{ if(!editing) e.currentTarget.style.background="transparent"; }}>
           {binCol && (editing ? binInput(x) : <td style={{...td,textAlign:"left",fontWeight:600}}>{x.bin}</td>)}
-          <td style={{...td,textAlign:"left",fontWeight:600}}>{x.shipment_id}</td>
+          <td style={{...td,textAlign:"left",fontWeight:600}}>
+            {x.kind==="manual"
+              ? <span style={{display:"inline-flex",alignItems:"center",gap:6}}>{chip("#F0EDE8",G.text,"M","Manual item — not a shipment")}{x.shipment_id}</span>
+              : x.shipment_id}
+          </td>
           <td style={{...td,textAlign:"left"}}>{x.customer||"—"}</td>
           <td style={{...td,textAlign:"left",color:G.muted,maxWidth:260,whiteSpace:"normal"}}>{x.item||"—"}</td>
           <td style={{...td,textAlign:"left"}}>
             <span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-              <Badge stage={x.stage} sm/>
+              {x.kind==="manual" ? <span style={{color:G.muted}}>—</span> : <Badge stage={x.stage} sm/>}
               {x.plan && chip("#F3EEFF",G.purple,invPlanLabel(x.plan).toUpperCase(),"Plan")}
             </span>
           </td>
@@ -7205,7 +7252,9 @@ function InventoryTab({onOpenShipment}) {
           <td style={td}>{x.appraised?invMoney(x.appraised):<span style={{color:G.muted}}>—</span>}</td>
           <td style={{...td,color:G.muted}}>{invDays(x.days_since_arrival)}</td>
           <td style={{...td,textAlign:"left"}} onClick={x.purchased?(e=>e.stopPropagation()):undefined}>
-            {x.listed_on
+            {x.kind==="manual"
+              ? chip("#E8F5E9",G.green,"READY","Manual item — owned outright, no hold")
+              : x.listed_on
               ? <span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                   {x.listed_url
                     ? <a href={x.listed_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{textDecoration:"none"}}>
@@ -7224,12 +7273,25 @@ function InventoryTab({onOpenShipment}) {
               : chip("#F0EDE8",G.muted,"NOT READY","Not purchased yet — the hold clock starts at purchase")}
           </td>
           <td style={{...td,textAlign:"left"}} onClick={e=>e.stopPropagation()}>
+            {x.kind==="manual" ? <span style={{color:G.muted}}>—</span> :
             <select value={x.plan||""} disabled={busy===x.shipment_id} onChange={e=>savePlan(x,e.target.value)}
               style={{padding:"4px 6px",fontSize:12,border:`1px solid ${G.border}`,borderRadius:6,background:"#fff"}}>
               {INV_PLANS.map(([v,label])=><option key={v} value={v}>{label}</option>)}
-            </select>
+            </select>}
           </td>
           {editing && !binCol && binInput(x)}
+        </tr>,
+        editItem===x.shipment_id && x.kind==="manual" && <tr key={x.shipment_id+"_edit"}>
+          <td colSpan={(editing||binCol)?10:9} style={{...td,textAlign:"left",background:"#FBF8F3"}} onClick={e=>e.stopPropagation()}>
+            {itemFields(eForm, setEForm)}
+            <div style={{display:"flex",gap:8,marginTop:10,alignItems:"center"}}>
+              <Btn v="gold" small disabled={busy===x.shipment_id || !eForm.description.trim()} onClick={()=>saveItem(x)}>
+                {busy===x.shipment_id?"Saving…":"Save"}
+              </Btn>
+              <Btn v="ghost" small onClick={()=>setEditItem(null)}>Cancel</Btn>
+              <span style={{fontSize:11,color:G.muted}}>Blank the bin to take it off the shelf.</span>
+            </div>
+          </td>
         </tr>,
         listing===x.shipment_id && <tr key={x.shipment_id+"_list"}>
           <td colSpan={(editing||binCol)?10:9} style={{...td,textAlign:"left",background:"#F7FAFF"}} onClick={e=>e.stopPropagation()}>
@@ -7281,11 +7343,22 @@ function InventoryTab({onOpenShipment}) {
         <input type="checkbox" checked={readyOnly} onChange={e=>setReadyOnly(e.target.checked)} style={{width:15,height:15}}/>
         Ready only
       </label>
+      <Btn v={adding?"gold":"ghost"} small onClick={()=>setAdding(v=>!v)}>{adding?"Cancel add":"+ Add item"}</Btn>
       <Btn v={editing?"gold":"ghost"} small onClick={()=>setEditing(v=>!v)}>{editing?"✓ Done editing":"✎ Edit bins"}</Btn>
       <Btn v="ghost" small onClick={load} disabled={loading}>{loading?"…":"⟳ Refresh"}</Btn>
     </div>
 
     {err && <div style={{background:"#FFF0F0",border:`1px solid ${G.red}40`,borderRadius:8,padding:12,fontSize:13,color:G.red,marginBottom:16}}>{err}</div>}
+    {adding && <div style={{...{background:"#fff",border:`1px solid ${G.border}`,borderRadius:10,padding:"12px 14px"},marginBottom:12}}>
+      <div style={{fontSize:12,fontWeight:700,color:G.text,marginBottom:8}}>Add a manual item <span style={{fontWeight:400,color:G.muted}}>— stock that didn't come in as a shipment. Counts as owned and ready; adds to inventory value only.</span></div>
+      {itemFields(aForm, setAForm)}
+      <div style={{display:"flex",gap:8,marginTop:10}}>
+        <Btn v="gold" small disabled={busy==="__add" || !aForm.description.trim() || !String(aForm.bin).trim()} onClick={addItem}>
+          {busy==="__add"?"Adding…":"Add item"}
+        </Btn>
+        <Btn v="ghost" small onClick={()=>{ setAdding(false); setAForm(blankItem()); }}>Cancel</Btn>
+      </div>
+    </div>}
     {editing && <div style={{background:"#FFF8E6",border:`1px solid ${G.gold}66`,borderRadius:8,padding:"10px 12px",fontSize:12,color:G.text,lineHeight:1.5,marginBottom:12}}>
       Type a bin number on any row to move it, blank it to take it off the shelf, or use <b>Clear bin</b> on a header.
       A shipment with no bin drops off this tab entirely — the shipment itself is untouched, and its sale (if there was one) still belongs in the Sales tab.
@@ -7296,6 +7369,7 @@ function InventoryTab({onOpenShipment}) {
         <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Owned</div>
         <div style={{fontSize:22,fontWeight:700,color:G.text,marginTop:2}}>{s.owned_count}</div>
         <div style={{fontSize:11,color:G.muted,marginTop:2}}>{invMoney(s.owned_paid)} paid · {invMoney(s.owned_appraised)} appraised</div>
+        {!!s.manual_count && <div style={{fontSize:11,color:G.muted,marginTop:2}}>+ {s.manual_count} manual · {invMoney(s.manual_cost)} cost · {invMoney(s.manual_appraised)} appraised</div>}
       </div>
       <div style={card}>
         <div style={{fontSize:11,color:G.muted,fontWeight:600}}>Not yet purchased</div>

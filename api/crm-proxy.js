@@ -74,6 +74,7 @@ const WRITE_ACTIONS = new Set([
   'getMarketingRoi', 'getMarketingRoiRecords', 'getAdSpend', 'addAdSpend', 'deleteAdSpend', 'syncMetaSpend','getSetting','setSetting',
   'getCommsDashboard', 'addDoNotContact', 'getLabelUrl', 'getRules', 'explainRegistration',
   'getInventoryByBin', 'setListing', 'setInventoryPlan',
+  'addInventoryItem', 'updateInventoryItem',
 ]);
 
 const UPSTREAM_TIMEOUT_MS = 55_000;

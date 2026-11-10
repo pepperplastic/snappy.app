@@ -112,7 +112,10 @@ function getInventoryByBin() {
   var now = new Date();
   var bins = {};
   var summary = { owned_count: 0, owned_paid: 0, owned_appraised: 0,
-                  unpurchased_count: 0, unpurchased_appraised: 0, ready: 0, hold: 0 };
+                  unpurchased_count: 0, unpurchased_appraised: 0, ready: 0, hold: 0,
+                  // Manual items (Inventory Items tab) are kept apart from the
+                  // shipment totals above so nothing shipment-based moves.
+                  manual_count: 0, manual_cost: 0, manual_appraised: 0 };
 
   sheetToObjects(shipSheet).forEach(function (s) {
     var id = String(s.shipment_id || '');
@@ -163,6 +166,42 @@ function getInventoryByBin() {
     }
   });
 
+  // ── Manual items: owned outright, no 538 hold, so always READY ──
+  try {
+    getInventoryItems().forEach(function (m) {
+      var bin = _invBinKey(m.bin);
+      if (!bin) return;
+      var acquired = _invDate(m.acquired_date) || _invDate(m.created_at);
+      var cost = parseFloat(m.cost) || 0;
+      var appraised = parseFloat(m.appraised) || 0;
+      var id = String(m.id).trim();
+      (bins[bin] = bins[bin] || []).push({
+        kind: 'manual',
+        bin: bin,
+        shipment_id: id,
+        customer: '',
+        item: _invItem(m.description),
+        description: String(m.description || ''),
+        note: String(m.note || ''),
+        cost: cost,
+        acquired_date: _invDay(m.acquired_date),
+        stage: '',
+        arrived_at: _invIso(acquired),
+        days_since_arrival: _invDays(acquired, now),
+        purchased: true,
+        paid: cost,
+        appraised: appraised,
+        paid_at: _invIso(acquired),
+        hold_clears_on: '',
+        hold_days_left: null,
+        ready: true,
+        listed_on: '', listed_price: 0, listed_at: '', listed_url: '',
+        plan: '',
+      });
+      summary.manual_count++; summary.manual_cost += cost; summary.manual_appraised += appraised;
+    });
+  } catch (e) { Logger.log('getInventoryByBin: manual items read failed — ' + e); }
+
   var keys = Object.keys(bins).sort(_invBinSort);
   var out = keys.map(function (k) {
     var items = bins[k].sort(function (a, b) {
@@ -173,7 +212,7 @@ function getInventoryByBin() {
     return { bin: k, items: items };
   });
 
-  ['owned_paid', 'owned_appraised', 'unpurchased_appraised'].forEach(function (k) {
+  ['owned_paid', 'owned_appraised', 'unpurchased_appraised', 'manual_cost', 'manual_appraised'].forEach(function (k) {
     summary[k] = Math.round(summary[k] * 100) / 100;
   });
 
@@ -310,5 +349,118 @@ function setInventoryPlan(parsed) {
 
 function handleSetInventoryPlan(parsed) {
   try { return setInventoryPlan(parsed); }
+  catch (e) { return { success: false, error: String(e && e.message || e) }; }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MANUAL ITEMS — stock that didn't arrive as a shipment (bought over the
+//  counter, kept from a lot, etc). One row per item on the "Inventory Items"
+//  tab. getInventoryByBin merges them in as owned and READY (no 538 hold
+//  applies), kind "manual". They are never shipments, so they never reach
+//  registrations / fulfilled / arrived / purchased or the ROI Paid card; the
+//  only place they count is inventory value. Same bin rule as shipments:
+//  blank the bin and the item is off the shelf.
+// ═══════════════════════════════════════════════════════════════════════
+var INV_ITEMS_TAB = 'Inventory Items';
+var INV_ITEMS_COLS = ['id', 'description', 'cost', 'appraised', 'bin', 'acquired_date', 'note', 'created_at'];
+var INV_ITEMS_EDITABLE = ['description', 'cost', 'appraised', 'bin', 'acquired_date', 'note'];
+
+function _invItemsSheet(create) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(INV_ITEMS_TAB);
+  if (!sheet) {
+    if (!create) return null;
+    sheet = ss.insertSheet(INV_ITEMS_TAB);
+    sheet.appendRow(INV_ITEMS_COLS);
+    sheet.getRange(1, 1, 1, INV_ITEMS_COLS.length).setFontWeight('bold').setBackground('#1A1816').setFontColor('#C8953C');
+    sheet.setFrozenRows(1);
+    Logger.log('Created ' + INV_ITEMS_TAB + ' tab');
+    return sheet;
+  }
+  var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+  INV_ITEMS_COLS.forEach(function (col) {
+    if (headers.indexOf(col) >= 0) return;
+    var next = sheet.getLastColumn() + 1;
+    sheet.getRange(1, next).setValue(col).setFontWeight('bold').setBackground('#1A1816').setFontColor('#C8953C');
+    headers.push(col);
+  });
+  return sheet;
+}
+
+// Sheets turns "2026-11-10" into a Date; hand it back as the same plain day.
+function _invDay(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date) return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return String(v).trim().slice(0, 10);
+}
+
+function _invItemValue(col, v) {
+  if (col === 'cost' || col === 'appraised') {
+    var n = parseFloat(v);
+    return isNaN(n) ? '' : Math.round(n * 100) / 100;
+  }
+  if (col === 'bin') return String(v === null || v === undefined ? '' : v).trim().slice(0, 20);
+  if (col === 'acquired_date') return _invDay(v);
+  if (col === 'description') return String(v || '').trim().slice(0, 300);
+  if (col === 'note') return String(v || '').trim().slice(0, 1000);
+  return v;
+}
+
+function getInventoryItems() {
+  var sheet = _invItemsSheet(false);
+  if (!sheet) return [];
+  return sheetToObjects(sheet).filter(function (r) { return String(r.id || '').trim(); });
+}
+
+function addInventoryItem(data) {
+  data = data || {};
+  if (!String(data.description || '').trim()) return { success: false, error: 'description required' };
+  var sheet = _invItemsSheet(true);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var id = nextId(sheet, 'INV-', headers.indexOf('id'));
+  var row = headers.map(function (h) {
+    if (h === 'id') return id;
+    if (h === 'created_at') return new Date().toISOString();
+    if (INV_ITEMS_EDITABLE.indexOf(h) >= 0) return _invItemValue(h, data[h]);
+    return '';
+  });
+  sheet.appendRow(row);
+  Logger.log('addInventoryItem ' + id + ' · bin ' + _invItemValue('bin', data.bin));
+  return { success: true, id: id };
+}
+
+function updateInventoryItem(id, updates) {
+  id = String(id || '').trim();
+  if (!id) return { success: false, error: 'id required' };
+  updates = updates || {};
+  var sheet = _invItemsSheet(false);
+  if (!sheet) return { success: false, error: 'no ' + INV_ITEMS_TAB + ' tab' };
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var idIdx = headers.indexOf('id');
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][idIdx]).trim() !== id) continue;
+    var written = [];
+    Object.keys(updates).forEach(function (key) {
+      if (INV_ITEMS_EDITABLE.indexOf(key) < 0) return;
+      if (key === 'description' && !String(updates[key] || '').trim()) return;
+      var col = headers.indexOf(key);
+      if (col < 0) return;
+      sheet.getRange(r + 1, col + 1).setValue(_invItemValue(key, updates[key]));
+      written.push(key);
+    });
+    Logger.log('updateInventoryItem ' + id + ' → ' + written.join(', '));
+    return { success: true, id: id, updated: written };
+  }
+  return { success: false, error: 'item ' + id + ' not found' };
+}
+
+function handleAddInventoryItem(parsed) {
+  try { return addInventoryItem(parsed.data); }
+  catch (e) { return { success: false, error: String(e && e.message || e) }; }
+}
+function handleUpdateInventoryItem(parsed) {
+  try { return updateInventoryItem(parsed.id, parsed.updates); }
   catch (e) { return { success: false, error: String(e && e.message || e) }; }
 }
