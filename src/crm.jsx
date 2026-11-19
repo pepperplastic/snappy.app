@@ -1594,6 +1594,21 @@ function PastShipmentPeek({shipment,onClose}) {
 // SHIPMENT ROW (left pane list item)
 // ══════════════════════════════════════════════════════════
 
+// Nov 19: estimator risk block (ai_risk / ai_risk_flags / ai_risk_notes).
+// Internal only — the customer never sees these.
+const AMBER = "#B26A00";
+function aiRiskLevel(s){ const r=String((s&&s.ai_risk)||"").trim().toLowerCase(); return r==="high"||r==="low"?r:""; }
+function aiRiskTitle(s){
+  const flags=String(s.ai_risk_flags||"").trim(), notes=String(s.ai_risk_notes||"").trim();
+  return `Estimator risk: ${aiRiskLevel(s)}${flags?"\nFlags: "+flags:""}${notes?"\n"+notes:""}`;
+}
+function RiskChip({shipment,size=10}){
+  const lvl=aiRiskLevel(shipment);
+  if(!lvl) return null;
+  const col=lvl==="high"?G.red:AMBER;
+  return <span title={aiRiskTitle(shipment)} style={{fontSize:size,fontWeight:800,color:col,background:col+"14",border:`1px solid ${col}55`,borderRadius:3,padding:"1px 5px",whiteSpace:"nowrap",cursor:"help"}}>{lvl==="high"?"SUS":"?"}</span>;
+}
+
 function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
   const high=parseEstHigh(shipment.estimate);
   const srd=stageRelevantDate(shipment);
@@ -1625,6 +1640,7 @@ function ShipmentRow({shipment,customer,selected,onClick,onCheck,checked}) {
               : <Badge stage={shipment.stage} sm/>}
             {absStr&&<span title={ageStr?`${ageStr} ago`:""} style={{fontSize:10,color:stuckCol||G.muted,fontWeight:stuckCol?700:400}}>{ageLabel} {absStr}</span>}
             {shipment.shipping_type&&<span style={{fontSize:10,color:G.muted,background:G.bg,borderRadius:3,padding:"1px 5px"}}>{shipment.shipping_type}</span>}
+            <RiskChip shipment={shipment}/>
             {/* SEP 14: triage hold — "CODE: reason" written by triage.gs; chip shows the code, hover shows the reason */}
             {wasUpdated(shipment)&&<span title={`Customer added to this registration${timeAgo(shipment.last_activity_at)?" "+timeAgo(shipment.last_activity_at)+" ago":""} — originally ${fmtDateTime(shipment.created_at)||"?"}`} style={{fontSize:10,fontWeight:700,color:G.gold,background:"#FFF8EE",border:`1px solid ${G.gold}55`,borderRadius:3,padding:"1px 5px",whiteSpace:"nowrap"}}>✏️ updated +{appendedCount(shipment)}</span>}
             {shipment.stage==="ready_to_fulfill"&&String(shipment.triage_flag||"").trim()&&<span title={"Triage hold — "+shipment.triage_flag} style={{fontSize:10,fontWeight:700,color:G.orange,background:G.orange+"14",border:`1px solid ${G.orange}33`,borderRadius:3,padding:"1px 5px",whiteSpace:"nowrap"}}>⚑ {String(shipment.triage_flag).split(":")[0].trim()}</span>}
@@ -3259,7 +3275,12 @@ function DetailPane({shipment,customer,contactLogs,allShipments,allCustomers,onU
       })()}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
         <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase"}}>Shipment · <span style={{cursor:"pointer",userSelect:"all"}} title="Click to copy" onClick={()=>{navigator.clipboard?.writeText(shipment.shipment_id);}}>{shipment.shipment_id}</span></div>
+          <div style={{fontSize:11,fontWeight:700,color:G.gold,letterSpacing:"0.1em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:8}}><span>Shipment · <span style={{cursor:"pointer",userSelect:"all"}} title="Click to copy" onClick={()=>{navigator.clipboard?.writeText(shipment.shipment_id);}}>{shipment.shipment_id}</span></span><RiskChip shipment={shipment} size={11}/></div>
+          {aiRiskLevel(shipment)&&<div style={{fontSize:12,lineHeight:1.45,color:G.text,background:(aiRiskLevel(shipment)==="high"?G.red:AMBER)+"0D",border:`1px solid ${(aiRiskLevel(shipment)==="high"?G.red:AMBER)}33`,borderRadius:6,padding:"6px 10px"}}>
+            <div style={{fontWeight:700,color:aiRiskLevel(shipment)==="high"?G.red:AMBER}}>Estimator risk: {aiRiskLevel(shipment)}</div>
+            {String(shipment.ai_risk_flags||"").trim()&&<div style={{color:G.muted}}>Flags: {shipment.ai_risk_flags}</div>}
+            {String(shipment.ai_risk_notes||"").trim()&&<div>{shipment.ai_risk_notes}</div>}
+          </div>}
           <Field label="Item" value={shipment.item}/>
           <Field label="Estimate" value={shipment.estimate}/>
           {["inspected","pending_response","pending_payment","pending_leadsonline","complete","returned","purchased","offer_made"].includes(shipment.stage)&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:G.text}}>
@@ -3831,6 +3852,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
   const [uploadResults,setUploadResults]=useState(null);
   const [uploading,setUploading]=useState(false);
   const [showDeferred,setShowDeferred]=useState(false);
+  const [flaggedOnly,setFlaggedOnly]=useState(false);   // Nov 19: estimator risk high/low only
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
@@ -3845,11 +3867,12 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>FULFILL_STAGES.includes(s.stage));
     list=list.filter(s=>showDeferred?isDeferred(s):!isDeferred(s)); // active vs deferred view
+    if(flaggedOnly) list=list.filter(s=>!!aiRiskLevel(s));
     if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
     // SEP 23: newest ACTIVITY first — an append to an old shipment should rise to
     // the top of Fulfill, not stay buried at its original registration date.
     return [...list].sort((a,b)=>activityAt(b)-activityAt(a));
-  },[shipments,search,custById,showDeferred]);
+  },[shipments,search,custById,showDeferred,flaggedOnly]);
 
   const kits=filtered.filter(s=>normalizeShipType(s.shipping_type)==="kit");
   const labels=filtered.filter(s=>normalizeShipType(s.shipping_type)==="fedex");   // FedEx labels (incl. legacy 'label')
@@ -4203,6 +4226,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
         <div style={{display:"flex",gap:4}}>
           <button onClick={()=>setShowDeferred(false)} style={{flex:1,fontSize:11,fontWeight:700,padding:"5px 0",borderRadius:6,cursor:"pointer",border:`1px solid ${!showDeferred?G.gold:G.border}`,background:!showDeferred?G.gold:"#fff",color:!showDeferred?"#fff":G.muted}}>Active</button>
           <button onClick={()=>setShowDeferred(true)} style={{flex:1,fontSize:11,fontWeight:700,padding:"5px 0",borderRadius:6,cursor:"pointer",border:`1px solid ${showDeferred?G.gold:G.border}`,background:showDeferred?G.gold:"#fff",color:showDeferred?"#fff":G.muted}}>Deferred{deferredCount>0?` (${deferredCount})`:""}</button>
+          <button onClick={()=>setFlaggedOnly(v=>!v)} title="Only shipments the estimator flagged (SUS or ?)" style={{flex:1,fontSize:11,fontWeight:700,padding:"5px 0",borderRadius:6,cursor:"pointer",border:`1px solid ${flaggedOnly?G.red:G.border}`,background:flaggedOnly?G.red:"#fff",color:flaggedOnly?"#fff":G.muted}}>Flagged only</button>
         </div>
       </div>
       <div style={{flex:1,overflow:"auto"}}>

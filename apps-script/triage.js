@@ -43,6 +43,13 @@ function triageMode() {
   return (m === 'shadow' || m === 'on') ? m : 'off';
 }
 
+// "estimator flagged high risk — plated_or_gold_filled, weight_uncertain: notes…"
+function _triageRiskText(s) {
+  var flags = String(s.ai_risk_flags || '').trim();
+  var notes = String(s.ai_risk_notes || '').trim();
+  return ('estimator flagged high risk' + (flags ? ' — ' + flags : '') + (notes ? ': ' + notes : '')).slice(0, 240);
+}
+
 // "$240 – $480" / "$1,420 - $2,180" / "$300" → { low, high } or null
 function _triageRange(est) {
   var nums = (String(est || '').replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(function (n) { return n > 0; });
@@ -142,6 +149,8 @@ function _triageDecide(ctx) {
   if (!range) return hold('LOW_ESTIMATE', 'no estimate');
   if (range.low < TRIAGE_EST_LOW_MIN) return hold('LOW_ESTIMATE', 'estimate low end $' + range.low + ' < $' + TRIAGE_EST_LOW_MIN);
   if (range.high >= TRIAGE_EST_HIGH_MAX) return hold('HIGH_VALUE', 'estimate high end $' + range.high + ' ≥ $' + TRIAGE_EST_HIGH_MAX);
+  // Nov 19: the estimator's internal risk block. High risk is never auto-fulfilled.
+  if (String(s.ai_risk || '').trim().toLowerCase() === 'high') return hold('AI_RISK', _triageRiskText(s));
 
   if (!(ctx.photos || []).length) return hold('NO_PHOTOS', 'no item photos');
 
@@ -363,7 +372,7 @@ function _triageRun(mode, fx, now) {
 }
 
 var TRIAGE_WORDS = { KIT: 'kit', NO_PHOTOS: 'no photos', PHOTO_UNCLEAR: 'unclear photos', NOT_GOLD: 'not gold', LOW_ESTIMATE: 'low estimate',
-  HIGH_VALUE: 'high value', BAD_CONTACT: 'bad contact', HISTORY: 'prior return', LOT_TOO_BIG: 'too many items', DNC: 'do not contact',
+  HIGH_VALUE: 'high value', AI_RISK: 'risk flag', BAD_CONTACT: 'bad contact', HISTORY: 'prior return', LOT_TOO_BIG: 'too many items', DNC: 'do not contact',
   TEST: 'test', CAP: 'cap', ERROR: 'error' };
 
 // Hourly SMS to David when there was activity: "Triage: fulfilled 4 · holding 2 (watch, no photos)".

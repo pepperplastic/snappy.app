@@ -60,7 +60,8 @@ var COLS = {
             'capi_purchase_sent','label_refunded_at','offer_description','deferred_at','kit_tracking','inspection_json','reengage_sent_at','flex_click_id','flex_postback_sent','triage_flag','completed_at',
             'relabel_requested_at','winback_a_sent_at','winback_a_sms_at',
             'listed_on','listed_price','listed_at','listed_url','plan',
-            'appraised_ai','appraised_ai_note'
+            'appraised_ai','appraised_ai_note',
+            'ai_risk','ai_risk_flags','ai_risk_notes'   // Nov 19: estimator risk block (internal only)
   ],
   CONTACT_LOG: [
     'log_id','customer_id','timestamp','type','notes','shipment_id','direction','source','kind'
@@ -119,7 +120,77 @@ var COL = {
   USER_EDITS: 25,  // Z
   SESSION_ID: 26,  // AA
   REF:        27,  // AB
+  // Nov 19: ai_risk / ai_risk_flags / ai_risk_notes are written BY HEADER NAME
+  // (see _aiRiskLeadRow), appended at the end of the tab on first use.
 };
+
+// ═══════════════════════════════════════════════
+//  ESTIMATOR RISK BLOCK (Nov 19)
+//  The site's estimate returns risk / risk_flags / risk_notes; the browser
+//  sends them as aiRisk / aiRiskFlags / aiRiskNotes. Internal only — never
+//  in a customer message. Stored on Lead Intake and Shipments as
+//  ai_risk ("none"|"low"|"high"), ai_risk_flags (comma list), ai_risk_notes.
+// ═══════════════════════════════════════════════
+var AI_RISK_COLS = ['ai_risk', 'ai_risk_flags', 'ai_risk_notes'];
+var AI_RISK_LEVELS = ['none', 'low', 'high'];
+var AI_RISK_FLAG_SET = ['plated_or_gold_filled', 'costume_stones', 'hollow_construction', 'replica_watch',
+  'aftermarket_mods', 'unverifiable_brand', 'weight_uncertain', 'multi_item_uncertain'];
+
+// Payload → { ai_risk, ai_risk_flags, ai_risk_notes }, or null when the
+// payload carried no risk (direct quotes, old clients).
+function _aiRiskFromPayload(data) {
+  var level = String((data && data.aiRisk) || '').trim().toLowerCase();
+  if (AI_RISK_LEVELS.indexOf(level) < 0) return null;
+  var raw = data.aiRiskFlags;
+  var list = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  var flags = [];
+  list.forEach(function (f) {
+    f = String(f || '').trim().toLowerCase();
+    if (AI_RISK_FLAG_SET.indexOf(f) >= 0 && flags.indexOf(f) < 0) flags.push(f);
+  });
+  return { ai_risk: level, ai_risk_flags: flags.join(', '), ai_risk_notes: String(data.aiRiskNotes || '').trim().slice(0, 300) };
+}
+
+// Adds any missing risk headers at the END of the tab. Returns header → index.
+function _ensureAiRiskCols(sheet) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  AI_RISK_COLS.forEach(function (col) {
+    if (headers.indexOf(col) >= 0) return;
+    var next = sheet.getLastColumn() + 1;
+    sheet.getRange(1, next).setValue(col).setFontWeight('bold');
+    headers.push(col);
+    Logger.log('added column ' + col + ' to ' + sheet.getName());
+  });
+  var idx = {};
+  AI_RISK_COLS.forEach(function (col) { idx[col] = headers.indexOf(col); });
+  return idx;
+}
+
+// Place the risk values into a positional Lead Intake row by header index.
+function _aiRiskLeadRow(sheet, row, risk) {
+  if (!risk) return row;
+  var idx = _ensureAiRiskCols(sheet);
+  AI_RISK_COLS.forEach(function (col) {
+    while (row.length < idx[col]) row.push('');
+    row[idx[col]] = risk[col];
+  });
+  return row;
+}
+
+// Appending to an open shipment: keep the worse level, union the flags,
+// keep both notes.
+function _aiRiskMerge(existing, risk) {
+  if (!risk) return null;
+  var oldLevel = String(existing.ai_risk || '').toLowerCase();
+  if (AI_RISK_LEVELS.indexOf(oldLevel) < 0) return risk;
+  var level = AI_RISK_LEVELS.indexOf(risk.ai_risk) > AI_RISK_LEVELS.indexOf(oldLevel) ? risk.ai_risk : oldLevel;
+  var flags = String(existing.ai_risk_flags || '').split(',').map(function (f) { return f.trim(); }).filter(Boolean);
+  risk.ai_risk_flags.split(',').map(function (f) { return f.trim(); }).filter(Boolean).forEach(function (f) { if (flags.indexOf(f) < 0) flags.push(f); });
+  var oldNotes = String(existing.ai_risk_notes || '').trim();
+  var notes = risk.ai_risk_notes && oldNotes.indexOf(risk.ai_risk_notes) < 0
+    ? (oldNotes ? oldNotes + ' | ' + risk.ai_risk_notes : risk.ai_risk_notes) : oldNotes;
+  return { ai_risk: level, ai_risk_flags: flags.join(', '), ai_risk_notes: notes.slice(0, 600) };
+}
 
 // ── Digest recipient ─────────────────────────────────────────
 var DIGEST_EMAIL = 'davidisaacweiss@yahoo.com';
@@ -437,6 +508,8 @@ function handleLeadIngestion(data) {
       data.sessionId || '',
       data.ref || '',
     ];
+    var aiRisk = _aiRiskFromPayload(data);   // Nov 19: internal risk block, null if absent
+    _aiRiskLeadRow(sheet, row, aiRisk);
 
     sheet.appendRow(row);
 
@@ -567,6 +640,11 @@ function handleLeadIngestion(data) {
               ? existingStructured + '; ' + structuredEdits
               : structuredEdits;
           }
+          var mergedRisk = _aiRiskMerge(appendTarget, aiRisk);
+          if (mergedRisk) {
+            _ensureAiRiskCols(SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS));
+            AI_RISK_COLS.forEach(function (col) { appendUpdates[col] = mergedRisk[col]; });
+          }
           if (Object.keys(appendUpdates).length) {
             updateShipment(appendTarget.shipment_id, appendUpdates);
             Logger.log('Accumulated customer fields on ' + appendTarget.shipment_id);
@@ -682,6 +760,15 @@ function handleLeadIngestion(data) {
               notes:               shipmentNotes
             });
             Logger.log('Shipment created for ' + data.email + ' (' + custId + ') → ' + shipId);
+
+            // Nov 19: risk is written by header name, not through createShipment's
+            // positional row, so it can't land in the wrong column.
+            if (aiRisk) {
+              try {
+                _ensureAiRiskCols(SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS));
+                updateShipment(shipId, aiRisk);
+              } catch (re) { Logger.log('ai_risk write (non-fatal): ' + re); }
+            }
 
             if (photoUrl && photoUrl.indexOf('drive.google.com') !== -1) {
               try {

@@ -17,7 +17,7 @@ Fulfill = the normal path (`generateAndSendLabel`): label email + SMS to the cus
 
 ## Otherwise: hold + flag
 Shipment stays in Fulfill. `triage_flag` gets a code + short reason, shown as a chip in the queue:
-`KIT` · `NO_PHOTOS` · `PHOTO_UNCLEAR` · `NOT_GOLD` · `LOW_ESTIMATE` · `HIGH_VALUE` · `CATEGORY` · `BAD_CONTACT` · `HISTORY` · `LOT_TOO_BIG` · `DNC` · `TEST` · `CAP` · `ERROR`
+`KIT` · `NO_PHOTOS` · `PHOTO_UNCLEAR` · `NOT_GOLD` · `LOW_ESTIMATE` · `HIGH_VALUE` · `AI_RISK` · `CATEGORY` · `BAD_CONTACT` · `HISTORY` · `LOT_TOO_BIG` · `DNC` · `TEST` · `CAP` · `ERROR`
 Nothing is sent to the customer.
 
 ## Limits and telling David

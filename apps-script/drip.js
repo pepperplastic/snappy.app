@@ -171,6 +171,13 @@ var REG_ALERT_PHONE = '5617026269';
 var REG_ALERT_EMAIL = 'davidisaacweiss@yahoo.com';
 var REG_ALERT_CRM   = 'https://snappy.gold/crm';
 
+// Nov 19: "flags: notes" when the estimator rated the shipment high risk, else ''.
+function _regAlertRisk(s) {
+  if (String(s.ai_risk || '').trim().toLowerCase() !== 'high') return '';
+  var flags = String(s.ai_risk_flags || '').trim(), notes = String(s.ai_risk_notes || '').trim();
+  return (flags || 'no flags') + (notes ? ': ' + notes : '');
+}
+
 function notifyNewRegistrations() {
   var props = PropertiesService.getScriptProperties();
   var lastIso = props.getProperty('REG_ALERT_LAST_ISO') || new Date(Date.now() - 15 * 60000).toISOString();
@@ -189,16 +196,20 @@ function notifyNewRegistrations() {
     var item = String(s.item || '').trim() || '(no item text)';
     var est  = String(s.estimate || '').trim();
     var type = normalizeShipType(s.shipping_type) || 'no type set';
-    var sms  = 'New reg: ' + name + ' — ' + item.slice(0, 60) + (est ? ' (' + est + ')' : '') + ' · ' + type +
-               (s.customer_message ? ' · "' + String(s.customer_message).slice(0, 60) + '"' : '') + ' · ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
+    var risk = _regAlertRisk(s);
+    var sms  = (risk ? '⚠ SUS ' : '') + 'New reg: ' + name + ' — ' + item.slice(0, 60) + (est ? ' (' + est + ')' : '') + ' · ' + type +
+               (s.customer_message ? ' · "' + String(s.customer_message).slice(0, 60) + '"' : '') +
+               (risk ? ' · RISK: ' + risk.slice(0, 140) : '') + ' · ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
     try { sendSms(REG_ALERT_PHONE, 'David', sms); } catch (e) { Logger.log('reg alert sms: ' + e); }
     try {
       var body = 'Name: ' + name + '\nEmail: ' + (cu.email || '') + '\nPhone: ' + (cu.phone || '') +
         '\nItem: ' + item + '\nEstimate: ' + (est || '—') + '\nShipping: ' + type + '\nAddress: ' + (cu.address || '') +
         (s.customer_message ? '\nMessage: ' + s.customer_message : '') +
         (s.ai_rationale ? '\nAI notes: ' + s.ai_rationale : '') +
+        (risk ? '\n\n⚠ HIGH RISK (estimator) — triage will hold this.\nFlags: ' + (String(s.ai_risk_flags || '').trim() || '—') +
+                '\nRisk notes: ' + (String(s.ai_risk_notes || '').trim() || '—') : '') +
         '\n\n' + s.shipment_id + ' → ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
-      MailApp.sendEmail(REG_ALERT_EMAIL, '📥 New registration: ' + name + ' — ' + item.slice(0, 50), body);
+      MailApp.sendEmail(REG_ALERT_EMAIL, (risk ? '⚠ SUS ' : '📥 ') + 'New registration: ' + name + ' — ' + item.slice(0, 50), body);
     } catch (e) { Logger.log('reg alert email: ' + e); }
     var c = new Date(s.created_at); if (c > newest) newest = c;
   });
@@ -224,14 +235,17 @@ function notifyNewRegistrations() {
     var cu = custs[s.customer_id] || {};
     var name = cu.name || '(no name)';
     var item = String(s.item || '').trim() || '(no item text)';
-    var sms = 'UPDATED: ' + s.shipment_id + ' — ' + name + ' added to an open registration · ' + item.slice(0, 60) +
-              ' · ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
+    var risk = _regAlertRisk(s);
+    var sms = (risk ? '⚠ SUS ' : '') + 'UPDATED: ' + s.shipment_id + ' — ' + name + ' added to an open registration · ' + item.slice(0, 60) +
+              (risk ? ' · RISK: ' + risk.slice(0, 140) : '') + ' · ' + REG_ALERT_CRM + '?shp=' + s.shipment_id;
     try { sendSms(REG_ALERT_PHONE, 'David', sms); } catch (e) { Logger.log('update alert sms: ' + e); }
     try {
       MailApp.sendEmail(REG_ALERT_EMAIL, '✏️ UPDATED registration: ' + name + ' — ' + s.shipment_id,
         'Name: ' + name + '\nEmail: ' + (cu.email || '') + '\nPhone: ' + (cu.phone || '') +
         '\nItems now: ' + item + '\nEstimate: ' + (String(s.estimate || '').trim() || '—') +
         (s.customer_message ? '\nMessage: ' + s.customer_message : '') +
+        (risk ? '\n\n⚠ HIGH RISK (estimator)\nFlags: ' + (String(s.ai_risk_flags || '').trim() || '—') +
+                '\nRisk notes: ' + (String(s.ai_risk_notes || '').trim() || '—') : '') +
         '\n\nAlready in Fulfill — the customer added to it rather than registering again.\n' +
         s.shipment_id + ' → ' + REG_ALERT_CRM + '?shp=' + s.shipment_id);
     } catch (e) { Logger.log('update alert email: ' + e); }

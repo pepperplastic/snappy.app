@@ -164,6 +164,9 @@ const SHIPMENT_PASSTHROUGH = [
   'id_type', 'id_number', 'id_state', 'date_birth', 'id_photo_url',
   'sworn_statement_at', 'sworn_statement_ip', 'customer_edits',
   'customer_edits_text', 'user_edits',
+  // Nov 19: estimator risk block. Blank until the Postgres shipments table has
+  // these columns (pg-mirror only writes columns that exist).
+  'ai_risk', 'ai_risk_flags', 'ai_risk_notes',
 ];
 
 function toShipment(r) {

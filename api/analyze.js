@@ -17,6 +17,8 @@
 //  product. Same-origin + field validation is the right ceiling here.
 // ═══════════════════════════════════════════════════════════════
 
+import { fetchSpotFromMetalpriceapi } from './_lib/spot.js';
+
 // Hosts allowed to call this endpoint. Vercel preview deploys are
 // included so staging keeps working.
 const ALLOWED_HOSTS = new Set([
@@ -55,9 +57,13 @@ let priceCache = {
   silver: null,
 };
 
-const FALLBACK_GOLD = 5000;
-const FALLBACK_SILVER = 81;
+// Last resort only. Set from live spot on Nov 19 2026.
+const FALLBACK_GOLD = 3600;
+const FALLBACK_SILVER = 43;
 
+// NOV 19 FIX: this used to compute gold as 1 / rates.USDXAU. USDXAU is already
+// USD per ounce, so that came out ≈ 0, failed the > 1000 check, and every call
+// silently used the fallback ($5,000 gold / $81 silver). Shared parser now.
 async function getSpotPrices() {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -66,37 +72,11 @@ async function getSpotPrices() {
     return { gold: priceCache.gold, silver: priceCache.silver };
   }
 
-  // Try fetching fresh prices
-  try {
-    const apiKey = process.env.METALS_API_KEY;
-    if (apiKey) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      try {
-        const res = await fetch(
-          `https://api.metalpriceapi.com/v1/latest?api_key=${apiKey}&base=USD&currencies=XAU,XAG`,
-          { signal: controller.signal }
-        );
-        clearTimeout(timeout);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.rates) {
-            const gold = data.rates.USDXAU ? Math.round(1 / data.rates.USDXAU) : null;
-            const silver = data.rates.USDXAG ? Math.round(1 / data.rates.USDXAG) : null;
-            if (gold && gold > 1000) {
-              priceCache = { date: today, gold, silver: silver || FALLBACK_SILVER };
-              console.log(`Spot prices updated: Gold $${gold}/oz, Silver $${silver}/oz`);
-              return priceCache;
-            }
-          }
-        }
-      } catch (fetchErr) {
-        clearTimeout(timeout);
-        throw fetchErr;
-      }
-    }
-  } catch (err) {
-    console.warn('Spot price fetch failed, using fallback:', err.message);
+  const spot = await fetchSpotFromMetalpriceapi(process.env.METALS_API_KEY);
+  if (spot) {
+    priceCache = { date: today, gold: Math.round(spot.gold), silver: Math.round(spot.silver * 100) / 100 };
+    console.log(`Spot prices updated: Gold $${priceCache.gold}/oz, Silver $${priceCache.silver}/oz`);
+    return priceCache;
   }
 
   // Use stale cache if available, otherwise fallback
@@ -105,6 +85,7 @@ async function getSpotPrices() {
     return priceCache;
   }
 
+  console.warn(`Spot price FALLBACK in use: Gold $${FALLBACK_GOLD}/oz, Silver $${FALLBACK_SILVER}/oz`);
   return { gold: FALLBACK_GOLD, silver: FALLBACK_SILVER };
 }
 

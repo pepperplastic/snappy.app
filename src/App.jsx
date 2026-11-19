@@ -872,24 +872,45 @@ let _cachedPrices = null
 let _cacheTime = 0
 const PRICE_CACHE_MS = 15 * 60 * 1000 // 15 minutes
 
+// Last-resort spot prices, used only when /api/metals and the direct
+// gold-api.com call both fail. Set from live spot on Nov 19 2026.
+const FALLBACK_SPOT = { gold_oz: 3600, silver_oz: 43, platinum_oz: 1335 }
+
+// One shape for every source. Per-gram values are melt at the stated purity.
+function buildMetalPrices(goldOz, silverOz, platinumOz, source) {
+  const r2 = n => Math.round(n * 100) / 100
+  const g = goldOz / TROY_OZ_TO_GRAMS
+  const s = silverOz / TROY_OZ_TO_GRAMS
+  const p = (platinumOz || FALLBACK_SPOT.platinum_oz) / TROY_OZ_TO_GRAMS
+  return {
+    gold_oz: r2(goldOz),
+    silver_oz: r2(silverOz),
+    platinum_oz: r2(platinumOz || FALLBACK_SPOT.platinum_oz),
+    gold_per_gram_24k: r2(g),
+    gold_per_gram_18k: r2(g * (18 / 24)),
+    gold_per_gram_14k: r2(g * (14 / 24)),
+    gold_per_gram_10k: r2(g * (10 / 24)),
+    silver_per_gram_sterling: r2(s * 0.925),
+    silver_per_gram_fine: r2(s),
+    platinum_per_gram_950: r2(p * 0.95),
+    source,
+  }
+}
+
 async function fetchMetalPrices() {
   // Return cache if fresh
   if (_cachedPrices && Date.now() - _cacheTime < PRICE_CACHE_MS) {
     return _cachedPrices
   }
-
-  // Fallback prices (update these periodically as a safety net)
-  const FALLBACK = { gold_oz: 5170, silver_oz: 32 }
+  const keep = (prices) => { _cachedPrices = prices; _cacheTime = Date.now(); return prices }
 
   try {
     const res = await fetch('/api/metals', { signal: AbortSignal.timeout(6000) })
     if (res.ok) {
       const data = await res.json()
       if (data.gold_oz && data.silver_oz) {
-        _cachedPrices = data
-        _cacheTime = Date.now()
-        console.log(`[Metals] Live prices: Gold $${data.gold_oz}/oz, Silver $${data.silver_oz}/oz (${data.source})`)
-        return data
+        console.log(`[Metals] Live prices: Gold $${data.gold_oz}/oz, Silver $${data.silver_oz}/oz, Platinum $${data.platinum_oz}/oz (${data.source})`)
+        return keep(buildMetalPrices(data.gold_oz, data.silver_oz, data.platinum_oz, data.source || 'api/metals'))
       }
     }
   } catch (e) {
@@ -897,54 +918,46 @@ async function fetchMetalPrices() {
   }
 
   try {
-    const [goldRes, silverRes] = await Promise.all([
-      fetch('https://api.gold-api.com/price/XAU', { signal: AbortSignal.timeout(5000) }),
-      fetch('https://api.gold-api.com/price/XAG', { signal: AbortSignal.timeout(5000) }),
-    ])
-    const goldData = await goldRes.json()
-    const silverData = await silverRes.json()
-
+    const get = (sym) => fetch(`https://api.gold-api.com/price/${sym}`, { signal: AbortSignal.timeout(5000) }).then(r => r.json()).catch(() => ({}))
+    const [goldData, silverData, platData] = await Promise.all([get('XAU'), get('XAG'), get('XPT')])
     if (goldData.price && silverData.price) {
-      const goldPerGram = goldData.price / TROY_OZ_TO_GRAMS
-      const silverPerGram = silverData.price / TROY_OZ_TO_GRAMS
-      const prices = {
-        gold_oz: Math.round(goldData.price * 100) / 100,
-        silver_oz: Math.round(silverData.price * 100) / 100,
-        gold_per_gram_24k: Math.round(goldPerGram * 100) / 100,
-        gold_per_gram_18k: Math.round(goldPerGram * (18 / 24) * 100) / 100,
-        gold_per_gram_14k: Math.round(goldPerGram * (14 / 24) * 100) / 100,
-        gold_per_gram_10k: Math.round(goldPerGram * (10 / 24) * 100) / 100,
-        silver_per_gram_sterling: Math.round(silverPerGram * 0.925 * 100) / 100,
-        silver_per_gram_fine: Math.round(silverPerGram * 100) / 100,
-        source: 'gold-api.com-direct',
-      }
-      _cachedPrices = prices
-      _cacheTime = Date.now()
-      console.log(`[Metals] Direct prices: Gold $${prices.gold_oz}/oz, Silver $${prices.silver_oz}/oz`)
-      return prices
+      const prices = buildMetalPrices(goldData.price, silverData.price, platData.price, 'gold-api.com-direct')
+      console.log(`[Metals] Direct prices: Gold $${prices.gold_oz}/oz, Silver $${prices.silver_oz}/oz, Platinum $${prices.platinum_oz}/oz`)
+      return keep(prices)
     }
   } catch (e) {
     console.warn('[Metals] Direct API also failed:', e.message)
   }
 
   // Ultimate fallback
-  const goldPerGram = FALLBACK.gold_oz / TROY_OZ_TO_GRAMS
-  const silverPerGram = FALLBACK.silver_oz / TROY_OZ_TO_GRAMS
-  const prices = {
-    gold_oz: FALLBACK.gold_oz,
-    silver_oz: FALLBACK.silver_oz,
-    gold_per_gram_24k: Math.round(goldPerGram * 100) / 100,
-    gold_per_gram_18k: Math.round(goldPerGram * (18 / 24) * 100) / 100,
-    gold_per_gram_14k: Math.round(goldPerGram * (14 / 24) * 100) / 100,
-    gold_per_gram_10k: Math.round(goldPerGram * (10 / 24) * 100) / 100,
-    silver_per_gram_sterling: Math.round(silverPerGram * 0.925 * 100) / 100,
-    silver_per_gram_fine: Math.round(silverPerGram * 100) / 100,
-    source: 'fallback',
+  console.warn(`[Metals] FALLBACK prices in use — both price sources failed. Gold $${FALLBACK_SPOT.gold_oz}/oz, Silver $${FALLBACK_SPOT.silver_oz}/oz, Platinum $${FALLBACK_SPOT.platinum_oz}/oz`)
+  return keep(buildMetalPrices(FALLBACK_SPOT.gold_oz, FALLBACK_SPOT.silver_oz, FALLBACK_SPOT.platinum_oz, 'fallback'))
+}
+
+// Internal risk fields from the estimate. Sent with registration payloads
+// only — never rendered on the site.
+function riskFields(a) {
+  return {
+    aiRisk: (a && a.risk) || '',
+    aiRiskFlags: Array.isArray(a && a.risk_flags) ? a.risk_flags : [],
+    aiRiskNotes: (a && a.risk_notes) || '',
   }
-  console.warn('[Metals] Using fallback prices — APIs unavailable')
-  _cachedPrices = prices
-  _cacheTime = Date.now()
-  return prices
+}
+
+// The jewelry worked example, computed at today's per-gram values so the
+// prompt never carries stale numbers. Same 0.80 / 0.85 math as Step 6.
+function workedExample(prices) {
+  const pg = prices.gold_per_gram_14k
+  const usd = n => '$' + Math.round(n).toLocaleString()
+  const lowMelt = 35 * pg, highMelt = 50 * pg
+  const lowOffer = lowMelt * 0.80, highOffer = highMelt * 0.85
+  const round50 = n => Math.round(n / 50) * 50
+  return `WORKED EXAMPLE (at $${prices.gold_oz.toLocaleString()}/oz gold, 14K per-gram = $${pg}):
+- Item: 14K gold chain, estimated 35-50g
+- Low melt: 35 × $${pg} = ${usd(lowMelt)} → offer_low = ${usd(lowMelt)} × 0.80 = ${usd(lowOffer)} → round to ${usd(round50(lowOffer))}
+- High melt: 50 × $${pg} = ${usd(highMelt)} → offer_high = ${usd(highMelt)} × 0.85 = ${usd(highOffer)} → round to ${usd(round50(highOffer))}
+- Offer: ${usd(round50(lowOffer))} - ${usd(round50(highOffer))}
+- WITH premium (branded/collectible): add 10-15% on top`
 }
 
 // ── API: Send image to Claude for analysis ──
@@ -977,13 +990,13 @@ ${imagesArray.length > 1 ? `You have been provided ${imagesArray.length} photos 
 This affects EVERYTHING about your response — the detail fields, pricing method, and description style are completely different.
 
 IMPORTANT GUIDELINES FOR ASSESSMENT:
-- If an item appears to be gold, ASSUME it is real gold. Estimate the karat (10K, 14K, or 18K) based on the color/hue — lighter yellow suggests 10K, classic yellow suggests 14K, rich deep yellow suggests 18K.
-- If diamonds or gemstones are visible, ASSUME they are genuine unless there are obvious visual signs they are not (e.g. clearly plastic, costume jewelry construction).
-- If a watch appears to be a known brand, ASSUME it is authentic unless there are obvious signs of being counterfeit.
-- If a luxury good appears to be a known brand, ASSUME it is authentic. Look for brand stamps, logos, hardware, stitching quality, and material texture.
-- If silver-colored metal is present, assess whether it is likely sterling silver, white gold, or platinum based on visual cues.
-- Be optimistic but not unreasonable. Give the seller the benefit of the doubt. Final verification happens in person.
-- Never use the word "AI" in any of your responses.
+- Gold-colored metal: ASSUME solid gold. Default to 18K. Use 14K or 10K only if a stamp (585/14K, 417/10K) is visible. State the assumption in the Material detail, e.g. "18K Yellow Gold (assumed — correct if stamped otherwise)".
+- Silver-colored metal: ASSUME 14K white gold, unless the piece is obviously silver: Native American/Southwestern cuffs or concho work, Mexican sterling, a visible 925/STERLING stamp, Tiffany-style silver chains. Platinum only with a PLAT/950 stamp.
+- Diamonds and gemstones: ASSUME genuine.
+- Known-brand watches and luxury goods: ASSUME authentic.
+- Be optimistic. Give the seller the benefit of the doubt. Final verification happens in person.
+- If the photo shows several pieces, itemize: list each piece with its own material and weight range in details, estimate each, and present the sum as offer_low/offer_high.
+- Never use the word "AI" in any customer-facing field (title, description, details, offer_notes).
 
 Respond ONLY in valid JSON, no markdown fences.
 
@@ -1006,7 +1019,10 @@ You MUST use exactly these detail labels in this order. Do NOT use Material, Est
   ],
   "offer_low": 50000,
   "offer_high": 62000,
-  "offer_notes": "Based on current secondary market value for this reference as a full set (box, papers, links). Final offer subject to in-person authentication."
+  "offer_notes": "Based on current secondary market value for this reference as a full set (box, papers, links). Final offer subject to in-person authentication.",
+  "risk": "none | low | high",
+  "risk_flags": [],
+  "risk_notes": ""
 }
 
 WATCH VISUAL IDENTIFICATION RULES — USE THESE TO IDENTIFY EXACT REFERENCES:
@@ -1111,7 +1127,9 @@ HERMÈS (distinguish by shape and hardware):
 WATCH PRICING RULES — THIS IS CRITICAL:
 - Price watches based on SECONDARY MARKET / PRE-OWNED DEALER VALUES, not metal melt value
 - Use your knowledge of current pre-owned market values for the exact reference you identified above
-- Price at the HIGHER END of the market range to be competitive — we want sellers to feel good about the estimate
+- Price luxury watches at the MIDDLE of the pre-owned market range for the exact reference, assuming authentic and full set
+- AFTERMARKET DIAMONDS / "ICED OUT" on Rolex, AP, or Patek: price the base reference only (the aftermarket stones add nothing) and note the aftermarket work in the description
+- Non-luxury watches: use your judgment
 - AFTERMARKET MODIFICATIONS: If a watch is on a non-original strap/band (rubber strap, NATO, aftermarket bracelet), ALWAYS note this. The original bracelet is a significant portion of the watch's value — if missing, reduce estimate 15-25%. Mention this clearly in description and Completeness field.
 - All prices assume FULL SET (box, papers, links) which commands the highest premium
 - ALWAYS default Completeness to "Full set: box, papers, links"
@@ -1120,7 +1138,6 @@ WATCH PRICING RULES — THIS IS CRITICAL:
   - Watch + box only (no papers): reduce 10-15%
   - Watch + papers only (no box): reduce 5-10%
   - Missing extra links: reduce 2-5%
-- ALWAYS lean toward the higher end of the range
 
 WATCH YEAR ESTIMATION — BE CAREFUL:
 - Base year estimates on the specific reference number and dial variant
@@ -1144,12 +1161,16 @@ FORMAT B — JEWELRY / PRECIOUS METALS (use for everything that is NOT a watch)
   ],
   "offer_low": 500,
   "offer_high": 1200,
-  "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification."
+  "offer_notes": "Brief note on what drives the range. Reference current spot prices and item specifics. Final offer depends on in-person verification.",
+  "risk": "none | low | high",
+  "risk_flags": [],
+  "risk_notes": ""
 }
 
 JEWELRY PRICING — USE THESE EXACT PRE-COMPUTED VALUES (do NOT calculate your own):
 - GOLD spot: GOLD_SPOT_PRICE per troy ounce today.
 - SILVER spot: SILVER_SPOT_PRICE per troy ounce today.
+- PLATINUM spot: PLATINUM_SPOT_PRICE per troy ounce today.
 
 PRE-COMPUTED per-gram melt values (already calculated for you — just multiply by weight):
 - 10K gold: GOLD_10K_PER_GRAM per gram
@@ -1158,6 +1179,7 @@ PRE-COMPUTED per-gram melt values (already calculated for you — just multiply 
 - 24K gold: GOLD_24K_PER_GRAM per gram
 - Sterling silver (.925): SILVER_STERLING_PER_GRAM per gram
 - .999 fine silver: SILVER_FINE_PER_GRAM per gram
+- Platinum jewelry (.950): PLATINUM_PER_GRAM per gram
 
 PRICING FORMULA — FOLLOW THIS EXACTLY, STEP BY STEP:
 Step 1: Identify material (e.g. 14K gold)
@@ -1165,20 +1187,15 @@ Step 2: Look up per-gram value from list above (e.g. GOLD_14K_PER_GRAM)
 Step 3: Estimate weight range (e.g. 35-50g)
 Step 4: Compute LOW melt = low weight × per-gram (e.g. 35 × GOLD_14K_PER_GRAM)
 Step 5: Compute HIGH melt = high weight × per-gram (e.g. 50 × GOLD_14K_PER_GRAM)
-Step 6: Your offer_low = Step 4 × 0.70. Your offer_high = Step 5 × 0.75. We are a secondary buyer — we cannot pay full melt value.
+Step 6: Your offer_low = Step 4 × 0.80. Your offer_high = Step 5 × 0.85. We are a secondary buyer — we cannot pay full melt value.
 Step 7: Add any brand/design/collectible premium ON TOP of Step 6 values only.
 
-WORKED EXAMPLE (at $5,000/oz gold, 14K per-gram = ~$93.73):
-- Item: 14K gold chain, estimated 35-50g
-- Low melt: 35 × $93.73 = $3,280 → offer_low = $3,280 × 0.70 = $2,296 → round to $2,300
-- High melt: 50 × $93.73 = $4,687 → offer_high = $4,687 × 0.75 = $3,515 → round to $3,500
-- Offer: $2,300 - $3,500
-- WITH premium (branded/collectible): add 10-15% on top
+WORKED_EXAMPLE_BLOCK
 
 SANITY CHECK — MANDATORY BEFORE RESPONDING:
-- Your offer_low must be approximately 70% of (low weight × per-gram). If it equals the full melt value, you have made an error.
-- Your offer_high must be approximately 75% of (high weight × per-gram).
-- For silver bullion bars/coins: offer should be 70-80% of spot × weight in troy ounces
+- Your offer_low must be approximately 80% of (low weight × per-gram). If it equals the full melt value, you have made an error.
+- Your offer_high must be approximately 85% of (high weight × per-gram).
+- For silver bullion bars/coins: offer should be 80-85% of spot × weight in troy ounces
 - NEVER reference "melt value" in your offer_notes — say "based on gold weight and current market" instead.
 
 WEIGHT ESTIMATION — MANDATORY DECISION TREE (you MUST follow this exactly):
@@ -1187,6 +1204,7 @@ Gold is DENSE (19.3 g/cm³). Items almost always weigh MORE than they look. You 
 
 STEP 1: Classify the item into ONE of these categories:
 STEP 2: Use the weight range for that category. Always use the MIDDLE TO HIGH end.
+Always assume solid construction; never assume hollow.
 
 CHAINS / NECKLACES:
 - Thin women's chain (delicate, 16-18"): 8-15g
@@ -1221,23 +1239,18 @@ BARS / COINS:
 - If no markings visible, estimate by apparent size
 
 CRITICAL RULES:
-- A chain that a man is wearing or holding that reaches mid-chest is AT LEAST 35g in 14K gold. NEVER estimate below 30g for any men's chain.
-- If you estimated under 15g for anything other than earrings, a thin women's chain, or a thin ring — you are almost certainly wrong. Re-check your classification.
+- A chain that a man is wearing or holding that reaches mid-chest is AT LEAST 35g in 14K gold.
 - ALWAYS show weight as a range (e.g. "35-50 grams") not a single number.
 - When in doubt, round UP. The seller knows the actual weight — a lowball guess loses credibility instantly.
 
-DIAMOND & GEMSTONE PRICING — MANDATORY:
-Diamonds and gemstones resell at a FRACTION of retail. Use ONLY these resale values:
-- Small accent diamonds (under 0.25ct each, common in bands/halos): $0 added value — ignore completely, they are worth nothing at resale
-- Single round diamond 0.25-0.50ct: add $50-150 to gold melt value only
-- Single round diamond 0.50-1.00ct: add $150-400 to gold melt value only
-- Single round diamond 1.00-2.00ct: add $400-900 to gold melt value only
-- Single round diamond over 2.00ct: add $800-3,500 depending on apparent quality and whether GIA certified
-- Colored gemstones (sapphire, ruby, emerald): add $25-200 unless clearly fine quality with visible certificate
-- Lab-grown diamonds: add $0 — no resale value
-- DO NOT use retail, insurance, or appraised values. Use secondary market / cash buyer resale values only.
-- A typical 1ct diamond solitaire ring has a cash resale value of $400-900 — not thousands. Price accordingly.
-- When in doubt about stone quality or size, use the LOW end of these ranges.
+DIAMOND & GEMSTONE VALUE — MANDATORY:
+- Any stone under 1.00ct — including all accent, melee, halo, pavé, and colored stones — adds $0.
+- Single diamond 1.00-2.00ct: add $400-900 to the metal value.
+- Single diamond over 2.00ct: add $800-3,500. Use the higher end only with a visible GIA certificate.
+- Colored stones: $0 unless a certificate is visible.
+- Lab-grown diamonds: $0.
+- A large, bright stone in a mall-store design: treat as lab-grown/CZ ($0) unless certified.
+- Use secondary-market / cash-buyer resale values only — never retail, insurance, or appraised values.
 
 ═══════════════════════════════════════
 
@@ -1258,14 +1271,25 @@ FORMAT C — LUXURY GOODS (use for designer handbags, purses, wallets, belts, sh
   ],
   "offer_low": 800,
   "offer_high": 1200,
-  "offer_notes": "Based on current resale market for this model and condition. Final offer subject to in-person authentication."
+  "offer_notes": "Based on current resale market for this model and condition. Final offer subject to in-person authentication.",
+  "risk": "none | low | high",
+  "risk_flags": [],
+  "risk_notes": ""
 }
 
 LUXURY GOODS PRICING:
 - Use your knowledge of current pre-owned resale market values for the exact brand, model, size, material, and condition you identified
-- Price at the HIGHER end of the market range to be competitive
+- Price at the MIDDLE of the market range
 - ALWAYS default Completeness to "Full set: dust bag, box, receipt" — assume full set for pricing
 - If user corrects to missing accessories, reduce 10-20%
+
+═══════════════════════════════════════
+INTERNAL RISK ASSESSMENT (all formats)
+═══════════════════════════════════════
+Produce the customer estimate exactly per the rules above. Separately and candidly, assess risk. Cues: GP / GF / HGE / 1/20 12K / 'gold tone' stamps; costume brands (Monet, Napier, Trifari, Avon, Park Lane); flaking or green wear; lightweight-looking construction; misprinted or misaligned watch markers; 'iced out' aftermarket stones; mall-store stone sizes. The risk fields are never shown to the customer.
+- "risk": "none", "low", or "high".
+- "risk_flags": zero or more of ["plated_or_gold_filled","costume_stones","hollow_construction","replica_watch","aftermarket_mods","unverifiable_brand","weight_uncertain","multi_item_uncertain"].
+- "risk_notes": one sentence — what tipped you off and what to check. Empty string when risk is "none".
 
 ═══════════════════════════════════════
 
@@ -1282,28 +1306,9 @@ If the image is not of jewelry, a watch, precious metals, or luxury goods, set i
     .replace(/GOLD_10K_PER_GRAM/g, `$${prices.gold_per_gram_10k}`)
     .replace(/SILVER_STERLING_PER_GRAM/g, `$${prices.silver_per_gram_sterling}`)
     .replace(/SILVER_FINE_PER_GRAM/g, `$${prices.silver_per_gram_fine}`)
-  // Update worked example math
-  const ex14k = prices.gold_per_gram_14k
-  promptText = promptText.replace(
-    /WORKED EXAMPLE \(at \$[\d,]+\/oz gold, 14K per-gram = ~?\$[\d.]+\)/,
-    `WORKED EXAMPLE (at $${prices.gold_oz.toLocaleString()}/oz gold, 14K per-gram = $${ex14k})`
-  )
-  promptText = promptText.replace(
-    /Low melt: 35 × \$[\d.]+ = \$[\d,]+/,
-    `Low melt: 35 × $${ex14k} = $${Math.round(35 * ex14k).toLocaleString()}`
-  )
-  promptText = promptText.replace(
-    /High melt: 50 × \$[\d.]+ = \$[\d,]+/,
-    `High melt: 50 × $${ex14k} = $${Math.round(50 * ex14k).toLocaleString()}`
-  )
-  promptText = promptText.replace(
-    /Offer: \$[\d,]+ - \$[\d,]+/,
-    `Offer: $${Math.round(35 * ex14k).toLocaleString()} - $${Math.round(50 * ex14k).toLocaleString()}`
-  )
-  promptText = promptText.replace(
-    /A 35g 14K gold item at current spot is ALWAYS worth over \$[\d,]+/,
-    `A 35g 14K gold item at current spot is ALWAYS worth over $${Math.round(35 * ex14k).toLocaleString()}`
-  )
+    .replace(/PLATINUM_SPOT_PRICE/g, `$${prices.platinum_oz.toLocaleString()}`)
+    .replace(/PLATINUM_PER_GRAM/g, `$${prices.platinum_per_gram_950}`)
+    .replace('WORKED_EXAMPLE_BLOCK', workedExample(prices))
 
   if (corrections) {
     promptText += `\
@@ -1324,7 +1329,9 @@ ${corrections}`
     // caveat it as pending in-person verification). Sonnet 4.6 = much faster,
     // ~40% cheaper, and follows the detailed prompt well. (Was claude-opus-4-20250514.)
     model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
+    // 1500 (the /api/analyze cap): itemized multi-piece answers plus the risk
+    // fields can run past 1024 and truncate the JSON.
+    max_tokens: 1500,
     temperature: 0.3,
     messages: [
       {
@@ -1561,6 +1568,7 @@ export default function App() {
         offerNotes: result?.offer_notes || '',
         confidence: result?.confidence || '',
         itemType: result?.item_type || '',
+        ...riskFields(result),
         shippingMethod: '',
         address: '',
         source: 'photo_browse',
@@ -1691,6 +1699,7 @@ export default function App() {
       offerNotes: analysis?.offer_notes || '',
       confidence: analysis?.confidence || '',
       itemType: analysis?.item_type || '',
+      ...riskFields(analysis),
       shippingMethod: shippingData.method,
       address: fullAddress,
       source: directQuote ? 'direct_quote' : limitGated ? 'limit_gate' : 'photo_flow',
@@ -3125,7 +3134,7 @@ Additional info: ${customerEditsText}` : correctionLines
                                 item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                                 description: analysis?.description || '', details: analysis?.details || [],
                                 offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
+                                itemType: analysis?.item_type || '', ...riskFields(analysis), source: 'variant_b_gate', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
                               }),
                             }).catch(() => {})
                           }
@@ -3154,7 +3163,7 @@ Additional info: ${customerEditsText}` : correctionLines
                                 item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                                 description: analysis?.description || '', details: analysis?.details || [],
                                 offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                                itemType: analysis?.item_type || '', source: 'variant_b_gate', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
+                                itemType: analysis?.item_type || '', ...riskFields(analysis), source: 'variant_b_gate', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
                               }),
                             }).catch(() => {})
                           }
@@ -3324,7 +3333,7 @@ Additional info: ${customerEditsText}` : correctionLines
                           item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                           description: analysis?.description || '', details: analysis?.details || [],
                           offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
+                          itemType: analysis?.item_type || '', ...riskFields(analysis), source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
                         }),
                       }).catch(() => {})
                       onGetOffer()
@@ -3354,7 +3363,7 @@ Additional info: ${customerEditsText}` : correctionLines
                           item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
                           description: analysis?.description || '', details: analysis?.details || [],
                           offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
+                          itemType: analysis?.item_type || '', ...riskFields(analysis), source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
                         }),
                       }).catch(() => {})
                       onGetOffer()
