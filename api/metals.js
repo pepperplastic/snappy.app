@@ -46,17 +46,24 @@ export default async function handler(req, res) {
   }
 
   const spot = await fetchSpotFromMetalpriceapi(process.env.METALS_API_KEY);
-  if (!spot || !spot.platinum) {
+  if (!spot) {
     // Serve the last good prices rather than failing, if we have any.
     if (cache.body) {
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json({ ...cache.body, source: 'metalpriceapi-stale' });
     }
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(503).json({ error: 'Spot prices unavailable' });
+    return res.status(503).json({
+      error: 'Spot prices unavailable',
+      reason: process.env.METALS_API_KEY ? 'metalpriceapi request failed (see function logs)' : 'METALS_API_KEY is not set',
+    });
   }
 
-  cache = { at: Date.now(), body: shape(spot.gold, spot.silver, spot.platinum) };
+  // Platinum can be missing on some metalpriceapi plans; the browser then
+  // uses its platinum fallback (buildMetalPrices) and gold/silver stay live.
+  const body = shape(spot.gold, spot.silver, spot.platinum || NaN);
+  if (!spot.platinum) { delete body.platinum_oz; delete body.platinum_per_gram_950; }
+  cache = { at: Date.now(), body };
   res.setHeader('Cache-Control', 'public, s-maxage=900, stale-while-revalidate=300');
   return res.status(200).json(cache.body);
 }
