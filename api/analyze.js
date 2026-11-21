@@ -17,7 +17,7 @@
 //  product. Same-origin + field validation is the right ceiling here.
 // ═══════════════════════════════════════════════════════════════
 
-import { fetchSpotFromMetalpriceapi } from './_lib/spot.js';
+import { getSpot } from './_lib/spot.js';
 
 // Hosts allowed to call this endpoint. Vercel preview deploys are
 // included so staging keeps working.
@@ -52,30 +52,28 @@ const MAX_TEXT_CHARS = 40000; // the appraisal prompt is ~12k
 
 // ── Spot price cache (persists across warm invocations) ──
 let priceCache = {
-  date: null,
+  at: 0,
   gold: null,
   silver: null,
 };
+const PRICE_CACHE_MS = 15 * 60 * 1000;   // same as /api/metals
 
 // Last resort only. Set from live spot on Nov 19 2026.
 const FALLBACK_GOLD = 3600;
 const FALLBACK_SILVER = 43;
 
-// NOV 19 FIX: this used to compute gold as 1 / rates.USDXAU. USDXAU is already
-// USD per ounce, so that came out ≈ 0, failed the > 1000 check, and every call
-// silently used the fallback ($5,000 gold / $81 silver). Shared parser now.
+// Source order lives in getSpot(): gold-api.com first, metalpriceapi only when
+// METALS_API_KEY is set. (Before Nov 19 this read metalpriceapi alone, inverted
+// USDXAU, and so always used the $5,000 / $81 fallback.)
 async function getSpotPrices() {
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Return cached if same day
-  if (priceCache.date === today && priceCache.gold) {
+  if (priceCache.gold && Date.now() - priceCache.at < PRICE_CACHE_MS) {
     return { gold: priceCache.gold, silver: priceCache.silver };
   }
 
-  const spot = await fetchSpotFromMetalpriceapi(process.env.METALS_API_KEY);
+  const spot = await getSpot();
   if (spot) {
-    priceCache = { date: today, gold: Math.round(spot.gold), silver: Math.round(spot.silver * 100) / 100 };
-    console.log(`Spot prices updated: Gold $${priceCache.gold}/oz, Silver $${priceCache.silver}/oz`);
+    priceCache = { at: Date.now(), gold: Math.round(spot.gold), silver: Math.round(spot.silver * 100) / 100 };
+    console.log(`Spot prices updated (${spot.source}): Gold $${priceCache.gold}/oz, Silver $${priceCache.silver}/oz`);
     return priceCache;
   }
 
