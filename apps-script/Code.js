@@ -151,10 +151,11 @@ function _aiRiskFromPayload(data) {
   return { ai_risk: level, ai_risk_flags: flags.join(', '), ai_risk_notes: String(data.aiRiskNotes || '').trim().slice(0, 300) };
 }
 
-// Adds any missing risk headers at the END of the tab. Returns header → index.
-function _ensureAiRiskCols(sheet) {
+// Adds any missing headers at the END of the tab. Returns header → index.
+function _ensureAiRiskCols(sheet) { return _ensureCols(sheet, AI_RISK_COLS); }
+function _ensureCols(sheet, cols) {
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  AI_RISK_COLS.forEach(function (col) {
+  cols.forEach(function (col) {
     if (headers.indexOf(col) >= 0) return;
     var next = sheet.getLastColumn() + 1;
     sheet.getRange(1, next).setValue(col).setFontWeight('bold');
@@ -162,7 +163,7 @@ function _ensureAiRiskCols(sheet) {
     Logger.log('added column ' + col + ' to ' + sheet.getName());
   });
   var idx = {};
-  AI_RISK_COLS.forEach(function (col) { idx[col] = headers.indexOf(col); });
+  cols.forEach(function (col) { idx[col] = headers.indexOf(col); });
   return idx;
 }
 
@@ -510,6 +511,7 @@ function handleLeadIngestion(data) {
     ];
     var aiRisk = _aiRiskFromPayload(data);   // Nov 19: internal risk block, null if absent
     _aiRiskLeadRow(sheet, row, aiRisk);
+    _capiLeadRow(sheet, row, data);          // Nov 23: fbp/fbc/user agent/click time for CAPI
 
     sheet.appendRow(row);
 
@@ -563,6 +565,10 @@ function handleLeadIngestion(data) {
           source:  data.source  || data.utm_source || '',
           notes:   ''
         });
+
+        // Nov 23: server copy of the browser's CompleteRegistration (same event_id).
+        try { _enqueueCapiRegistration(data, custId, name); }
+        catch (ce) { Logger.log('CAPI registration enqueue (non-fatal): ' + ce); }
 
         // ── Shipment logic ──────────────────────────────────
         // PRE-RECEIVED stages: kit/label hasn't arrived at Snappy yet.
@@ -1542,7 +1548,7 @@ function getAttributionForCustomer(customerId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  META CONVERSIONS API (CAPI) — server-side conversion events (Jun 3)
+//  META CONVERSIONS API (CAPI) — server-side conversion events (Jun 3; Nov 23)
 //
 //  WHY: ads optimize for CompleteRegistration (form-fillers), but ~90% never
 //  ship. By sending the DEEP, OFFLINE conversions back to Meta — "this lead
@@ -1553,24 +1559,42 @@ function getAttributionForCustomer(customerId) {
 //  Fires to the SAME pixel the ads use: KIT Pixel 1040162166644550.
 //
 //  Events:
-//    - "Shipped"  (custom)  when shipment hits 'received'  — mid-funnel signal
-//    - "Purchase" (standard) when shipment hits 'complete'  — with deal value
+//    - "CompleteRegistration" (standard) on lead intake, when the site sends
+//      regEventId (shipping form submitted). Same event_id as the browser
+//      pixel, so Meta counts it once. action_source 'website'. Queued
+//      (kind 'capi_reg') so the lead POST doesn't wait on Meta.
+//    - "Shipped"  (custom)   when shipment hits 'received'
+//    - "Purchase" (standard) when shipment hits 'complete' — with deal value
+//    Shipped/Purchase stay once-only via capi_shipped_sent / capi_purchase_sent.
 //
-//  Match data: hashed email (SHA-256, lowercased/trimmed per Meta spec) +
-//  fbc (built from the stored fbclid). The fbc is what ties the offline
-//  conversion to the original ad click.
+//  Match data (every event): em, ph, fn, ln, ct, st, zp, country and
+//  external_id (customer id), SHA-256 after Meta's normalization; plus fbp,
+//  fbc, client_ip_address, client_user_agent unhashed. fbc carries the
+//  ORIGINAL click time: the browser's _fbc cookie when we have it, else
+//  fb.1.<fbclid_at>.<fbclid>. The browser ids and fbclid_at are stored on
+//  Lead Intake at intake (CAPI_LEAD_COLS, appended by header name).
 //
 //  SETUP (one-time, you do this): in Apps Script → Project Settings →
 //  Script Properties, add:  META_CAPI_TOKEN = <your Conversions API token>
-//  (pixel ID is not secret, hardcoded below.) Until the token is present,
-//  these functions no-op safely (log + skip) so nothing breaks.
+//  (pixel ID is not secret, hardcoded below.) Without the token nothing is
+//  sent, and each run logs one warning.
 // ═══════════════════════════════════════════════════════════════════════
 
 var META_PIXEL_ID = '1040162166644550';  // KIT Pixel (matches the live ads)
+var CAPI_SITE_URL = 'https://snappy.gold/';
+var CAPI_LEAD_COLS = ['fbp', 'fbc', 'user_agent', 'fbclid_at', 'reg_event_id'];
 
+// Script globals reset on every execution, so this warns once per run.
+var _capiNoTokenWarned = false;
 function _capiToken() {
-  try { return PropertiesService.getScriptProperties().getProperty('META_CAPI_TOKEN') || ''; }
-  catch (e) { return ''; }
+  var t = '';
+  try { t = PropertiesService.getScriptProperties().getProperty('META_CAPI_TOKEN') || ''; }
+  catch (e) {}
+  if (!t && !_capiNoTokenWarned) {
+    _capiNoTokenWarned = true;
+    Logger.log('WARNING: META_CAPI_TOKEN is not set in Script Properties; Meta CAPI events are not being sent.');
+  }
+  return t;
 }
 
 function _sha256Hex(input) {
@@ -1586,51 +1610,100 @@ function _sha256Hex(input) {
   return hex;
 }
 
-// Build Meta's fbc parameter from a stored fbclid.
-// Format: fb.1.<timestamp_ms>.<fbclid>
+// Meta's fbc parameter: fb.1.<click time ms>.<fbclid>. The time must be the
+// original click (or, failing that, the lead) — never the send time. With no
+// known time there is no fbc.
 function _buildFbc(fbclid, tsMs) {
-  if (!fbclid) return '';
-  return 'fb.1.' + (tsMs || Date.now()) + '.' + fbclid;
+  if (!fbclid || !(tsMs > 0)) return '';
+  return 'fb.1.' + Math.round(tsMs) + '.' + fbclid;
+}
+
+function _capiMs(v) {
+  if (!v) return 0;
+  var t = (v instanceof Date ? v : new Date(isNaN(Number(v)) ? v : Number(v))).getTime();
+  return t > 0 ? t : 0;
+}
+
+// ── Meta normalization (before hashing) ──────────────────────────────
+// Names and city: lowercase letters only, no spaces or punctuation.
+function _capiNormLetters(s) { return String(s || '').toLowerCase().replace(/[^\p{L}]/gu, ''); }
+// Phone: digits only with country code, no leading zeros. US 10-digit → 1 + digits.
+function _capiNormPhone(p) {
+  var d = String(p || '').replace(/\D/g, '').replace(/^0+/, '');
+  if (d.length === 10) d = '1' + d;
+  return d.length >= 11 ? d : '';
+}
+
+/**
+ * Build Meta user_data from what we store about a person.
+ * c: { email, phone, name, address, customerId, fbp, fbc, fbclid, fbclidAtMs, ip, userAgent }
+ */
+function _capiUserData(c) {
+  c = c || {};
+  var ud = {};
+  var add = function (key, val) { if (val) ud[key] = [_sha256Hex(val)]; };
+
+  add('em', String(c.email || '').trim().toLowerCase());
+  add('ph', _capiNormPhone(c.phone));
+  var parts = String(c.name || '').trim().split(/\s+/).filter(Boolean);
+  add('fn', _capiNormLetters(parts[0]));
+  if (parts.length > 1) add('ln', _capiNormLetters(parts[parts.length - 1]));
+  if (c.address) {
+    var a = _parseUsAddress(c.address);
+    // Only trust city/state/zip when the zip parsed as a real ZIP.
+    if (/^\d{5}(-\d{4})?$/.test(String(a.zip || '').trim())) {
+      add('zp', String(a.zip).trim().slice(0, 5));
+      add('ct', _capiNormLetters(a.city));
+      var st = String(a.state || '').trim().toLowerCase();
+      if (/^[a-z]{2}$/.test(st)) add('st', st);
+    }
+  }
+  add('country', 'us');  // US-only business: every label is domestic
+  add('external_id', String(c.customerId || '').trim());
+
+  if (c.fbp) ud.fbp = String(c.fbp).trim();
+  var fbc = String(c.fbc || '').trim() || _buildFbc(c.fbclid, c.fbclidAtMs);
+  if (fbc) ud.fbc = fbc;
+  if (c.ip) ud.client_ip_address = String(c.ip).trim();
+  if (c.userAgent) ud.client_user_agent = String(c.userAgent);
+  return ud;
 }
 
 /**
  * Send one server-side event to Meta CAPI.
- * @param eventName  'Purchase' | 'Shipped' | etc.
- * @param opts       { email, fbclid, value, currency, eventId, eventTimeSec }
+ * @param eventName  'CompleteRegistration' | 'Purchase' | 'Shipped' | etc.
+ * @param opts       { user: <_capiUserData input>, value, currency, eventId,
+ *                     eventTimeSec, actionSource, eventSourceUrl, testEventCode }
+ *                   (legacy: email / fbclid directly on opts still work)
  * @returns          { success, status, body } or { success:false, skipped:true }
  */
 function sendMetaCapiEvent(eventName, opts) {
   var token = _capiToken();
-  if (!token) {
-    Logger.log('CAPI skip (' + eventName + '): no META_CAPI_TOKEN in Script Properties');
-    return { success: false, skipped: true, reason: 'no_token' };
-  }
+  if (!token) return { success: false, skipped: true, reason: 'no_token' };
   opts = opts || {};
 
-  var userData = {};
-  if (opts.email)  userData.em  = [ _sha256Hex(opts.email) ];
-  var fbc = _buildFbc(opts.fbclid, opts.eventTimeSec ? opts.eventTimeSec * 1000 : Date.now());
-  if (fbc) userData.fbc = fbc;
-
-  // Meta requires at least one user_data identifier. If we have neither email
-  // nor fbclid, skip — sending an unmatched event is useless.
-  if (!userData.em && !userData.fbc) {
-    Logger.log('CAPI skip (' + eventName + '): no email or fbclid to match on');
+  var userData = _capiUserData(opts.user || opts);
+  // Meta needs at least one real identifier (country alone doesn't count).
+  if (!userData.em && !userData.ph && !userData.external_id && !userData.fbc && !userData.fbp) {
+    Logger.log('CAPI skip (' + eventName + '): no identifier to match on');
     return { success: false, skipped: true, reason: 'no_match_data' };
   }
 
+  var actionSource = opts.actionSource || 'system_generated';  // offline/CRM-originated by default
   var eventData = {
     event_name: eventName,
     event_time: opts.eventTimeSec || Math.floor(Date.now() / 1000),
-    action_source: 'system_generated',  // offline/CRM-originated conversion
+    action_source: actionSource,
     user_data: userData,
   };
+  if (actionSource === 'website') eventData.event_source_url = opts.eventSourceUrl || CAPI_SITE_URL;
   if (opts.eventId) eventData.event_id = opts.eventId;  // dedup key
   if (typeof opts.value === 'number' && opts.value > 0) {
     eventData.custom_data = { value: opts.value, currency: opts.currency || 'USD' };
   }
 
   var payload = { data: [ eventData ] };
+  if (opts.testEventCode) payload.test_event_code = opts.testEventCode;
   var url = 'https://graph.facebook.com/v19.0/' + META_PIXEL_ID + '/events?access_token=' + encodeURIComponent(token);
 
   try {
@@ -1654,19 +1727,114 @@ function sendMetaCapiEvent(eventName, opts) {
   }
 }
 
+// ── Lead Intake: browser ids for CAPI ────────────────────────────────
+// fbclid_at is the ad-click time the browser recorded (cookie), or the
+// intake time when an older cookie didn't carry one.
+function _capiLeadFields(data) {
+  var f = {
+    fbp:          String(data.fbp || '').trim().slice(0, 200),
+    fbc:          String(data.fbc || '').trim().slice(0, 500),
+    user_agent:   String(data.userAgent || '').slice(0, 500),
+    fbclid_at:    '',
+    reg_event_id: String(data.regEventId || '').trim().slice(0, 100),
+  };
+  if (data.fbclid) f.fbclid_at = new Date(_capiMs(data.fbclid_at) || Date.now()).toISOString();
+  return f;
+}
+
+// Place the CAPI fields into a positional Lead Intake row by header index.
+function _capiLeadRow(sheet, row, data) {
+  var f = _capiLeadFields(data);
+  if (!CAPI_LEAD_COLS.some(function (c) { return f[c]; })) return row;
+  var idx = _ensureCols(sheet, CAPI_LEAD_COLS);
+  CAPI_LEAD_COLS.forEach(function (col) {
+    while (row.length < idx[col]) row.push('');
+    row[idx[col]] = f[col];
+  });
+  return row;
+}
+
+// Everything Lead Intake knows about this email for matching, in one pass.
+// Rows are in arrival order: the FIRST fbclid / fbc is the original click;
+// the LAST fbp / user agent / IP is the freshest.
+function _capiLeadContext(email) {
+  var out = { fbclid: '', fbclidAtMs: 0, fbc: '', fbp: '', userAgent: '', ip: '' };
+  var target = String(email || '').trim().toLowerCase();
+  if (!target) return out;
+  var data = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.LEADS).getDataRange().getValues();
+  var H = data[0];
+  var iFbp = H.indexOf('fbp'), iFbc = H.indexOf('fbc'), iUa = H.indexOf('user_agent'), iAt = H.indexOf('fbclid_at');
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][COL.EMAIL] || '').trim().toLowerCase() !== target) continue;
+    var row = data[r];
+    var fbclid = String(row[COL.FBCLID] || '').trim();
+    if (fbclid && !out.fbclid) {
+      out.fbclid = fbclid;
+      out.fbclidAtMs = (iAt >= 0 && _capiMs(row[iAt])) || _capiMs(row[COL.TIMESTAMP]);
+    }
+    if (iFbc >= 0 && !out.fbc && String(row[iFbc] || '').trim()) out.fbc = String(row[iFbc]).trim();
+    if (iFbp >= 0 && String(row[iFbp] || '').trim()) out.fbp = String(row[iFbp]).trim();
+    if (iUa >= 0 && String(row[iUa] || '').trim()) out.userAgent = String(row[iUa]);
+    if (String(row[COL.IP] || '').trim()) out.ip = String(row[COL.IP]).trim();
+  }
+  return out;
+}
+
+// Called by handleLeadIngestion when the site sent regEventId.
+function _enqueueCapiRegistration(data, customerId, name) {
+  if (!data || !data.regEventId || !_capiToken()) return;
+  _enqueue('capi_reg', {
+    event_id:         String(data.regEventId),
+    event_time:       Math.floor(Date.now() / 1000),
+    event_source_url: String(data.eventSourceUrl || ''),
+    customer_id:      customerId || '',
+    email:            data.email || '',
+    phone:            data.phone || '',
+    name:             name || '',
+    address:          data.address || '',
+    ip:               data.ip || '',
+    user_agent:       data.userAgent || '',
+    fbp:              data.fbp || '',
+    fbc:              data.fbc || '',
+    fbclid:           data.fbclid || '',
+    fbclid_at_ms:     data.fbclid ? (_capiMs(data.fbclid_at) || Date.now()) : 0,
+  });
+}
+
+// Queue job 'capi_reg': server copy of the browser's CompleteRegistration.
+// A repeat of the same event_id within 6 hours is skipped here; past that,
+// Meta's own event_id dedup covers it.
+function _sendCapiRegistration(p) {
+  if (!p || !p.event_id || !_capiToken()) return;
+  var cache = CacheService.getScriptCache();
+  var key = 'capi_reg_' + p.event_id;
+  if (cache.get(key)) { Logger.log('CAPI CompleteRegistration already sent: ' + p.event_id); return; }
+  var src = String(p.event_source_url || '');
+  var r = sendMetaCapiEvent('CompleteRegistration', {
+    user: {
+      email: p.email, phone: p.phone, name: p.name, address: p.address, customerId: p.customer_id,
+      ip: p.ip, userAgent: p.user_agent, fbp: p.fbp, fbc: p.fbc, fbclid: p.fbclid, fbclidAtMs: p.fbclid_at_ms,
+    },
+    eventId: p.event_id,
+    eventTimeSec: p.event_time,
+    actionSource: 'website',
+    eventSourceUrl: /^https:\/\/(www\.)?snappy\.gold\//.test(src) ? src : CAPI_SITE_URL,
+  });
+  if (r && r.success) cache.put(key, '1', 21600);
+}
+
 /**
  * Fire the appropriate CAPI event for a shipment that just changed stage.
  * Idempotent via capi_shipped_sent / capi_purchase_sent columns.
- * Called from updateShipment after a stage write.
+ * Called from the queue ('capi' jobs) after a stage write.
  */
 function _fireCapiForShipment(shipmentId, newStage) {
   try {
-    if (!_capiToken()) return; // no-op cleanly if not configured yet
-
     var stage = String(newStage || '').toLowerCase();
     var fireShipped  = (stage === 'received');
     var firePurchase = (stage === 'complete');
     if (!fireShipped && !firePurchase) return;
+    if (!_capiToken()) return; // warned once this run
 
     var ss = SpreadsheetApp.openById(SHEET_ID);
     var sheet = ss.getSheetByName(TAB.SHIPMENTS);
@@ -1688,20 +1856,29 @@ function _fireCapiForShipment(shipmentId, newStage) {
     if (fireShipped  && shippedIdx >= 0 && String(row[shippedIdx] || '').trim()) return;
     if (firePurchase && purchIdx   >= 0 && String(row[purchIdx]   || '').trim()) return;
 
-    // Resolve customer email + attribution (fbclid)
+    // Everything we store about the customer, plus their browser ids and
+    // original click from Lead Intake.
     var customerId = row[custIdx];
     var cust = null;
     try { cust = getCustomers().find(function(c){ return c.customer_id === customerId; }) || null; } catch (e) {}
     var email = cust ? cust.email : '';
-    var attr = null;
-    try { attr = getAttributionForCustomer(customerId); } catch (e) {}
-    var fbclid = attr ? attr.fbclid : '';
+    var lead = {};
+    try { lead = _capiLeadContext(email); } catch (e) { Logger.log('CAPI lead context (non-fatal): ' + e); }
+    var user = {
+      email: email,
+      phone: cust ? cust.phone : '',
+      name: cust ? cust.name : '',
+      address: cust ? cust.address : '',
+      customerId: customerId,
+      ip: lead.ip, userAgent: lead.userAgent, fbp: lead.fbp,
+      fbc: lead.fbc, fbclid: lead.fbclid, fbclidAtMs: lead.fbclidAtMs,
+    };
 
     var nowSec = Math.floor(Date.now() / 1000);
 
     if (fireShipped) {
       sendMetaCapiEvent('Shipped', {
-        email: email, fbclid: fbclid,
+        user: user,
         eventId: 'shipped_' + shipmentId, eventTimeSec: nowSec,
       });
       if (shippedIdx >= 0) sheet.getRange(rowNum + 1, shippedIdx + 1).setValue(new Date().toISOString());
@@ -1710,7 +1887,7 @@ function _fireCapiForShipment(shipmentId, newStage) {
     if (firePurchase) {
       var value = parseFloat(row[priceIdx]) || 0;
       sendMetaCapiEvent('Purchase', {
-        email: email, fbclid: fbclid,
+        user: user,
         value: value, currency: 'USD',
         eventId: 'purchase_' + shipmentId, eventTimeSec: nowSec,
       });
@@ -1722,13 +1899,17 @@ function _fireCapiForShipment(shipmentId, newStage) {
 }
 
 // Test helper — run from editor after setting META_CAPI_TOKEN to verify the pipe.
-// Uses Meta's test_event_code if you pass one (see Events Manager → Test events).
-function testCapiEvent() {
+// Pass Meta's test_event_code (Events Manager → Test events) to keep it out of reporting.
+function testCapiEvent(testEventCode) {
   var r = sendMetaCapiEvent('Purchase', {
-    email: 'test@example.com',
-    fbclid: 'TEST_fbclid_123',
+    user: {
+      email: 'test@example.com', phone: '(305) 555-0100', name: 'Test Person',
+      address: '123 Main St, Miami, FL, 33101', customerId: 'CUST-TEST',
+      fbclid: 'TEST_fbclid_123', fbclidAtMs: Date.now() - 3600 * 1000,
+    },
     value: 180, currency: 'USD',
     eventId: 'test_' + Date.now(),
+    testEventCode: testEventCode || '',
   });
   Logger.log('testCapiEvent result: ' + JSON.stringify(r));
 }

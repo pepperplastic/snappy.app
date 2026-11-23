@@ -639,8 +639,83 @@ function initMetaPixel() {
   window.fbq('track', 'PageView')
 }
 
-function trackMetaEvent(eventName, params = {}) {
-  if (window.fbq) window.fbq('track', eventName, params)
+function trackMetaEvent(eventName, params = {}, eventId) {
+  if (!window.fbq) return
+  if (eventId) window.fbq('track', eventName, params, { eventID: eventId })
+  else window.fbq('track', eventName, params)
+}
+
+// ── Conversion event ids (Nov 23) ──
+// Lead and CompleteRegistration carry a deterministic eventID:
+//   <prefix>_ + SHA-256(lowercase email + today's local date)
+// so Meta can dedupe the pixel against the server (CAPI) copy, and so this
+// browser fires each conversion once per person per day. Ids already fired
+// live in localStorage; a repeat skips the pixel (and the Google Ads
+// conversion for registrations) but the lead still goes to the backend.
+const FIRED_EVENTS_KEY = 'snappy_fired_events'
+
+function readFiredEvents() {
+  try { return JSON.parse(localStorage.getItem(FIRED_EVENTS_KEY) || '[]') } catch { return [] }
+}
+
+function hasFiredEvent(id) {
+  return readFiredEvents().includes(id)
+}
+
+function markEventFired(id) {
+  try {
+    const list = readFiredEvents().filter(x => x !== id)
+    list.push(id)
+    localStorage.setItem(FIRED_EVENTS_KEY, JSON.stringify(list.slice(-200)))
+  } catch { /* storage blocked: the guard just won't hold across reloads */ }
+}
+
+async function sha256Hex(text) {
+  try {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+  } catch {
+    // No SubtleCrypto (non-secure context). Still deterministic, just not SHA-256.
+    let h1 = 0x811c9dc5, h2 = 0x01000193
+    for (let i = 0; i < text.length; i++) {
+      h1 = Math.imul(h1 ^ text.charCodeAt(i), 16777619) >>> 0
+      h2 = Math.imul(h2 ^ text.charCodeAt(i), 2246822519) >>> 0
+    }
+    return 'x' + h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')
+  }
+}
+
+function localDateStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+async function conversionEventId(prefix, email) {
+  const who = String(email || '').trim().toLowerCase() || getSessionId()
+  return `${prefix}_${await sha256Hex(who + localDateStr())}`
+}
+
+// Fire a Meta pixel event at most once per eventId. Returns true if it fired.
+function trackMetaOnce(eventName, params, eventId) {
+  if (hasFiredEvent(eventId)) return false
+  trackMetaEvent(eventName, params, eventId)
+  markEventFired(eventId)
+  return true
+}
+
+// Lead pixel event with its eventID, once per person per day.
+async function trackLeadOnce(email, params) {
+  trackMetaOnce('Lead', params, await conversionEventId('lead', email))
+}
+
+// Browser identifiers the backend needs to mirror events server-side.
+function metaBrowserIds() {
+  return {
+    fbp: getCookie('_fbp') || '',
+    fbc: getCookie('_fbc') || '',
+    userAgent: navigator.userAgent || '',
+    eventSourceUrl: window.location.origin + window.location.pathname,
+  }
 }
 
 function initRedditPixel() {
@@ -779,6 +854,13 @@ function captureUtmParams() {
     const val = params.get(key)
     if (val) { utm[key] = val; hasAny = true }
   })
+  // When the ad click happened. Meta's fbc must carry the click time, and the
+  // backend builds fbc from fbclid + this when the _fbc cookie is missing.
+  // A reload with the same fbclid still in the URL keeps the first time.
+  if (utm.fbclid) {
+    const prev = getStoredUtm()
+    utm.fbclid_at = prev.fbclid === utm.fbclid && prev.fbclid_at ? prev.fbclid_at : Date.now()
+  }
   // Auto-detect source from click IDs if utm_source not set
   if (!utm.utm_source && utm.gclid) {
     utm.utm_source = 'google'
@@ -1431,6 +1513,9 @@ export default function App() {
   const [showWebcam, setShowWebcam] = useState(false)
   // FIX 1: Initialize method as empty string so lead form submission doesn't prematurely send 'kit'
   const [shippingData, setShippingData] = useState({ address: '', city: '', state: '', zip: '', method: '' })
+  const [shippingErrors, setShippingErrors] = useState({})
+  const [shippingSubmitting, setShippingSubmitting] = useState(false)
+  const shippingSubmittingRef = useRef(false)
   const [showContact, setShowContact] = useState(false)
   const [showFloatingMenu, setShowFloatingMenu] = useState(false)
   const [directQuote, setDirectQuote] = useState(false)
@@ -1654,7 +1739,7 @@ export default function App() {
     e.preventDefault()
     submitLead()
     trackGadsConversion(GADS_LEAD_LABEL)
-    trackMetaEvent('Lead', { content_name: 'Lead Form Submitted' })
+    trackLeadOnce(leadData.email, { content_name: 'Lead Form Submitted' })
     trackRedditEvent('Lead')
     clearAnalysisLimit()
     setLimitReached(false)
@@ -1713,6 +1798,8 @@ export default function App() {
       image: compressedImage,
       userEdits: userEdits.length > 0 ? userEdits : undefined,
        customerEditsText: customerEditsText || '',
+      ...metaBrowserIds(),
+      ...extraData,
     }
     fetch('/api/submit-lead', {
       method: 'POST',
@@ -1721,13 +1808,39 @@ export default function App() {
     }).catch(err => console.error('Lead submit error:', err))
   }
 
-  const handleShippingSubmit = (e) => {
-    e.preventDefault()
-    submitLead()
+  // Required before anything fires. Returns { field: message } for blanks.
+  const shippingFieldErrors = (d) => {
+    const errs = {}
+    if (!String(d.address || '').trim()) errs.address = 'Enter your street address'
+    if (!String(d.city || '').trim()) errs.city = 'Enter your city'
+    if (!String(d.state || '').trim()) errs.state = 'Enter your state'
+    if (!String(d.zip || '').trim()) errs.zip = 'Enter your ZIP'
+    return errs
+  }
+
+  // Re-entering the shipping step (second item, email return link) starts unlocked.
+  useEffect(() => {
+    if (step === STEPS.SHIPPING) { shippingSubmittingRef.current = false; setShippingSubmitting(false) }
+  }, [step])
+
+  const handleShippingSubmit = async (e) => {
+    e?.preventDefault?.()
+    if (shippingSubmittingRef.current) return
+    const errs = shippingFieldErrors(shippingData)
+    setShippingErrors(errs)
+    if (Object.keys(errs).length) return
+    shippingSubmittingRef.current = true
+    setShippingSubmitting(true)
+
+    const regEventId = await conversionEventId('reg', leadData.email)
+    // The backend mirrors CompleteRegistration to CAPI with this same id.
+    submitLead({ regEventId })
     // CompleteRegistration is THE success event — fired when shipping address is submitted.
     // This is the moment the lead becomes shippable. Facebook ad set should optimize for this.
-    trackMetaEvent('CompleteRegistration', { content_name: 'Shipping Form Submitted' })
-    trackGadsConversion(GADS_REG_LABEL)
+    // Once per event id: a repeat the same day skips the pixel AND the Google Ads conversion.
+    if (trackMetaOnce('CompleteRegistration', { content_name: 'Shipping Form Submitted' }, regEventId)) {
+      trackGadsConversion(GADS_REG_LABEL)
+    }
     if (directQuote) {
       setDirectQuote(false) // Reset so photo flow doesn't loop back to "Get a Quote"
       setStep(STEPS.CAPTURE)
@@ -1735,6 +1848,7 @@ export default function App() {
       setStep(STEPS.SUBMITTED)
     }
   }
+
 
   return (
     <div style={styles.app}>
@@ -1855,7 +1969,7 @@ export default function App() {
               trackEvent('cta_submit_from_offer')
               // Returning user submitting from offer screen — they have email but not address yet.
               // Fire Lead (mid-funnel signal), NOT Purchase (no purchase has occurred).
-              trackMetaEvent('Lead', { content_name: 'Direct Submit From Offer' })
+              trackLeadOnce(leadData.email, { content_name: 'Direct Submit From Offer' })
               trackRedditEvent('Lead')
               trackGadsConversion(GADS_LEAD_LABEL)
               setStep(STEPS.SUBMITTED)
@@ -1886,6 +2000,9 @@ export default function App() {
             shippingData={shippingData}
             setShippingData={setShippingData}
             onSubmit={handleShippingSubmit}
+            errors={shippingErrors}
+            setErrors={setShippingErrors}
+            submitting={shippingSubmitting}
             leadData={leadData}
             analysis={analysis}
           />
@@ -2938,11 +3055,6 @@ function OfferScreen({ analysis, imageData, onGetOffer, onDirectSubmit, onRetry,
   const [gateEmail, setGateEmail] = useState('')
   const [gateUnlocked, setGateUnlocked] = useState(false)
 
-  // Variant C: nudge state
-  const [nudgeDismissed, setNudgeDismissed] = useState(false)
-  const [nudgeEmail, setNudgeEmail] = useState('')
-  const [nudgeSubmitted, setNudgeSubmitted] = useState(false)
-
   // Live gold spot price for trust-anchoring on the offer screen
   const [spotPrice, setSpotPrice] = useState(null)
   useEffect(() => {
@@ -3124,7 +3236,7 @@ Additional info: ${customerEditsText}` : correctionLines
                             setGateUnlocked(true)
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
-                            trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
+                            trackLeadOnce(gateEmail, { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
                             fetch('/api/submit-lead', {
                               method: 'POST',
@@ -3152,7 +3264,7 @@ Additional info: ${customerEditsText}` : correctionLines
                             setGateUnlocked(true)
                             setLeadData(prev => ({ ...prev, email: gateEmail }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
-                            trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
+                            trackLeadOnce(gateEmail, { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
                             // Send notification with email
                             fetch('/api/submit-lead', {
@@ -3291,106 +3403,6 @@ Additional info: ${customerEditsText}` : correctionLines
 
           {/* estimate_received → lead_form_started is 66.9%; this is that decision. */}
           <ReviewTicker />
-
-          {/* VARIANT C: Nudge banner — persistent email prompt */}
-          {variant === 'C' && !nudgeDismissed && !nudgeSubmitted && (
-            <div style={{
-              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
-              background: 'linear-gradient(135deg, #1A1816, #2A2520)',
-              padding: '16px 20px', boxShadow: '0 -4px 24px rgba(0,0,0,0.15)',
-              animation: 'slideUp 0.4s ease',
-            }}>
-              <button
-                onClick={() => { setNudgeDismissed(true); trackEvent('nudge_dismissed') }}
-                style={{
-                  position: 'absolute', top: 8, right: 12, background: 'none',
-                  border: 'none', color: '#8A8580', fontSize: 18, cursor: 'pointer', padding: 4,
-                }}
-              >✕</button>
-              <p style={{ color: '#F0E6D0', fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
-                Want to lock in this offer?
-              </p>
-              <p style={{ color: '#9B8E7B', fontSize: 12, marginBottom: 10 }}>
-                Enter your email and we'll save your estimate and send you a firm offer.
-              </p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="email"
-                  value={nudgeEmail}
-                  onChange={(e) => setNudgeEmail(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && nudgeEmail.includes('@')) {
-                      setNudgeSubmitted(true)
-                      setLeadData(prev => ({ ...prev, email: nudgeEmail }))
-                      trackEvent('nudge_email_submitted', { method: 'variant_c' })
-                      trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
-                            trackRedditEvent('SignUp')
-                      fetch('/api/submit-lead', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          firstName: '', lastName: '', email: nudgeEmail, phone: '', notes: '',
-                          item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
-                          description: analysis?.description || '', details: analysis?.details || [],
-                          offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', ...riskFields(analysis), source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
-                        }),
-                      }).catch(() => {})
-                      onGetOffer()
-                    }
-                  }}
-                  placeholder="your@email.com"
-                  style={{
-                    flex: 1, padding: '10px 14px', borderRadius: 8,
-                    border: '1px solid #444', fontSize: 14, fontFamily: 'inherit',
-                    background: '#2A2520', color: '#F0E6D0', outline: 'none',
-                  }}
-                />
-                <button
-                  onClick={() => {
-                    if (nudgeEmail.includes('@')) {
-                      setNudgeSubmitted(true)
-                      setLeadData(prev => ({ ...prev, email: nudgeEmail }))
-                      trackEvent('nudge_email_submitted', { method: 'variant_c' })
-                      trackMetaEvent('Lead', { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
-                            trackRedditEvent('SignUp')
-                      // Send notification with email
-                      fetch('/api/submit-lead', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          firstName: '', lastName: '', email: nudgeEmail, phone: '', notes: '',
-                          item: analysis?.title || '', offerRange: `$${analysis?.offer_low?.toLocaleString()} – $${analysis?.offer_high?.toLocaleString()}`,
-                          description: analysis?.description || '', details: analysis?.details || [],
-                          offerNotes: analysis?.offer_notes || '', confidence: analysis?.confidence || '',
-                          itemType: analysis?.item_type || '', ...riskFields(analysis), source: 'variant_c_nudge', variant, ...getStoredUtm(), ip: getIP(), sessionId: getSessionId(),
-                        }),
-                      }).catch(() => {})
-                      onGetOffer()
-                    }
-                  }}
-                  style={{
-                    padding: '10px 20px', borderRadius: 8, border: 'none',
-                    background: 'linear-gradient(135deg, #C8953C, #A67B2E)', color: '#fff',
-                    fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
-                  }}
-                >
-                  Save Offer
-                </button>
-              </div>
-            </div>
-          )}
-          {variant === 'C' && nudgeSubmitted && (
-            <div style={{
-              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
-              background: '#1A3A1A', padding: '14px 20px', textAlign: 'center',
-              animation: 'slideUp 0.3s ease',
-            }}>
-              <p style={{ color: '#A0D8A0', fontSize: 14, fontWeight: 600 }}>
-                ✓ Saved! We'll be in touch with a firm offer.
-              </p>
-            </div>
-          )}
         </>
       ) : (
         <div style={styles.offerCard}>
@@ -3546,9 +3558,15 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
 // ═══════════════════════════════════════════════
 //  SHIPPING OPTIONS
 // ═══════════════════════════════════════════════
-function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, analysis }) {
-  const update = (field) => (e) =>
+function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, analysis, errors = {}, setErrors, submitting }) {
+  const update = (field) => (e) => {
     setShippingData((prev) => ({ ...prev, [field]: e.target.value }))
+    if (errors[field] && setErrors) setErrors((prev) => ({ ...prev, [field]: undefined }))
+  }
+  const inputStyle = (field, extra) => ({ ...styles.formInput, ...extra, ...(errors[field] ? { border: '1px solid #D64545' } : null) })
+  const fieldError = (field) => errors[field]
+    ? <p role="alert" style={{ color: '#D64545', fontSize: 12, margin: '4px 0 0' }}>{errors[field]}</p>
+    : null
 
   const isUsps = shippingData.method === 'usps'
   const isReturn = new URLSearchParams(window.location.search).get('return') === 'shipping'
@@ -3625,8 +3643,10 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
             value={shippingData.address}
             onChange={update('address')}
             placeholder="123 Main Street, Apt 4B"
-            style={styles.formInput}
+            aria-invalid={!!errors.address}
+            style={inputStyle('address')}
           />
+          {fieldError('address')}
         </div>
         <div style={styles.formRow}>
           <div style={{ ...styles.formGroup, flex: 2 }}>
@@ -3637,8 +3657,10 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
               value={shippingData.city}
               onChange={update('city')}
               placeholder="Miami"
-              style={styles.formInput}
+              aria-invalid={!!errors.city}
+              style={inputStyle('city')}
             />
+            {fieldError('city')}
           </div>
           <div style={{ ...styles.formGroup, flex: 1 }}>
             <label style={styles.formLabel}>State *</label>
@@ -3649,8 +3671,10 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
               onChange={update('state')}
               placeholder="FL"
               maxLength={2}
-              style={{ ...styles.formInput, textTransform: 'uppercase' }}
+              aria-invalid={!!errors.state}
+              style={inputStyle('state', { textTransform: 'uppercase' })}
             />
+            {fieldError('state')}
           </div>
           <div style={{ ...styles.formGroup, flex: 1 }}>
             <label style={styles.formLabel}>ZIP *</label>
@@ -3661,13 +3685,16 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
               onChange={update('zip')}
               placeholder="33101"
               maxLength={10}
-              style={styles.formInput}
+              aria-invalid={!!errors.zip}
+              style={inputStyle('zip')}
             />
+            {fieldError('zip')}
           </div>
         </div>
 
-        <button type="button" onClick={onSubmit} style={styles.firmOfferBtn}>
-          <span>Email My Label Now</span>
+        <button type="button" onClick={onSubmit} disabled={submitting}
+          style={{ ...styles.firmOfferBtn, ...(submitting ? { opacity: 0.6, cursor: 'not-allowed' } : null) }}>
+          <span>{submitting ? 'Sending…' : 'Email My Label Now'}</span>
           <ArrowIcon size={18} />
         </button>
         <p style={styles.formDisclaimer}>

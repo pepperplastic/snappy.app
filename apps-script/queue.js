@@ -97,6 +97,7 @@ function processQueue() {
 
     try {
       if (kind === 'capi')        _processCapiJob(payload);
+      else if (kind === 'capi_reg') _processCapiRegJob(payload);
       else if (kind === 'sms_in') _processSmsInboundJob(payload);
       else if (kind === 'flex')   _processFlexJob(payload);
       else Logger.log('processQueue: unknown kind "' + kind + '" — skipping');
@@ -119,6 +120,12 @@ function processQueue() {
 function _processCapiJob(p) {
   if (typeof _fireCapiForShipment !== 'function') return;
   _fireCapiForShipment(p.shipment_id, p.stage);
+}
+
+// ── Job: Meta CAPI CompleteRegistration (lead intake, Nov 23) ─────────
+function _processCapiRegJob(p) {
+  if (typeof _sendCapiRegistration !== 'function') return;
+  _sendCapiRegistration(p);
 }
 
 // ── Job: inbound SMS from Quo ────────────────────────────────────────
