@@ -433,6 +433,17 @@ function _rulesSequences(installed) {
     }),
   });
 
+  // Quo contact sync (not a customer message)
+  out.push({
+    key: 'quo_sync', label: 'Quo contact sync', file: 'Code.gs',
+    trigger: _rulesTrigger(_rulesFn('createQuoSyncTrigger'), 'createQuoSyncTrigger', 'quoSyncRecentCustomers', installed),
+    rules: [
+      { ok: true, text: 'At fulfillment, right before the label SMS, the customer is created in Quo (name, phone, email) unless the Customers row already has a quo_contact_id; the Quo id is stored there. The hourly backfill does the same for customers created in the last 25 hours that still have no quo_contact_id.', evidence: [] },
+    ],
+    copy: [],
+    copy_note: 'No customer-facing message — this only creates contacts in Quo so texts show a name.',
+  });
+
   return out;
 }
 

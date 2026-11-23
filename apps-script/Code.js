@@ -3770,6 +3770,8 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
       smsTail = '\n\nNo printer? Just pull up the label on your phone and bring it to any FedEx Office — they\'ll print it for you.';
     }
     var smsText = smsBase + smsTail + ' — David @ Snappy Gold';
+    // Nov 23: make sure the contact (with name) exists in Quo before the first text.
+    quoSyncCustomer(custId, { name: customerName, phone: customerPhone, email: customerEmail });
     // Logged below as label:LABEL_SMS, so suspend the caller's COMMS_KIND
     // (triage sets auto:triage) to avoid a second row for the same text.
     var savedKind = COMMS_KIND;
@@ -6213,9 +6215,13 @@ function auditLabelGenerationV2() {
 //  Functions:
 //   - quoUpsertContact(customer): push one customer
 //   - quoBulkSyncAllCustomers(): one-time backfill of every customer
-//   - quoSyncRecentCustomers(): daily-trigger function; only syncs customers
-//     created/updated in the last 25 hours (idempotent — Quo dedups by phone)
-//   - createQuoSyncTrigger(): one-time setup, installs the daily trigger
+//   - quoSyncRecentCustomers(hours): hourly backfill trigger; syncs customers
+//     created in the last `hours` (default 25) that have no quo_contact_id yet
+//   - quoSyncLast7Days(): run by hand — the same sync over the last 7 days
+//   - quoSyncCustomer(customerId, fields): one customer, called at fulfillment
+//     right before the label SMS so the name is in Quo before the first text
+//   - createQuoSyncTrigger(): installs the hourly trigger (idempotent)
+//  API key: Script Property QUO_API_KEY (read into QUO_API_KEY at load).
 //
 //  Sync key column: a new `quo_contact_id` column in the Customers tab.
 //  After a contact is pushed, its Quo ID is stored so we know it's synced.
@@ -6345,7 +6351,10 @@ function quoBulkSyncAllCustomers() {
 // Daily trigger function: syncs customers created in the last 25 hours that
 // haven't been pushed to Quo yet. Quo dedups by phone, so we can run this
 // safely on a daily cadence without creating duplicates.
-function quoSyncRecentCustomers() {
+function quoSyncRecentCustomers(hours) {
+  // A time trigger passes an event object, not a number → default window.
+  var windowHours = (typeof hours === 'number' && hours > 0) ? hours : 25;
+  if (!QUO_API_KEY) { Logger.log('quoSyncRecentCustomers: QUO_API_KEY missing from Script Properties'); return { success: false, error: 'no QUO_API_KEY' }; }
   var ss = SpreadsheetApp.openById(SHEET_ID);
   var sheet = ss.getSheetByName(TAB.CUSTOMERS);
   var data = sheet.getDataRange().getValues();
@@ -6354,15 +6363,15 @@ function quoSyncRecentCustomers() {
   var quoIdIdx = headers.indexOf('quo_contact_id');
   if (quoIdIdx < 0) {
     Logger.log('quoSyncRecentCustomers: run quoBulkSyncAllCustomers first to create column');
-    return;
+    return { success: false, error: 'no quo_contact_id column' };
   }
   var phoneIdx = headers.indexOf('phone');
   var nameIdx = headers.indexOf('name');
   var emailIdx = headers.indexOf('email');
   var createdIdx = headers.indexOf('created_at');
 
-  var cutoff = new Date(Date.now() - 25 * 60 * 60 * 1000);
-  var synced = 0;
+  var cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+  var synced = 0, existed = 0, errors = 0, firstErrors = [];
 
   for (var r = 1; r < data.length; r++) {
     var phone = String(data[r][phoneIdx] || '').trim();
@@ -6385,33 +6394,71 @@ function quoSyncRecentCustomers() {
     if (result.success) {
       if (result.contact_id) {
         sheet.getRange(r + 1, quoIdIdx + 1).setValue(result.contact_id);
+        synced++;
       } else if (result.existed) {
         sheet.getRange(r + 1, quoIdIdx + 1).setValue('EXISTED');
+        existed++;
       }
-      synced++;
+    } else {
+      errors++;
+      if (firstErrors.length < 5) firstErrors.push('row ' + (r + 1) + ': ' + result.error);
     }
     Utilities.sleep(200);
   }
 
-  Logger.log('quoSyncRecentCustomers: synced ' + synced + ' new customers');
+  var summary = { success: errors === 0, window_hours: windowHours, synced: synced, existed: existed, errors: errors, first_errors: firstErrors };
+  Logger.log('quoSyncRecentCustomers: ' + JSON.stringify(summary));
+  return summary;
 }
 
-// One-time setup: install the daily Quo sync trigger.
-// Run this once from the Apps Script editor.
-function createQuoSyncTrigger() {
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'quoSyncRecentCustomers') {
-      ScriptApp.deleteTrigger(triggers[i]);
+// Run by hand from the editor: the same sync over the last 7 days.
+function quoSyncLast7Days() { return quoSyncRecentCustomers(7 * 24); }
+
+// One customer, at fulfillment. Skips when the Customers row already has a
+// quo_contact_id; otherwise creates the contact from `fields` (the name /
+// phone / email the label is going out under) and stores the id. Never throws.
+function quoSyncCustomer(customerId, fields) {
+  try {
+    fields = fields || {};
+    if (!QUO_API_KEY) return { success: false, error: 'no QUO_API_KEY' };
+    if (!String(fields.phone || '').trim()) return { success: false, error: 'no phone number' };
+    var sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.CUSTOMERS);
+    var data = sheet.getDataRange().getValues();
+    var h = data[0], iId = h.indexOf('customer_id'), iQuo = h.indexOf('quo_contact_id');
+    var rowNum = -1;
+    if (customerId && iId >= 0) {
+      for (var r = 1; r < data.length; r++) { if (String(data[r][iId]) === String(customerId)) { rowNum = r; break; } }
     }
+    if (rowNum > 0 && iQuo >= 0 && String(data[rowNum][iQuo] || '').trim()) return { success: true, skipped: true };
+    var res = quoUpsertContact({ name: fields.name || '', phone: fields.phone, email: fields.email || '' });
+    if (res.success && rowNum > 0 && iQuo >= 0) {
+      var val = res.contact_id || (res.existed ? 'EXISTED' : '');
+      if (val) sheet.getRange(rowNum + 1, iQuo + 1).setValue(val);
+    }
+    if (!res.success) Logger.log('quoSyncCustomer ' + customerId + ': ' + res.error);
+    return res;
+  } catch (e) {
+    Logger.log('quoSyncCustomer ' + customerId + ' threw: ' + e);
+    return { success: false, error: String(e) };
   }
-  ScriptApp.newTrigger('quoSyncRecentCustomers')
-    .timeBased()
-    .atHour(3)
-    .everyDays(1)
-    .inTimezone('America/New_York')
-    .create();
-  Logger.log('Quo sync trigger created — runs daily at 3am ET');
+}
+
+// Hourly backfill for contacts the fulfillment-time sync missed.
+// Idempotent: if the hourly trigger is already installed, nothing changes.
+// The old daily 3am trigger (no QUO_SYNC_TRIGGER marker) is replaced.
+var QUO_SYNC_TRIGGER_PROP = 'QUO_SYNC_TRIGGER';
+function createQuoSyncTrigger() {
+  var props = PropertiesService.getScriptProperties();
+  var existing = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'quoSyncRecentCustomers'; });
+  if (existing.length === 1 && props.getProperty(QUO_SYNC_TRIGGER_PROP) === 'hourly') {
+    Logger.log('Quo sync trigger already installed (hourly) — nothing to do');
+    return { success: true, already: true };
+  }
+  existing.forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('quoSyncRecentCustomers').timeBased().everyHours(1).create();
+  props.setProperty(QUO_SYNC_TRIGGER_PROP, 'hourly');
+  Logger.log('Quo sync trigger installed — hourly' + (existing.length ? ' (replaced ' + existing.length + ' old)' : ''));
+  return { success: true, replaced: existing.length };
 }
 
 
