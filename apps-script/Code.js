@@ -3422,6 +3422,24 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
   };
 }
 
+// Nov 23: label sends at fulfillment → Contact Log, like post-label touches:
+// type email/sms, kind label:LABEL_EMAIL / label:LABEL_SMS, source auto, the
+// first line of the message. A failed send (thrown, or the provider said no)
+// gets a row too, notes starting "FAILED:".
+function _logLabelSend(custId, shipmentId, to, channel, tag, message, error) {
+  try {
+    var customerId = custId || _commsCustomerId(to);
+    if (!customerId) return;
+    _ensureContactLogColumns(SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.CONTACT_LOG));
+    var firstLine = String(message || '').split('\n')[0].trim().slice(0, 80);
+    addContactLog({
+      customer_id: customerId, shipment_id: shipmentId || '', type: channel,
+      direction: 'out', source: 'auto', kind: 'label:' + tag,
+      notes: error ? ('FAILED: ' + String(error).slice(0, 150) + ' | ' + firstLine) : firstLine,
+    });
+  } catch (e) { Logger.log('label log ' + tag + ' ' + shipmentId + ': ' + e); }
+}
+
 function generateAndSendLabel(custId, shipmentId, shippingType, address, customerName, customerEmail, customerPhone, item) {
   try {
     var rawShippingType = shippingType;
@@ -3701,12 +3719,13 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
       qrSection = '\n\n──────────────\n\nNo printer? No problem.\n\nBring this email up on your phone at any FedEx Office location and show them the attached label. The staff there can print it for you on the spot.';
     }
 
+    var emailFirstLine = 'Your prepaid ' + carrierName + ' return label is attached to this email.';
     var emailPayload = {
       From: FROM_NAME + ' <' + FROM_EMAIL + '>', To: customerEmail,
       Bcc: 'davidisaacweiss@yahoo.com',
       Subject: 'Your prepaid ' + carrierName + ' label is attached, ' + firstName,
       HtmlBody: buildPlainEmail(firstName,
-        'Your prepaid ' + carrierName + ' return label is attached to this email.' +
+        emailFirstLine +
         (awayNoticeLine() ? '\n\n' + awayNoticeLine() : '') +
         '\n\nJust print it, pack ' + itemText + ' in any box or padded envelope, attach the label, and ' + dropText + '.' +
         extraItemsLine +
@@ -3723,11 +3742,21 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
       MessageStream: 'outbound',
     };
 
-    UrlFetchApp.fetch(POSTMARK_API_URL, {
-      method: 'post', contentType: 'application/json',
-      headers: { 'X-Postmark-Server-Token': POSTMARK_API_TOKEN },
-      payload: JSON.stringify(emailPayload), muteHttpExceptions: true,
-    });
+    try {
+      var pmRes = UrlFetchApp.fetch(POSTMARK_API_URL, {
+        method: 'post', contentType: 'application/json',
+        headers: { 'X-Postmark-Server-Token': POSTMARK_API_TOKEN },
+        payload: JSON.stringify(emailPayload), muteHttpExceptions: true,
+      });
+      var pmCode = pmRes.getResponseCode(), pmBody = {};
+      try { pmBody = JSON.parse(pmRes.getContentText()); } catch (pe) {}
+      var pmOk = pmCode === 200 && pmBody.ErrorCode === 0;
+      _logLabelSend(custId, shipmentId, customerEmail, 'email', 'LABEL_EMAIL', emailFirstLine,
+        pmOk ? null : 'HTTP ' + pmCode + ': ' + (pmBody.Message || 'Unknown'));
+    } catch (emailErr) {
+      _logLabelSend(custId, shipmentId, customerEmail, 'email', 'LABEL_EMAIL', emailFirstLine, emailErr);
+      throw emailErr;   // same outcome as before: the outer catch reports the failure
+    }
 
     // MAY 21 PATCH: append no-printer line to SMS.
     // USPS → QR code URL (post office clerk scans it)
@@ -3740,9 +3769,23 @@ function generateAndSendLabel(custId, shipmentId, shippingType, address, custome
     } else if (!isUspsLabel) {
       smsTail = '\n\nNo printer? Just pull up the label on your phone and bring it to any FedEx Office — they\'ll print it for you.';
     }
-    sendSms(customerPhone, customerName,
-      smsBase + smsTail + ' — David @ Snappy Gold'
-    );
+    var smsText = smsBase + smsTail + ' — David @ Snappy Gold';
+    // Logged below as label:LABEL_SMS, so suspend the caller's COMMS_KIND
+    // (triage sets auto:triage) to avoid a second row for the same text.
+    var savedKind = COMMS_KIND;
+    COMMS_KIND = '';
+    try {
+      var smsRes = sendSms(customerPhone, customerName, smsText);
+      if (String(customerPhone || '').trim()) {
+        _logLabelSend(custId, shipmentId, customerPhone, 'sms', 'LABEL_SMS', smsText,
+          smsRes && smsRes.success ? null : ((smsRes && smsRes.error) || 'send failed'));
+      }
+    } catch (smsErr) {
+      _logLabelSend(custId, shipmentId, customerPhone, 'sms', 'LABEL_SMS', smsText, smsErr);
+      throw smsErr;
+    } finally {
+      COMMS_KIND = savedKind;
+    }
 
     return { success: true, tracking: trackingNumber };
 
