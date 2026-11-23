@@ -3521,6 +3521,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
   const [binInput,setBinInput]=useState("");
   const [savingBin,setSavingBin]=useState(false);
   const [binLookup,setBinLookup]=useState("");
+  const [sortMode,setSortMode]=useListSort("received", SORT_MODES, "newest");
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
 
@@ -3538,8 +3539,8 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
   const filtered=useMemo(()=>{
     let list=shipments.filter(s=>RECEIVED_STAGES.includes(s.stage));
     if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
-    return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-  },[shipments,search,custById]);
+    return sortShipments(list, sortMode, s=>new Date(s.created_at||0));
+  },[shipments,search,custById,sortMode]);
 
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
@@ -3564,6 +3565,7 @@ function ReceivedTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search received..." style={{flex:1,minWidth:0,boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <SortSelect value={sortMode} onChange={setSortMode} modes={SORT_MODES}/>
           <ScanButton onScan={(code)=>{
             const hit = shipments.some(s=>String(s.outbound_tracking||"").toUpperCase().includes(code)
                                        || String(s.return_tracking||"").toUpperCase().includes(code));
@@ -3650,6 +3652,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
   const [search,setSearch]=useState("");
   const [binInput,setBinInput]=useState("");
   const [savingBin,setSavingBin]=useState(false);
+  const [sortMode,setSortMode]=useListSort("complete", COMPLETE_SORT_MODES, "purchased");
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
@@ -3660,8 +3663,9 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
     // Most recently PURCHASED first — created_at is the registration date, which
     // for a buy can be months earlier. Fall back through the later stamps.
     const doneAt=s=>new Date(s.purchased_at||s.paid_at||s.received_at||s.created_at||0);
-    return [...list].sort((a,b)=>doneAt(b)-doneAt(a));
-  },[shipments,search,custById]);
+    if(sortMode==="purchased") return [...list].sort((a,b)=>doneAt(b)-doneAt(a));
+    return sortShipments(list, sortMode, s=>new Date(s.created_at||0));
+  },[shipments,search,custById,sortMode]);
 
   const selectedShipment=useMemo(()=>shipments.find(s=>s.shipment_id===selected),[shipments,selected]);
   const selectedCustomer=useMemo(()=>selectedShipment?custById[selectedShipment.customer_id]:null,[selectedShipment,custById]);
@@ -3688,6 +3692,7 @@ function CompleteTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`}}>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search purchased..." style={{flex:1,minWidth:0,boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <SortSelect value={sortMode} onChange={setSortMode} modes={COMPLETE_SORT_MODES}/>
           <ScanButton onScan={(code)=>{
             const hit = shipments.some(s=>String(s.outbound_tracking||"").toUpperCase().includes(code)
                                        || String(s.return_tracking||"").toUpperCase().includes(code));
@@ -3853,6 +3858,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
   const [uploading,setUploading]=useState(false);
   const [showDeferred,setShowDeferred]=useState(false);
   const [flaggedOnly,setFlaggedOnly]=useState(false);   // Nov 19: estimator risk high/low only
+  const [sortMode,setSortMode]=useListSort("fulfill", SORT_MODES, "newest");
 
   const custById=useMemo(()=>{const m={};customers.forEach(c=>m[c.customer_id]=c);return m;},[customers]);
   const logsByCustomer=useMemo(()=>{const m={};contactLogs.forEach(l=>{if(!m[l.customer_id])m[l.customer_id]=[];m[l.customer_id].push(l);});return m;},[contactLogs]);
@@ -3869,10 +3875,10 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
     list=list.filter(s=>showDeferred?isDeferred(s):!isDeferred(s)); // active vs deferred view
     if(flaggedOnly) list=list.filter(s=>!!aiRiskLevel(s));
     if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
-    // SEP 23: newest ACTIVITY first — an append to an old shipment should rise to
-    // the top of Fulfill, not stay buried at its original registration date.
-    return [...list].sort((a,b)=>activityAt(b)-activityAt(a));
-  },[shipments,search,custById,showDeferred,flaggedOnly]);
+    // SEP 23: "Newest" here is newest ACTIVITY — an append to an old shipment should
+    // rise to the top of Fulfill, not stay buried at its original registration date.
+    return sortShipments(list, sortMode, activityAt);
+  },[shipments,search,custById,showDeferred,flaggedOnly,sortMode]);
 
   const kits=filtered.filter(s=>normalizeShipType(s.shipping_type)==="kit");
   const labels=filtered.filter(s=>normalizeShipType(s.shipping_type)==="fedex");   // FedEx labels (incl. legacy 'label')
@@ -4216,6 +4222,7 @@ function FulfillTab({shipments,customers,contactLogs,onUpdate,onNewShipment,init
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{flex:1,background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <SortSelect value={sortMode} onChange={setSortMode} modes={SORT_MODES}/>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11,color:G.muted}}>
           <span style={{background:"#F5F0FF",color:G.purple,borderRadius:4,padding:"2px 8px",fontWeight:600}}>{kits.length} kits</span>
@@ -4287,6 +4294,7 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkModal,setBulkModal]=useState(false);
   const [bulkStage,setBulkStage]=useState("received");
+  const [sortMode,setSortMode]=useListSort("outbound", SORT_MODES, "newest");
   const [bulkSaving,setBulkSaving]=useState(false);
   const [uploadModal,setUploadModal]=useState(false);
   const [uploadResults,setUploadResults]=useState(null);
@@ -4299,8 +4307,8 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
     let list=shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage));
     if(stageFilter) list=list.filter(s=>s.stage===stageFilter);
     if(search){list=list.filter(s=>{const c=custById[s.customer_id]||{};return matchesQuery(search,s.item,c.name,c.email,c.phone,c.address,s.shipment_id,s.return_tracking,s.outbound_tracking);});}
-    return [...list].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-  },[shipments,search,stageFilter,custById]);
+    return sortShipments(list, sortMode, s=>new Date(s.created_at||0));
+  },[shipments,search,stageFilter,custById,sortMode]);
 
   const counts=useMemo(()=>{const m={};shipments.filter(s=>OUTBOUND_STAGES.includes(s.stage)).forEach(s=>m[s.stage]=(m[s.stage]||0)+1);return m;},[shipments]);
 
@@ -4320,7 +4328,10 @@ function OutboundTab({shipments,customers,contactLogs,onUpdate,onNewShipment,ini
   return <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
     <div style={{width:isMobile?"100%":340,borderRight:isMobile?"none":`1px solid ${G.border}`,display:isMobile&&selected?"none":"flex",flexDirection:"column",background:"#fff",flexShrink:0}}>
       <div style={{padding:"10px 12px",borderBottom:`1px solid ${G.border}`,display:"flex",flexDirection:"column",gap:8}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{width:"100%",boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{flex:1,minWidth:0,boxSizing:"border-box",background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 10px",fontSize:12,outline:"none",color:G.text}}/>
+          <SortSelect value={sortMode} onChange={setSortMode} modes={SORT_MODES}/>
+        </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
           <button onClick={()=>setStageFilter(null)} style={{background:!stageFilter?G.gold:"transparent",color:!stageFilter?"#fff":G.muted,border:`1px solid ${!stageFilter?G.gold:G.border}`,borderRadius:20,padding:"2px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>All {Object.values(counts).reduce((a,b)=>a+b,0)}</button>
           {OUTBOUND_STAGES.filter(s=>counts[s]).map(s=><button key={s} onClick={()=>setStageFilter(stageFilter===s?null:s)} style={{background:stageFilter===s?SC[s]+"22":"transparent",color:stageFilter===s?SC[s]:G.muted,border:`1px solid ${stageFilter===s?SC[s]+"66":G.border}`,borderRadius:20,padding:"2px 8px",fontSize:10,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{SL[s]} {counts[s]}</button>)}
@@ -7857,6 +7868,32 @@ function appendedCount(s){
   return Math.max(items>1 ? items-1 : 0, noteLines);
 }
 function activityAt(s){ return new Date(s?.last_activity_at || s?.created_at || 0); }
+
+// Nov 23: list sort for Fulfill / Outbound / Received / Complete, remembered
+// per tab in localStorage. "Newest"/"Oldest" use the tab's own date (dateOf);
+// estimate ties fall back to newest. Complete adds its purchase-date order.
+const LIST_SORT_LABELS = { purchased:"Purchased", newest:"Newest", oldest:"Oldest", est:"Estimate high→low" };
+function useListSort(tab, modes, initial){
+  const [v,setV]=useSticky("snappy_sort_"+tab, initial);
+  return [modes.includes(v)?v:initial, setV];
+}
+function sortShipments(list, mode, dateOf){
+  const t=s=>dateOf(s).getTime()||0;
+  const arr=[...list];
+  if(mode==="oldest") return arr.sort((a,b)=>t(a)-t(b));
+  if(mode==="est") return arr.sort((a,b)=>(parseEstHigh(b.estimate)-parseEstHigh(a.estimate))||(t(b)-t(a)));
+  return arr.sort((a,b)=>t(b)-t(a));
+}
+function SortSelect({value,onChange,modes}){
+  return (
+    <select value={value} onChange={e=>onChange(e.target.value)} title="Sort the list"
+      style={{flexShrink:0,background:G.bg,border:`1px solid ${G.border}`,borderRadius:7,padding:"6px 6px",fontSize:12,color:G.text,outline:"none",cursor:"pointer"}}>
+      {modes.map(m=><option key={m} value={m}>{LIST_SORT_LABELS[m]}</option>)}
+    </select>
+  );
+}
+const SORT_MODES = ["newest","oldest","est"];
+const COMPLETE_SORT_MODES = ["purchased","newest","oldest","est"];
 function wasUpdated(s){
   if(!s?.last_activity_at || !s?.created_at) return false;
   return activityAt(s) > new Date(s.created_at) && appendedCount(s) > 0;
