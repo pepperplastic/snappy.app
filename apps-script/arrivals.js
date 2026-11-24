@@ -493,3 +493,140 @@ function funnelByStep(daysBack) {
   Logger.log('present (' + statusScans + ' shipment(s) had one); otherwise an arrival counts as a scan.');
   return { days: daysBack, totals: tot, noShipLeads: fu };
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SHIP RATE BY CARRIER — editor-run, logs only             (Nov 23, 2026)
+//
+//  shipRateByCarrier(daysBack=120): labels issued in the window (sent_at,
+//  stamped when the shipment goes outbound_complete), grouped by the carrier
+//  the label actually went out on (shipping_service; falls back to
+//  shipping_type), then split by what the customer submitted:
+//    FedEx has been the preselected option since launch ('label' until
+//    Sep 14, 'fedex' after), so shipping_type 'usps' = customer switched,
+//    'fedex'/'label' = kept the default, blank = created in the CRM.
+//  Per group: labels, immature (< 14 days, left out of ship %), arrived,
+//  ship %, median days label → arrival, purchased, buy % (of arrived),
+//  avg paid, label cost (shipping_cost when stored, else $14.16 FedEx /
+//  $5.89 USPS). Reads only: nothing is written or sent.
+// ═══════════════════════════════════════════════════════════════════════
+
+var SRC_FALLBACK_COST = { FedEx: 14.16, USPS: 5.89 };
+var SRC_MATURE_DAYS = 14;
+
+function shipRateByCarrier(daysBack) {
+  daysBack = (parseInt(daysBack, 10) > 0) ? parseInt(daysBack, 10) : 120;
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var D1 = 86400000, now = Date.now();
+  var cutoff = new Date(now - daysBack * D1), matureBefore = now - SRC_MATURE_DAYS * D1;
+  var toDate = function (v) { if (!v) return null; var d = (v instanceof Date) ? v : new Date(v); return isNaN(d.getTime()) ? null : d; };
+  var num = function (v) { return parseFloat(String(v == null ? '' : v).replace(/[^0-9.]/g, '')) || 0; };
+  var pct = function (a, b) { return b ? Math.round(a / b * 100) + '%' : '—'; };
+  var money = function (v) { return '$' + v.toFixed(2); };
+  var median = function (a) {
+    if (!a.length) return null;
+    var s = a.slice().sort(function (x, y) { return x - y; }), m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+
+  var carrierOf = function (s) {
+    var svc = String(s.shipping_service || '').toLowerCase();
+    var t = String(s.shipping_type || '').trim().toLowerCase();
+    if (/fedex/.test(svc)) return 'FedEx';   // first: "FedEx Priority" must not match USPS "priority"
+    if (/usps|ground ?advantage|priority|first ?class/.test(svc)) return 'USPS';
+    if (t === 'kit' || String(s.kit_tracking || '').trim()) return 'Kit / other';
+    if (t === 'fedex' || t === 'label') return 'FedEx';
+    if (t === 'usps') return 'USPS';
+    return 'Kit / other';
+  };
+  var choiceOf = function (s) {
+    var t = String(s.shipping_type || '').trim().toLowerCase();
+    if (t === 'usps') return 'picked USPS';
+    if (t === 'fedex' || t === 'label') return 'kept FedEx default';
+    if (t === 'kit') return 'asked for kit';
+    return t ? 'type "' + t + '"' : 'not recorded (CRM)';
+  };
+
+  var groups = {}, order = ['FedEx', 'USPS', 'Kit / other'];
+  var bucket = function (key) {
+    return groups[key] = groups[key] || { labels: 0, young: 0, youngArr: 0, mature: 0, matureArr: 0, arr: 0, days: [],
+                                          buy: 0, paid: 0, paidN: 0, cost: 0, costActual: 0, costFallback: 0, costUnknown: 0,
+                                          refunded: 0, mismatch: 0 };
+  };
+
+  sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS)).forEach(function (s) {
+    var hasLabel = String(s.outbound_tracking || s.easypost_shipment_id || s.shippo_transaction_id || s.kit_tracking || '').trim();
+    var issued = toDate(s.sent_at) || (hasLabel ? toDate(s.created_at) : null);
+    if (!issued || issued < cutoff || issued.getTime() > now) return;
+
+    var carrier = carrierOf(s), choice = choiceOf(s);
+    var st = String(s.stage || '');
+    var recv = toDate(s.received_at);
+    var arrived = !!recv || ARR_STAGES.indexOf(st) !== -1;
+    var bought = st !== 'returned' && (ARR_PURCHASED.indexOf(st) !== -1 || !!s.purchased_at || !!s.paid_at);
+    var mature = issued.getTime() <= matureBefore;
+    var stored = num(s.shipping_cost);
+    var cost = stored > 0 ? stored : (SRC_FALLBACK_COST[carrier] || 0);
+    var requested = choice === 'picked USPS' ? 'USPS' : (choice === 'kept FedEx default' ? 'FedEx' : null);
+
+    [carrier, carrier + '|' + choice].forEach(function (key) {
+      var g = bucket(key);
+      g.labels++;
+      if (mature) { g.mature++; if (arrived) g.matureArr++; }
+      else { g.young++; if (arrived) g.youngArr++; }
+      if (arrived) g.arr++;
+      if (arrived && recv && recv >= issued) g.days.push((recv - issued) / D1);
+      if (bought) {
+        g.buy++;
+        var p = num(s.purchase_price);
+        if (p > 0) { g.paid += p; g.paidN++; }
+      }
+      g.cost += cost;
+      if (stored > 0) g.costActual++; else if (cost > 0) g.costFallback++; else g.costUnknown++;
+      if (String(s.label_refunded_at || '').trim()) g.refunded++;
+      if (requested && carrier !== 'Kit / other' && requested !== carrier) g.mismatch++;
+    });
+  });
+
+  var line = function (label, g) {
+    var md = median(g.days);
+    return _pad(label, 28) + _padL(g.labels, 7) + _padL(g.young, 6) + _padL(g.matureArr + '/' + g.mature, 9) +
+           _padL(pct(g.matureArr, g.mature), 7) + _padL(md == null ? '—' : md.toFixed(1), 7) +
+           _padL(g.buy, 5) + _padL(pct(g.buy, g.arr), 6) + _padL(g.paidN ? '$' + Math.round(g.paid / g.paidN) : '—', 9) +
+           _padL(g.labels ? money(g.cost / g.labels) : '—', 9) + _padL('$' + Math.round(g.cost), 8);
+  };
+
+  Logger.log('═══ SHIP RATE BY CARRIER — labels issued in the last ' + daysBack + ' days ═══');
+  Logger.log('');
+  Logger.log(_pad('GROUP', 28) + _padL('LABELS', 7) + _padL('<14d', 6) + _padL('ARR/MAT', 9) + _padL('SHIP%', 7) +
+             _padL('MED D', 7) + _padL('BUY', 5) + _padL('BUY%', 6) + _padL('AVG PAID', 9) + _padL('AVG COST', 9) + _padL('TOTAL', 8));
+  var keys = Object.keys(groups);
+  var tops = order.filter(function (k) { return groups[k]; });
+  if (!tops.length) Logger.log('  (no labels issued in this window)');
+  tops.forEach(function (top) {
+    Logger.log(line(top, groups[top]));
+    keys.filter(function (k) { return k.indexOf(top + '|') === 0; })
+        .sort(function (a, b) { return groups[b].labels - groups[a].labels; })
+        .forEach(function (k) { Logger.log(line('  ' + k.split('|')[1], groups[k])); });
+  });
+
+  Logger.log('');
+  Logger.log('DETAILS');
+  tops.forEach(function (top) {
+    var g = groups[top];
+    Logger.log('  ' + _pad(top, 12) + 'cost: ' + g.costActual + ' from shipping_cost, ' + g.costFallback + ' at fallback rate' +
+               (g.costUnknown ? ', ' + g.costUnknown + ' unknown ($0)' : '') +
+               ' · refunded labels: ' + g.refunded +
+               ' · immature already arrived: ' + g.youngArr + '/' + g.young +
+               (g.mismatch ? ' · label carrier ≠ requested: ' + g.mismatch : ''));
+  });
+  Logger.log('');
+  Logger.log('ARR/MAT and SHIP% count only labels at least ' + SRC_MATURE_DAYS + ' days old; <14d shows the rest.');
+  Logger.log('MED D = median days from label issued (sent_at) to received_at. BUY% = purchased / all arrived.');
+  Logger.log('Choice: FedEx is preselected on the site, so "picked USPS" is an active switch; "kept FedEx');
+  Logger.log('default" may include people who clicked FedEx themselves — the site does not record that click.');
+  Logger.log('TOTAL is gross label spend; refunded labels are still counted at cost.');
+  var out = {};
+  keys.forEach(function (k) { var g = groups[k]; out[k] = { labels: g.labels, immature: g.young, mature: g.mature, arrived_mature: g.matureArr, purchased: g.buy, cost: Math.round(g.cost * 100) / 100 }; });
+  return { days: daysBack, groups: out };
+}
