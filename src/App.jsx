@@ -3564,9 +3564,6 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, set
   }
   const [showTcpaInfo, setShowTcpaInfo] = useState(false)
   const tcpaText = 'By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg & data rates may apply. Reply STOP to unsubscribe.'
-  const firstName = String(leadData.firstName || '').trim()
-  const low = Number(analysis?.offer_low) || 0
-  const high = Number(analysis?.offer_high) || 0
   const badge = (text, bg) => (
     <span style={{
       position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
@@ -3588,7 +3585,9 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, set
       <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C8953C', margin: '0 0 8px' }}>
         Final step
       </p>
-      <h2 style={styles.sectionTitle}>Let's create a free shipping label for you</h2>
+      <h2 style={styles.sectionTitle}>
+        {isReturn ? `Welcome back${leadData.firstName ? ', ' + leadData.firstName : ''}!` : 'How would you like to ship?'}
+      </h2>
 
       {isReturn && analysis?.title && (
         <div style={{
@@ -3608,14 +3607,12 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, set
         </div>
       )}
 
-      <p style={{ ...styles.sectionSub, marginBottom: low && high ? 12 : 32 }}>
-        Pick a carrier and tell us where the package will ship from{firstName ? ', ' + firstName : ''}.
+      <p style={styles.sectionSub}>
+        {isReturn
+          ? 'You\'re just one step away! Choose how you\'d like to send us your item. Shipping is completely free.'
+          : <>Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong>.</>
+        }
       </p>
-      {low > 0 && high > 0 && (
-        <p style={{ fontSize: 16, color: '#5A4A2E', margin: '0 0 28px' }}>
-          Your estimate: <strong style={{ color: '#C8953C' }}>${low.toLocaleString()} – ${high.toLocaleString()}</strong>
-        </p>
-      )}
 
       <div onSubmit={onSubmit} style={styles.form}>
         {/* Nov 23: USPS first and preselected (EASIEST); FedEx second (FASTEST). */}
@@ -3628,7 +3625,7 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, set
             {badge('Easiest', '#22C55E')}
             <span style={styles.shippingOptionIcon}>📬</span>
             <span style={styles.shippingOptionTitle}>Email Me a USPS Label</span>
-            <span style={styles.shippingOptionDesc}>Hand it to your mail carrier or schedule a free pickup at usps.com/pickup.</span>
+            <span style={styles.shippingOptionDesc}>Hand to your mailman or have them pick it up from your mailbox.</span>
           </button>
           <button
             type="button"
@@ -3638,56 +3635,13 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, set
             {badge('Fastest', '#4D148C')}
             <span style={{ background: '#4D148C', color: '#FF6600', fontSize: 13, fontWeight: 700, padding: '3px 12px', borderRadius: 4, letterSpacing: '0.5px', display: 'inline-block', marginBottom: 2 }}>Fed<span style={{ color: '#ffffff' }}>Ex</span></span>
             <span style={styles.shippingOptionTitle}>Email Me a FedEx Label</span>
-            <span style={styles.shippingOptionDesc}>Drop at any FedEx location — FedEx Office can print it for you.</span>
+            <span style={styles.shippingOptionDesc}>Drop at any FedEx location near you.</span>
           </button>
         </div>
 
         <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-          {isUsps
-            ? <>Your USPS label is <strong>prepaid</strong> by us — just print it, pack your item in a padded box or envelope, and hand it to your mail carrier or drop it at any post office.</>
-            : <>Your FedEx label is <strong>prepaid</strong> by us — just print it, pack your item in a padded box or envelope, and drop it at any FedEx location.</>}
+          The shipping cost is <strong>prepaid</strong> by us — just print the label, pack your item in a padded box or envelope, and {isUsps ? 'mail it out.' : 'drop it at any FedEx location.'}
         </p>
-
-        <div style={styles.formGroup}>
-          <label style={{ ...styles.formLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>Phone *</span>
-            <button
-              type="button"
-              aria-label="About text messages"
-              onClick={() => setShowTcpaInfo((v) => !v)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 18, height: 18, padding: 0, borderRadius: '50%',
-                border: '1px solid #C8953C', background: 'transparent',
-                color: '#C8953C', fontSize: 11, fontWeight: 600,
-                cursor: 'pointer', lineHeight: 1,
-              }}
-            >
-              i
-            </button>
-          </label>
-          <input
-            type="tel"
-            required
-            inputMode="tel"
-            autoComplete="tel"
-            value={leadData.phone}
-            onChange={updatePhone}
-            placeholder="(555) 555-1234"
-            aria-invalid={!!errors.phone}
-            style={inputStyle('phone')}
-          />
-          {fieldError('phone') || <p style={{ fontSize: 12, color: '#9B8E7B', margin: '4px 0 0' }}>For shipping updates.</p>}
-          {showTcpaInfo && (
-            <p style={{
-              fontSize: 12, color: '#555', marginTop: 8, padding: '10px 12px',
-              background: '#FAF6F0', border: '1px solid #E5DCC9', borderRadius: 8,
-              lineHeight: 1.45,
-            }}>
-              {tcpaText}
-            </p>
-          )}
-        </div>
 
         <div style={styles.formGroup}>
           <label style={styles.formLabel}>Street Address *</label>
@@ -3744,6 +3698,47 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, set
             />
             {fieldError('zip')}
           </div>
+        </div>
+
+        <div style={styles.formGroup}>
+          <label style={{ ...styles.formLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>Phone *</span>
+            <button
+              type="button"
+              aria-label="About text messages"
+              onClick={() => setShowTcpaInfo((v) => !v)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, padding: 0, borderRadius: '50%',
+                border: '1px solid #C8953C', background: 'transparent',
+                color: '#C8953C', fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', lineHeight: 1,
+              }}
+            >
+              i
+            </button>
+          </label>
+          <input
+            type="tel"
+            required
+            inputMode="tel"
+            autoComplete="tel"
+            value={leadData.phone}
+            onChange={updatePhone}
+            placeholder="(555) 555-1234"
+            aria-invalid={!!errors.phone}
+            style={inputStyle('phone')}
+          />
+          {fieldError('phone') || <p style={{ fontSize: 12, color: '#9B8E7B', margin: '4px 0 0' }}>For shipping updates.</p>}
+          {showTcpaInfo && (
+            <p style={{
+              fontSize: 12, color: '#555', marginTop: 8, padding: '10px 12px',
+              background: '#FAF6F0', border: '1px solid #E5DCC9', borderRadius: 8,
+              lineHeight: 1.45,
+            }}>
+              {tcpaText}
+            </p>
+          )}
         </div>
 
         <button type="button" onClick={onSubmit} disabled={submitting}
