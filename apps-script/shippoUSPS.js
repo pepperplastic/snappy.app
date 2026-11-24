@@ -128,9 +128,8 @@ function generateShippoLabel(custId, shipmentId, shippingType, address, customer
         return r.provider === 'USPS' && tok3 === 'usps_ground_advantage';
       });
       if (!rate) rate = rates.find(function(r) { return r.provider === 'USPS'; });
-      if (!rate) {
-        rate = rates[0]; // fallback to cheapest available
-      }
+      // Nov 23: no rates[0] fallback — it could hand a USPS request any carrier.
+      if (!rate) return { success: false, error: 'No USPS rate available from Shippo' };
     }
     if (!rate) {
       return { success: false, error: 'No rates available from Shippo' };

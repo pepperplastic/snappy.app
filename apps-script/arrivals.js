@@ -298,22 +298,58 @@ function arrivalsReport(days) {
 
 
 // ═══════════════════════════════════════════════════════════════════════
-//  FUNNEL BY STEP — editor-run, logs only                   (Nov 23, 2026)
+//  FUNNEL BY STEP — editor-run, logs only            (Nov 23, 2026; rev 2)
 //
-//  funnelByStep(daysBack=30): one line per day.
+//  funnelByStep(daysBack=30): one line per day (ET).
 //    EST   photo_browse rows in Lead Intake (one per estimate generated)
 //    GATE  distinct emails on variant_b_gate rows (B-variant email capture)
-//    LEAD  people whose first lead form (name + phone) in the window was that day
-//  From LEAD on it is a cohort: each person is followed forward to today.
-//    SHIP  address on a later Lead Intake row, or a label on their shipment
-//    SCAN  carrier scan (tracking_status / inbound_status), or the package arrived
+//    FORM  distinct sessions with a lead_form_viewed marker ("Funnel Events"
+//          tab, written by the site from Nov 23 — blank before that)
+//    LEAD  submitted lead forms: one per email per day that has a Lead Intake
+//          row with a name and an email (lead form or shipping submit)
+//  From LEAD on it is a cohort: each lead is followed forward to today.
+//    SHIP  shipping completed — an address row after the lead, or a shipment
+//          matched to the lead (shipments are only created by the shipping
+//          submit or in the CRM)
+//    SCAN  carrier scan (tracking_status / inbound_status), or it arrived
 //    ARR   received_at set or a received-or-later stage
 //    BUY   pending_payment / pending_leadsonline / complete, or purchased_at / paid_at
-//  Then: leads with a phone and no shipping step within 24h — how many got a
-//  follow-up (Contact Log out row or RECOV stamp, label sends excluded), and
-//  how many later shipped / arrived.
+//  Shipments are matched to the latest lead by the same email (any customer row
+//  with that email) at or before the shipment's created_at, within 15 days, so
+//  a repeat customer's second registration lands on their second lead.
+//  Then: estimate-size buckets, a shipments reconciliation, and leads with no
+//  shipping step within 24h — follow-up received and later completion.
 //  Reads only: nothing is written or sent.
 // ═══════════════════════════════════════════════════════════════════════
+
+var FUNNEL_TAB = 'Funnel Events';
+var FUNNEL_EVENTS = ['lead_form_viewed'];
+var FUNNEL_BUCKETS = [[0, 100, '< $100'], [100, 500, '$100 – 499'], [500, 2000, '$500 – 1,999'], [2000, Infinity, '$2,000+']];
+
+// Public site action: { event, session_id, v, quote }. Appends one row per
+// session per event; anything else is refused.
+function handleFunnelMark(p) {
+  p = p || {};
+  var ev = String(p.event || '').trim();
+  if (FUNNEL_EVENTS.indexOf(ev) === -1) return { success: false, error: 'unknown event' };
+  var sid = String(p.session_id || '').trim();
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(sid)) return { success: false, error: 'bad session' };
+  var cache = CacheService.getScriptCache(), ck = 'fm_' + ev + '_' + sid;
+  if (cache.get(ck)) return { success: true, duplicate: true };
+  cache.put(ck, '1', 21600);
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sh = ss.getSheetByName(FUNNEL_TAB);
+  if (!sh) {
+    var lock = LockService.getScriptLock();
+    lock.tryLock(5000);
+    try {
+      sh = ss.getSheetByName(FUNNEL_TAB);
+      if (!sh) { sh = ss.insertSheet(FUNNEL_TAB); sh.appendRow(['timestamp', 'event', 'session_id', 'variant', 'quote']); sh.setFrozenRows(1); }
+    } finally { try { lock.releaseLock(); } catch (e) {} }
+  }
+  sh.appendRow([new Date(), ev, sid, String(p.v || '').slice(0, 4).toUpperCase(), p.quote ? 1 : '']);
+  return { success: true };
+}
 
 function funnelByStep(daysBack) {
   daysBack = (parseInt(daysBack, 10) > 0) ? parseInt(daysBack, 10) : 30;
@@ -323,18 +359,30 @@ function funnelByStep(daysBack) {
   var toDate = function (v) { if (!v) return null; var d = (v instanceof Date) ? v : new Date(v); return isNaN(d.getTime()) ? null : d; };
   var dayKey = function (d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); };
   var pct = function (a, b) { return b ? Math.round(a / b * 100) + '%' : '—'; };
+  var estHigh = function (v) {
+    var n = String(v || '').replace(/,/g, '').match(/\d+(\.\d+)?/g);
+    return n ? parseFloat(n[n.length - 1]) : null;
+  };
+  var bucketOf = function (h) {
+    if (h == null || !(h > 0)) return 'no estimate';
+    for (var i = 0; i < FUNNEL_BUCKETS.length; i++) if (h >= FUNNEL_BUCKETS[i][0] && h < FUNNEL_BUCKETS[i][1]) return FUNNEL_BUCKETS[i][2];
+    return 'no estimate';
+  };
 
   var days = [], byDay = {};
   for (var i = daysBack - 1; i >= 0; i--) {
     var k = dayKey(new Date(Date.now() - i * H24));
     if (byDay[k]) continue;
     days.push(k);
-    byDay[k] = { est: 0, estB: 0, gate: {}, gateAnon: 0, lead: 0, ship: 0, scan: 0, arr: 0, buy: 0 };
+    byDay[k] = { est: 0, estB: 0, gate: {}, gateAnon: 0, form: {}, lead: 0, ship: 0, scan: 0, arr: 0, buy: 0 };
   }
+  var firstDay = days[0];
+  var byBucket = {};
+  var bk = function (b) { return byBucket[b] = byBucket[b] || { est: 0, lead: 0, ship: 0, arr: 0, buy: 0 }; };
 
-  // ── Lead Intake: top-of-funnel counts, lead-form people, address + recovery times ──
+  // ── Lead Intake ──
   var lead = ss.getSheetByName(TAB.LEADS).getDataRange().getValues();
-  var people = {}, addrAt = {}, recovAt = {};
+  var addrAt = {}, recovAt = {}, leadsByEmail = {};
   for (var r = 1; r < lead.length; r++) {
     var row = lead[r];
     var d = toDate(row[COL.TIMESTAMP]);
@@ -350,131 +398,191 @@ function funnelByStep(daysBack) {
     }
 
     var D = byDay[dayKey(d)];
-    if (!D) continue;
     if (type === 'photo_browse') {
-      D.est++;
-      if (String(row[COL.VARIANT] || '').trim().toUpperCase() === 'B') D.estB++;
+      if (D) {
+        D.est++;
+        if (String(row[COL.VARIANT] || '').trim().toUpperCase() === 'B') D.estB++;
+        bk(bucketOf(estHigh(row[COL.ESTIMATE]))).est++;
+      }
       continue;
     }
-    if (type === 'variant_b_gate') { if (em) D.gate[em] = 1; else D.gateAnon++; continue; }
+    if (type === 'variant_b_gate') { if (D) { if (em) D.gate[em] = 1; else D.gateAnon++; } continue; }
+    if (!em || !String(row[COL.NAME] || '').trim()) continue;
+    (leadsByEmail[em] = leadsByEmail[em] || []).push({ at: d, day: dayKey(d), email: em, est: estHigh(row[COL.ESTIMATE]),
+                                                        phone: String(row[COL.PHONE] || '').replace(/\D/g, '').length >= 10 });
+  }
 
-    var name = String(row[COL.NAME] || '').trim();
-    var phone = String(row[COL.PHONE] || '').replace(/\D/g, '');
-    if (!name || phone.length < 10) continue;
-    var key = em || (row[COL.SESSION_ID] ? 'sess:' + row[COL.SESSION_ID] : '');
-    if (!key) continue;
-    if (!people[key] || d < people[key].at) people[key] = { at: d, day: dayKey(d), email: em };
+  // One lead per email per day (the day's first row); keep every day, all time,
+  // so shipments can match leads from before the window too.
+  Object.keys(leadsByEmail).forEach(function (e) {
+    var list = leadsByEmail[e].sort(function (a, b) { return a.at - b.at; }), out = [];
+    list.forEach(function (x) {
+      var last = out[out.length - 1];
+      if (last && last.day === x.day) { if (last.est == null) last.est = x.est; last.phone = last.phone || x.phone; return; }
+      x.ships = [];
+      out.push(x);
+    });
+    leadsByEmail[e] = out;
+  });
+
+  // ── Funnel Events (FORM) ──
+  var fe = ss.getSheetByName(FUNNEL_TAB), formRows = 0;
+  if (fe) {
+    var fv = fe.getDataRange().getValues();
+    for (var f = 1; f < fv.length; f++) {
+      var fd = toDate(fv[f][0]);
+      if (!fd || String(fv[f][1]) !== 'lead_form_viewed') continue;
+      var FD = byDay[dayKey(fd)];
+      if (FD && fv[f][2] && !FD.form[String(fv[f][2])]) { FD.form[String(fv[f][2])] = 1; formRows++; }
+    }
   }
 
   // ── Customers / Shipments / Contact Log ──
-  var custIdByEmail = {};
+  var emailByCust = {}, phoneByEmail = {};
   sheetToObjects(ss.getSheetByName(TAB.CUSTOMERS)).forEach(function (c) {
     var e = String(c.email || '').toLowerCase().trim();
-    if (e && c.customer_id && !custIdByEmail[e]) custIdByEmail[e] = c.customer_id;
+    if (!e || !c.customer_id) return;
+    emailByCust[c.customer_id] = e;
+    if (String(c.phone || '').replace(/\D/g, '').length >= 10) phoneByEmail[e] = true;
   });
-  var shipsByCust = {};
+  var recon = { inWindow: 0, toWindowLead: 0, toEarlierLead: 0, unmatched: 0 };
   sheetToObjects(ss.getSheetByName(TAB.SHIPMENTS)).forEach(function (s) {
-    if (s.customer_id) (shipsByCust[s.customer_id] = shipsByCust[s.customer_id] || []).push(s);
+    var created = toDate(s.created_at);
+    var inWin = created && dayKey(created) >= firstDay;
+    if (inWin) recon.inWindow++;
+    var e = emailByCust[s.customer_id];
+    var list = e ? leadsByEmail[e] || [] : [];
+    var hit = null;
+    for (var j = list.length - 1; j >= 0 && created; j--) {
+      var gap = created.getTime() - list[j].at.getTime();
+      if (gap >= -3600000 && gap <= 15 * H24) { hit = list[j]; break; }
+      if (gap > 15 * H24) break;
+    }
+    if (hit) hit.ships.push(s);
+    if (inWin) {
+      if (!hit) recon.unmatched++;
+      else if (hit.day >= firstDay) recon.toWindowLead++;
+      else recon.toEarlierLead++;
+    }
   });
-  var touchesByCust = {};
+  var touchesByEmail = {};
   var clSheet = ss.getSheetByName(TAB.CONTACT_LOG);
   (clSheet ? sheetToObjects(clSheet) : []).forEach(function (c) {
-    var t = toDate(c.timestamp);
-    if (!t || !c.customer_id) return;
+    var t = toDate(c.timestamp), e = emailByCust[c.customer_id];
+    if (!t || !e) return;
     if (String(c.direction || '').toLowerCase() === 'in') return;
     var kind = String(c.kind || '');
     if (/^label:|^auto:triage|^postlabel:/.test(kind)) return;   // label sends, not lead follow-up
-    (touchesByCust[c.customer_id] = touchesByCust[c.customer_id] || [])
+    (touchesByEmail[e] = touchesByEmail[e] || [])
       .push({ at: t, what: kind || (String(c.source || 'manual') + ':' + String(c.type || '?')) });
   });
 
-  // ── Follow each lead-form person forward ──
+  // ── Follow each in-window lead forward ──
   var statusScans = 0;
-  var fu = { n: 0, followed: 0, laterShip: 0, laterShipAfterFu: 0, laterShipNoFu: 0, laterArr: 0, kinds: {} };
-  Object.keys(people).forEach(function (key) {
-    var p = people[key], D = byDay[p.day];
-    D.lead++;
-    var cid = p.email ? custIdByEmail[p.email] : null;
-    var ships = (cid ? shipsByCust[cid] || [] : []).filter(function (s) {
-      var c = toDate(s.created_at), rcv = toDate(s.received_at);
-      return (!c || c.getTime() >= p.at.getTime() - 15 * H24) && (!rcv || rcv >= p.at);
-    });
+  var fu = { n: 0, phone: 0, followed: 0, laterShip: 0, laterShipAfterFu: 0, laterShipNoFu: 0, laterArr: 0, kinds: {} };
+  Object.keys(leadsByEmail).forEach(function (e) {
+    var list = leadsByEmail[e];
+    list.forEach(function (p, idx) {
+      var D = byDay[p.day];
+      if (!D) return;
+      var next = list[idx + 1] || null;
+      D.lead++;
 
-    var labelAt = null, scan = false, arr = false, buy = false;
-    ships.forEach(function (s) {
-      var hasLabel = s.sent_at || s.outbound_tracking || s.easypost_shipment_id || s.shippo_transaction_id;
-      if (hasLabel) {
-        var la = toDate(s.sent_at) || toDate(s.created_at) || p.at;
-        if (!labelAt || la < labelAt) labelAt = la;
+      var shipAt = null, scan = false, arr = false, buy = false, est = p.est;
+      p.ships.forEach(function (s) {
+        var c = toDate(s.created_at) || p.at;
+        if (!shipAt || c < shipAt) shipAt = c;
+        if (est == null) est = estHigh(s.estimate);
+        var st = String(s.stage || '');
+        var a = String(s.received_at || '').trim() !== '' || ARR_STAGES.indexOf(st) !== -1;
+        var stat = /transit|accepted|picked|out_for|delivered|arriv/.test(String(s.inbound_status || s.tracking_status || '').toLowerCase());
+        if (stat) statusScans++;
+        if (stat || a) scan = true;
+        if (a) arr = true;
+        if (st !== 'returned' && (ARR_PURCHASED.indexOf(st) !== -1 || s.purchased_at || s.paid_at)) buy = true;
+      });
+      (addrAt[e] || []).forEach(function (t) {
+        if (t.getTime() >= p.at.getTime() - 60000 && (!next || t.getTime() < next.at.getTime() - 60000) && (!shipAt || t < shipAt)) shipAt = t;
+      });
+
+      var B = bk(bucketOf(est));
+      B.lead++;
+      if (shipAt) { D.ship++; B.ship++; }
+      if (scan) D.scan++;
+      if (arr) { D.arr++; B.arr++; }
+      if (buy) { D.buy++; B.buy++; }
+
+      // No shipping step within 24h of the lead form.
+      if (shipAt && shipAt.getTime() - p.at.getTime() <= H24) return;
+      fu.n++;
+      if (p.phone || phoneByEmail[e]) fu.phone++;
+      var touches = (touchesByEmail[e] || []).filter(function (t) { return t.at > p.at && (!next || t.at < next.at); });
+      (recovAt[e] || []).forEach(function (t) {
+        if (dayKey(t) >= p.day && (!next || t < next.at)) touches.push({ at: t, what: 'recovery (RECOV stamp)' });
+      });
+      touches.sort(function (a, b) { return a.at - b.at; });
+      var seen = {};
+      touches.forEach(function (t) { if (!seen[t.what]) { seen[t.what] = 1; fu.kinds[t.what] = (fu.kinds[t.what] || 0) + 1; } });
+      if (touches.length) fu.followed++;
+      if (shipAt) {
+        fu.laterShip++;
+        if (touches.length && touches[0].at < shipAt) fu.laterShipAfterFu++; else fu.laterShipNoFu++;
       }
-      var st = String(s.stage || '');
-      var a = String(s.received_at || '').trim() !== '' || ARR_STAGES.indexOf(st) !== -1;
-      var stat = /transit|accepted|picked|out_for|delivered|arriv/.test(String(s.inbound_status || s.tracking_status || '').toLowerCase());
-      if (stat) statusScans++;
-      if (stat || a) scan = true;
-      if (a) arr = true;
-      if (st !== 'returned' && (ARR_PURCHASED.indexOf(st) !== -1 || s.purchased_at || s.paid_at)) buy = true;
+      if (arr) fu.laterArr++;
     });
-
-    var shipAt = labelAt;
-    (p.email ? addrAt[p.email] || [] : []).forEach(function (t) {
-      if (t.getTime() >= p.at.getTime() - 60000 && (!shipAt || t < shipAt)) shipAt = t;
-    });
-
-    if (shipAt) D.ship++;
-    if (scan) D.scan++;
-    if (arr) D.arr++;
-    if (buy) D.buy++;
-
-    // Lead with phone, no shipping step within 24h of the lead form.
-    if (shipAt && shipAt.getTime() - p.at.getTime() <= H24) return;
-    fu.n++;
-    var touches = (cid ? touchesByCust[cid] || [] : []).filter(function (t) { return t.at > p.at; });
-    (p.email ? recovAt[p.email] || [] : []).forEach(function (t) {
-      if (dayKey(t) >= p.day) touches.push({ at: t, what: 'recovery (RECOV stamp)' });
-    });
-    touches.sort(function (a, b) { return a.at - b.at; });
-    var seen = {};
-    touches.forEach(function (t) { if (!seen[t.what]) { seen[t.what] = 1; fu.kinds[t.what] = (fu.kinds[t.what] || 0) + 1; } });
-    if (touches.length) fu.followed++;
-    if (shipAt) {
-      fu.laterShip++;
-      if (touches.length && touches[0].at < shipAt) fu.laterShipAfterFu++; else fu.laterShipNoFu++;
-    }
-    if (arr) fu.laterArr++;
   });
 
   // ── Print ──
-  var cols = ['est', 'gate', 'lead', 'ship', 'scan', 'arr', 'buy'];
-  var tot = { est: 0, estB: 0, gate: 0, lead: 0, ship: 0, scan: 0, arr: 0, buy: 0 };
+  var cols = ['est', 'gate', 'form', 'lead', 'ship', 'scan', 'arr', 'buy'];
+  var tot = { est: 0, estB: 0, gate: 0, form: 0, lead: 0, ship: 0, scan: 0, arr: 0, buy: 0 };
   Logger.log('═══ FUNNEL BY STEP — last ' + daysBack + ' days (ET) ═══');
   Logger.log('');
-  Logger.log(_pad('DAY', 12) + _padL('EST', 6) + _padL('GATE', 6) + _padL('LEAD', 6) + _padL('SHIP', 6) +
+  Logger.log(_pad('DAY', 12) + _padL('EST', 6) + _padL('GATE', 6) + _padL('FORM', 6) + _padL('LEAD', 6) + _padL('SHIP', 6) +
              _padL('SCAN', 6) + _padL('ARR', 6) + _padL('BUY', 6) + _padL('LEAD%', 7) + _padL('SHIP%', 7));
   days.forEach(function (k) {
     var D = byDay[k];
-    var v = { est: D.est, gate: Object.keys(D.gate).length + D.gateAnon, lead: D.lead, ship: D.ship, scan: D.scan, arr: D.arr, buy: D.buy };
+    var v = { est: D.est, gate: Object.keys(D.gate).length + D.gateAnon, form: Object.keys(D.form).length,
+              lead: D.lead, ship: D.ship, scan: D.scan, arr: D.arr, buy: D.buy };
     tot.estB += D.estB;
     var line = _pad(k, 12);
     cols.forEach(function (c) { tot[c] += v[c]; line += _padL(v[c], 6); });
-    Logger.log(line + _padL(pct(v.lead, v.est), 7) + _padL(pct(v.ship, v.lead), 7));
+    Logger.log(line + _padL(pct(v.lead, v.form), 7) + _padL(pct(v.ship, v.lead), 7));
   });
   var tl = _pad('TOTAL', 12);
   cols.forEach(function (c) { tl += _padL(tot[c], 6); });
-  Logger.log(tl + _padL(pct(tot.lead, tot.est), 7) + _padL(pct(tot.ship, tot.lead), 7));
+  Logger.log(tl + _padL(pct(tot.lead, tot.form), 7) + _padL(pct(tot.ship, tot.lead), 7));
 
+  var step = function (label, a, b) { Logger.log('  ' + _pad(label, 40) + _padL(pct(a, b), 5) + '   ' + a + ' / ' + b); };
   Logger.log('');
   Logger.log('STEP-TO-STEP');
-  Logger.log('  Estimate → email gate (B estimates only)  ' + _padL(pct(tot.gate, tot.estB), 5) + '   ' + tot.gate + ' / ' + tot.estB);
-  Logger.log('  Estimate → lead form                      ' + _padL(pct(tot.lead, tot.est), 5) + '   ' + tot.lead + ' / ' + tot.est);
-  Logger.log('  Lead form → shipping step                 ' + _padL(pct(tot.ship, tot.lead), 5) + '   ' + tot.ship + ' / ' + tot.lead);
-  Logger.log('  Shipping step → label scanned             ' + _padL(pct(tot.scan, tot.ship), 5) + '   ' + tot.scan + ' / ' + tot.ship);
-  Logger.log('  Label scanned → arrived                   ' + _padL(pct(tot.arr, tot.scan), 5) + '   ' + tot.arr + ' / ' + tot.scan);
-  Logger.log('  Arrived → purchased                       ' + _padL(pct(tot.buy, tot.arr), 5) + '   ' + tot.buy + ' / ' + tot.arr);
-  Logger.log('  Lead form → purchased (end to end)        ' + _padL(pct(tot.buy, tot.lead), 5));
+  step('Estimate → email gate (B estimates only)', tot.gate, tot.estB);
+  step('Estimate → lead form viewed', tot.form, tot.est);
+  step('Lead form viewed → submitted', tot.lead, tot.form);
+  step('Lead form submitted → shipping done', tot.ship, tot.lead);
+  step('Shipping done → label scanned', tot.scan, tot.ship);
+  step('Label scanned → arrived', tot.arr, tot.scan);
+  step('Arrived → purchased', tot.buy, tot.arr);
+  step('Lead form submitted → purchased', tot.buy, tot.lead);
 
   Logger.log('');
-  Logger.log('LEADS WITH PHONE, NO SHIPPING STEP WITHIN 24H: ' + fu.n);
+  Logger.log('BY ESTIMATE SIZE (high end of the range)');
+  Logger.log('  ' + _pad('BUCKET', 16) + _padL('EST', 6) + _padL('LEAD', 6) + _padL('SHIP', 6) + _padL('ARR', 6) + _padL('BUY', 6) +
+             _padL('SHIP%', 7) + _padL('ARR%', 7) + _padL('BUY%', 7));
+  FUNNEL_BUCKETS.map(function (b) { return b[2]; }).concat(['no estimate']).forEach(function (b) {
+    var x = byBucket[b];
+    if (!x) return;
+    Logger.log('  ' + _pad(b, 16) + _padL(x.est, 6) + _padL(x.lead, 6) + _padL(x.ship, 6) + _padL(x.arr, 6) + _padL(x.buy, 6) +
+               _padL(pct(x.ship, x.lead), 7) + _padL(pct(x.arr, x.ship), 7) + _padL(pct(x.buy, x.arr), 7));
+  });
+
+  Logger.log('');
+  Logger.log('SHIPMENTS CREATED IN THE WINDOW: ' + recon.inWindow);
+  Logger.log('  matched to a lead in the window   ' + _padL(recon.toWindowLead, 5));
+  Logger.log('  matched to an earlier lead        ' + _padL(recon.toEarlierLead, 5));
+  Logger.log('  no lead row for that email        ' + _padL(recon.unmatched, 5) + '   (CRM-created, or the email differs)');
+
+  Logger.log('');
+  Logger.log('LEADS WITH NO SHIPPING STEP WITHIN 24H: ' + fu.n + '   (' + fu.phone + ' with a phone on file)');
   Logger.log('  got any follow-up after the lead form      ' + _padL(fu.followed, 5) + '  ' + pct(fu.followed, fu.n));
   Logger.log('  no follow-up at all                        ' + _padL(fu.n - fu.followed, 5) + '  ' + pct(fu.n - fu.followed, fu.n));
   Logger.log('  later completed shipping                   ' + _padL(fu.laterShip, 5) + '  ' + pct(fu.laterShip, fu.n));
@@ -483,15 +591,17 @@ function funnelByStep(daysBack) {
   Logger.log('  later arrived                              ' + _padL(fu.laterArr, 5) + '  ' + pct(fu.laterArr, fu.n));
   var kinds = Object.keys(fu.kinds).sort(function (a, b) { return fu.kinds[b] - fu.kinds[a]; });
   if (kinds.length) {
-    Logger.log('  follow-up reached (people per kind):');
+    Logger.log('  follow-up reached (leads per kind):');
     kinds.forEach(function (k) { Logger.log('    ' + _pad(k, 40) + _padL(fu.kinds[k], 5)); });
   }
 
   Logger.log('');
-  Logger.log('Notes: LEAD onward is a cohort by lead-form day, followed to today, so recent days');
-  Logger.log('have not had time to ship or arrive. SCAN uses tracking_status / inbound_status where');
-  Logger.log('present (' + statusScans + ' shipment(s) had one); otherwise an arrival counts as a scan.');
-  return { days: daysBack, totals: tot, noShipLeads: fu };
+  Logger.log('Notes: LEAD onward is a cohort by lead day, followed to today, so recent days have not had');
+  Logger.log('time to ship or arrive. FORM counts start when the site began sending lead_form_viewed (' +
+             (formRows ? formRows + ' session(s) in this window' : 'none in this window yet') + '), so LEAD% is');
+  Logger.log('only meaningful from then on. SCAN uses tracking_status / inbound_status where present (' + statusScans +
+             ' shipment(s) had one); otherwise an arrival counts as a scan.');
+  return { days: daysBack, totals: tot, buckets: byBucket, shipments: recon, noShipLeads: fu };
 }
 
 

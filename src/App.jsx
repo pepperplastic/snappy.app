@@ -905,6 +905,28 @@ const SESSION_ID = crypto.randomUUID ? crypto.randomUUID() :
   })
 function getSessionId() { return SESSION_ID }
 
+// Nov 23: funnel step markers (Apps Script funnelMark → "Funnel Events" tab),
+// once per session per event. Keys are deliberately not the lead-intake field
+// names (sessionId / variant / source) so a marker can never be mistaken for a
+// lead row.
+function markFunnelOnce(event, extra = {}) {
+  const id = 'funnel_' + event + '_' + SESSION_ID
+  if (hasFiredEvent(id)) return
+  markEventFired(id)
+  fetch('/api/crm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'funnelMark', event, session_id: SESSION_ID, ...extra }),
+  }).catch(() => {})
+}
+
+// Nov 23: US phone, 10 digits (a leading 1 is dropped). '' when invalid.
+function normalizeUsPhone(v) {
+  let d = String(v || '').replace(/\D/g, '')
+  if (d.length === 11 && d[0] === '1') d = d.slice(1)
+  return /^[2-9]\d{2}[2-9]\d{6}$/.test(d) ? d : ''
+}
+
 // ── Utility: compress image before sending ──
 function compressImage(file, maxDim = 1600) {
   return new Promise((resolve) => {
@@ -1573,7 +1595,7 @@ export default function App() {
 
       if (returnStep === 'shipping') {
         // They had an estimate but didn't finish shipping — drop them at shipping
-        setShippingData(prev => ({ ...prev, method: 'fedex' }))
+        setShippingData(prev => ({ ...prev, method: 'usps' }))
         setStep(STEPS.SHIPPING)
         trackEvent('email_return', { step: 'shipping', item: returnItem })
       } else if (returnStep === 'capture') {
@@ -1600,6 +1622,7 @@ export default function App() {
       [STEPS.SHIPPING]: 'shipping_started',
       [STEPS.SUBMITTED]: 'lead_submitted',
     }
+    if (step === STEPS.LEAD_FORM) markFunnelOnce('lead_form_viewed', { v: variant, quote: directQuote ? 1 : 0 })
     if (eventMap[step]) {
       const params = {}
       if (step === STEPS.OFFER && analysis) {
@@ -1744,7 +1767,8 @@ export default function App() {
     clearAnalysisLimit()
     setLimitReached(false)
     // FIX 2: Set label as visual default AFTER submitLead fires (so lead row gets method: '')
-    setShippingData(prev => ({ ...prev, method: 'fedex' }))
+    // Nov 23: USPS is the preselected carrier.
+    setShippingData(prev => ({ ...prev, method: 'usps' }))
     setStep(STEPS.SHIPPING)
   }
 
@@ -1815,6 +1839,7 @@ export default function App() {
     if (!String(d.city || '').trim()) errs.city = 'Enter your city'
     if (!String(d.state || '').trim()) errs.state = 'Enter your state'
     if (!String(d.zip || '').trim()) errs.zip = 'Enter your ZIP'
+    if (!normalizeUsPhone(leadData.phone)) errs.phone = String(leadData.phone || '').trim() ? 'Enter a 10-digit US phone number' : 'Enter your phone number'
     return errs
   }
 
@@ -1965,6 +1990,14 @@ export default function App() {
             imageData={imageData}
             onGetOffer={() => setStep(STEPS.LEAD_FORM)}
             onDirectSubmit={() => {
+              // Nov 23: phone is collected at the shipping step now. With one on
+              // file this session, skip straight through; without one, go to the
+              // shipping step, where it is required.
+              if (!normalizeUsPhone(leadData.phone)) {
+                setShippingData(prev => ({ ...prev, method: prev.method || 'usps' }))
+                setStep(STEPS.SHIPPING)
+                return
+              }
               submitLead()
               trackEvent('cta_submit_from_offer')
               // Returning user submitting from offer screen — they have email but not address yet.
@@ -2004,6 +2037,7 @@ export default function App() {
             setErrors={setShippingErrors}
             submitting={shippingSubmitting}
             leadData={leadData}
+            setLeadData={setLeadData}
             analysis={analysis}
           />
         )}
@@ -3234,7 +3268,7 @@ Additional info: ${customerEditsText}` : correctionLines
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && gateEmail.includes('@')) {
                             setGateUnlocked(true)
-                            setLeadData(prev => ({ ...prev, email: gateEmail }))
+                            setLeadData(prev => ({ ...prev, email: gateEmail.trim(), emailLocked: true }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
                             trackLeadOnce(gateEmail, { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
@@ -3262,7 +3296,7 @@ Additional info: ${customerEditsText}` : correctionLines
                         onClick={() => {
                           if (gateEmail.includes('@')) {
                             setGateUnlocked(true)
-                            setLeadData(prev => ({ ...prev, email: gateEmail }))
+                            setLeadData(prev => ({ ...prev, email: gateEmail.trim(), emailLocked: true }))
                             trackEvent('gate_email_submitted', { method: 'variant_b' })
                             trackLeadOnce(gateEmail, { content_name: 'Email Capture' })  // Email-only capture = mid-funnel Lead, not the success event
                             trackRedditEvent('SignUp')
@@ -3426,10 +3460,8 @@ Additional info: ${customerEditsText}` : correctionLines
 function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
   const update = (field) => (e) =>
     setLeadData((prev) => ({ ...prev, [field]: e.target.value }))
-
-  const [showTcpaInfo, setShowTcpaInfo] = useState(false)
-
-  const tcpaText = 'By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg & data rates may apply. Reply STOP to unsubscribe.'
+  // Nov 23: an email captured at the Variant B gate is shown, not re-asked.
+  const emailLocked = !!(leadData.emailLocked && leadData.email)
 
   return (
     <section style={styles.centeredSection}>
@@ -3486,45 +3518,12 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
             type="email"
             required
             value={leadData.email}
-            onChange={update('email')}
+            onChange={emailLocked ? undefined : update('email')}
+            readOnly={emailLocked}
+            aria-readonly={emailLocked}
             placeholder="jane@email.com"
-            style={styles.formInput}
+            style={emailLocked ? { ...styles.formInput, background: '#F5F0E8', color: '#5A4A2E', cursor: 'default' } : styles.formInput}
           />
-        </div>
-        <div style={styles.formGroup}>
-          <label style={{ ...styles.formLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>Phone (optional)</span>
-            <button
-              type="button"
-              aria-label="About text messages"
-              onClick={() => setShowTcpaInfo((v) => !v)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 18, height: 18, padding: 0, borderRadius: '50%',
-                border: '1px solid #C8953C', background: 'transparent',
-                color: '#C8953C', fontSize: 11, fontWeight: 600,
-                cursor: 'pointer', lineHeight: 1,
-              }}
-            >
-              i
-            </button>
-          </label>
-          <input
-            type="tel"
-            value={leadData.phone}
-            onChange={update('phone')}
-            placeholder="(555) 555-1234"
-            style={styles.formInput}
-          />
-          {showTcpaInfo && (
-            <p style={{
-              fontSize: 12, color: '#555', marginTop: 8, padding: '10px 12px',
-              background: '#FAF6F0', border: '1px solid #E5DCC9', borderRadius: 8,
-              lineHeight: 1.45,
-            }}>
-              {tcpaText}
-            </p>
-          )}
         </div>
         {!directQuote && (
           <div style={styles.formGroup}>
@@ -3545,11 +3544,6 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
         <p style={styles.formDisclaimer}>
           No cost, no commitment. {directQuote ? 'We\'ll respond within a few hours.' : 'If you don\'t like our offer, we ship your item back free.'}
         </p>
-        {leadData.phone && leadData.phone.trim().length > 0 && (
-          <p style={{ fontSize: 10, color: '#999', marginTop: 8, textAlign: 'center', lineHeight: 1.4, padding: '0 8px' }}>
-            {tcpaText}
-          </p>
-        )}
       </form>
     </section>
   )
@@ -3558,11 +3552,29 @@ function LeadForm({ leadData, setLeadData, onSubmit, analysis, directQuote }) {
 // ═══════════════════════════════════════════════
 //  SHIPPING OPTIONS
 // ═══════════════════════════════════════════════
-function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, analysis, errors = {}, setErrors, submitting }) {
+function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, setLeadData, analysis, errors = {}, setErrors, submitting }) {
   const update = (field) => (e) => {
     setShippingData((prev) => ({ ...prev, [field]: e.target.value }))
     if (errors[field] && setErrors) setErrors((prev) => ({ ...prev, [field]: undefined }))
   }
+  const updatePhone = (e) => {
+    const v = e.target.value
+    setLeadData((prev) => ({ ...prev, phone: v }))
+    if (errors.phone && setErrors) setErrors((prev) => ({ ...prev, phone: undefined }))
+  }
+  const [showTcpaInfo, setShowTcpaInfo] = useState(false)
+  const tcpaText = 'By providing your phone number, you agree to receive text messages from Snappy Gold regarding your appraisal and shipping updates. Msg & data rates may apply. Reply STOP to unsubscribe.'
+  const firstName = String(leadData.firstName || '').trim()
+  const low = Number(analysis?.offer_low) || 0
+  const high = Number(analysis?.offer_high) || 0
+  const badge = (text, bg) => (
+    <span style={{
+      position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
+      fontSize: 10, fontWeight: 700, color: '#fff', background: bg,
+      borderRadius: 20, padding: '2px 10px', letterSpacing: '0.5px',
+      textTransform: 'uppercase', whiteSpace: 'nowrap',
+    }}>{text}</span>
+  )
   const inputStyle = (field, extra) => ({ ...styles.formInput, ...extra, ...(errors[field] ? { border: '1px solid #D64545' } : null) })
   const fieldError = (field) => errors[field]
     ? <p role="alert" style={{ color: '#D64545', fontSize: 12, margin: '4px 0 0' }}>{errors[field]}</p>
@@ -3573,9 +3585,10 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
 
   return (
     <section style={styles.centeredSection}>
-      <h2 style={styles.sectionTitle}>
-        {isReturn ? `Welcome back${leadData.firstName ? ', ' + leadData.firstName : ''}!` : 'How would you like to ship?'}
-      </h2>
+      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C8953C', margin: '0 0 8px' }}>
+        Final step
+      </p>
+      <h2 style={styles.sectionTitle}>Let's create a free shipping label for you</h2>
 
       {isReturn && analysis?.title && (
         <div style={{
@@ -3595,45 +3608,86 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
         </div>
       )}
 
-      <p style={styles.sectionSub}>
-        {isReturn
-          ? 'You\'re just one step away! Choose how you\'d like to send us your item. Shipping is completely free.'
-          : <>Choose how you'd like to send us your item, {leadData.firstName || 'there'}. Either way, shipping is <strong>completely free</strong>.</>
-        }
+      <p style={{ ...styles.sectionSub, marginBottom: low && high ? 12 : 32 }}>
+        Pick a carrier and tell us where the package will ship from{firstName ? ', ' + firstName : ''}.
       </p>
+      {low > 0 && high > 0 && (
+        <p style={{ fontSize: 16, color: '#5A4A2E', margin: '0 0 28px' }}>
+          Your estimate: <strong style={{ color: '#C8953C' }}>${low.toLocaleString()} – ${high.toLocaleString()}</strong>
+        </p>
+      )}
 
       <div onSubmit={onSubmit} style={styles.form}>
-        {/* Shipping method toggle — label is default (fastest path) */}
+        {/* Nov 23: USPS first and preselected (EASIEST); FedEx second (FASTEST). */}
         <div style={styles.shippingOptions}>
+          <button
+            type="button"
+            onClick={() => setShippingData(prev => ({ ...prev, method: 'usps' }))}
+            style={{ ...(isUsps ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
+          >
+            {badge('Easiest', '#22C55E')}
+            <span style={styles.shippingOptionIcon}>📬</span>
+            <span style={styles.shippingOptionTitle}>Email Me a USPS Label</span>
+            <span style={styles.shippingOptionDesc}>Hand it to your mail carrier or schedule a free pickup at usps.com/pickup.</span>
+          </button>
           <button
             type="button"
             onClick={() => setShippingData(prev => ({ ...prev, method: 'fedex' }))}
             style={{ ...(shippingData.method === 'fedex' ? styles.shippingOptionActive : styles.shippingOption), position: 'relative', overflow: 'visible' }}
           >
-            <span style={{
-              position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
-              fontSize: 10, fontWeight: 700, color: '#fff', background: '#22C55E',
-              borderRadius: 20, padding: '2px 10px', letterSpacing: '0.5px',
-              textTransform: 'uppercase', whiteSpace: 'nowrap',
-            }}>⚡ Fastest</span>
+            {badge('Fastest', '#4D148C')}
             <span style={{ background: '#4D148C', color: '#FF6600', fontSize: 13, fontWeight: 700, padding: '3px 12px', borderRadius: 4, letterSpacing: '0.5px', display: 'inline-block', marginBottom: 2 }}>Fed<span style={{ color: '#ffffff' }}>Ex</span></span>
             <span style={styles.shippingOptionTitle}>Email Me a FedEx Label</span>
-            <span style={styles.shippingOptionDesc}>Drop at any FedEx location or call FedEx for an at-home pickup</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShippingData(prev => ({ ...prev, method: 'usps' }))}
-            style={shippingData.method === 'usps' ? styles.shippingOptionActive : styles.shippingOption}
-          >
-            <span style={styles.shippingOptionIcon}>📬</span>
-            <span style={styles.shippingOptionTitle}>Email Me a USPS Label</span>
-            <span style={styles.shippingOptionDesc}>Hand to your postman or drop at any post office</span>
+            <span style={styles.shippingOptionDesc}>Drop at any FedEx location — FedEx Office can print it for you.</span>
           </button>
         </div>
 
         <p style={{ fontSize: 13, color: '#9B8E7B', marginBottom: 16, textAlign: 'center' }}>
-          The shipping cost is <strong>prepaid</strong> by us — just print the label, pack your item in a padded box or envelope, and {isUsps ? 'mail it out.' : 'drop it at any FedEx location.'}
+          {isUsps
+            ? <>Your USPS label is <strong>prepaid</strong> by us — just print it, pack your item in a padded box or envelope, and hand it to your mail carrier or drop it at any post office.</>
+            : <>Your FedEx label is <strong>prepaid</strong> by us — just print it, pack your item in a padded box or envelope, and drop it at any FedEx location.</>}
         </p>
+
+        <div style={styles.formGroup}>
+          <label style={{ ...styles.formLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>Phone *</span>
+            <button
+              type="button"
+              aria-label="About text messages"
+              onClick={() => setShowTcpaInfo((v) => !v)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, padding: 0, borderRadius: '50%',
+                border: '1px solid #C8953C', background: 'transparent',
+                color: '#C8953C', fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', lineHeight: 1,
+              }}
+            >
+              i
+            </button>
+          </label>
+          <input
+            type="tel"
+            required
+            inputMode="tel"
+            autoComplete="tel"
+            value={leadData.phone}
+            onChange={updatePhone}
+            placeholder="(555) 555-1234"
+            aria-invalid={!!errors.phone}
+            style={inputStyle('phone')}
+          />
+          {fieldError('phone') || <p style={{ fontSize: 12, color: '#9B8E7B', margin: '4px 0 0' }}>For shipping updates.</p>}
+          {showTcpaInfo && (
+            <p style={{
+              fontSize: 12, color: '#555', marginTop: 8, padding: '10px 12px',
+              background: '#FAF6F0', border: '1px solid #E5DCC9', borderRadius: 8,
+              lineHeight: 1.45,
+            }}>
+              {tcpaText}
+            </p>
+          )}
+        </div>
 
         <div style={styles.formGroup}>
           <label style={styles.formLabel}>Street Address *</label>
@@ -3700,6 +3754,11 @@ function ShippingScreen({ shippingData, setShippingData, onSubmit, leadData, ana
         <p style={styles.formDisclaimer}>
           Free shipping both ways. Don't like our offer? We return your item at no cost.
         </p>
+        {String(leadData.phone || '').trim() && (
+          <p style={{ fontSize: 10, color: '#999', marginTop: 8, textAlign: 'center', lineHeight: 1.4, padding: '0 8px' }}>
+            {tcpaText}
+          </p>
+        )}
 
         {/* lead_form_started → shipping_started is 59.8% — the worst step in the
             funnel. These people gave an email and then stalled at the address.

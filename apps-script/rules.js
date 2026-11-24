@@ -222,10 +222,10 @@ function _rulesRouting() {
   }));
   out.push(_rule({
     step2: _rulesPick(buy, /\/\/ 2\) (cheapest rate from the requested carrier)/, '_buyShippoLabel'),
-    step3: _rulesPick(buy, /if \(!rate && carrierToken === '(\w+)'\)/, '_buyShippoLabel'),
+    step3: _rulesPick(buy, /\/\/ 3\) (Never cross carriers)/, '_buyShippoLabel'),
   }, function (v) {
-    return 'Rate selection: the exact preferred service, else the cheapest rate from the same carrier. Only a ' + v.step3 +
-      ' request may fall back to the other major carrier (USPS/FedEx) when its own carrier has no rate; a FedEx request never becomes a USPS label.';
+    return 'Rate selection: the exact preferred service, else the cheapest rate from the same carrier. ' + v.step3 +
+      ': with no rate from the requested carrier Shippo fails, so USPS goes to the EasyPost USPS fallback and FedEx returns an error.';
   }));
   out.push(_rule({
     fedex: _rulesPick(gen, /if \(shippingType === '(\w+)'\) \{\s*Logger\.log\('✗ Shippo/, 'generateAndSendLabel'),

@@ -416,6 +416,9 @@ function doPost(e) {
     // ── Public, token-gated win-back relabel (winback.gs) — no CRM key, same
     //    shape as the self-serve token actions below it. ──
     if (action === 'awayNotice')            return jsonResponse(handleAwayNotice());
+    // Nov 23: public funnel step marker from the site (arrivals.gs). No CRM key —
+    // the browser can't hold one; it only appends to the "Funnel Events" tab.
+    if (action === 'funnelMark')            return jsonResponse(handleFunnelMark(parsed));
     if (action === 'relabelValidate')       return jsonResponse(handleRelabelValidate(parsed));
     if (action === 'relabelRequest')        return jsonResponse(handleRelabelRequest(parsed));
     if (action === 'validateSelfServeToken') return jsonResponse(handleValidateSelfServeToken(parsed));
@@ -650,6 +653,17 @@ function handleLeadIngestion(data) {
           if (mergedRisk) {
             _ensureAiRiskCols(SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB.SHIPMENTS));
             AI_RISK_COLS.forEach(function (col) { appendUpdates[col] = mergedRisk[col]; });
+          }
+          // Nov 23: honor the carrier picked on THIS submission while no label
+          // exists yet. Append mode used to keep the first submission's
+          // shipping_type, so a later USPS pick still produced a FedEx label.
+          var pickedType = normalizeShipType(data.shippingMethod);
+          if ((pickedType === 'usps' || pickedType === 'fedex') &&
+              String(appendTarget.stage || '').trim() === 'ready_to_fulfill' &&
+              !String(appendTarget.outbound_tracking || '').trim() &&
+              normalizeShipType(appendTarget.shipping_type) !== pickedType) {
+            appendUpdates.shipping_type = pickedType;
+            Logger.log('Carrier on ' + appendTarget.shipment_id + ': ' + (appendTarget.shipping_type || '(blank)') + ' → ' + pickedType);
           }
           if (Object.keys(appendUpdates).length) {
             updateShipment(appendTarget.shipment_id, appendUpdates);
@@ -3360,22 +3374,14 @@ function _buyShippoLabel(shippingType, address, customerName, customerPhone, shi
     rate = sameCarrier[0] || null;
     if (rate) Logger.log('Shippo rate (requested carrier): ' + rate.provider + ' $' + rate.amount);
   }
-  // 3) If the requested carrier isn't available, accept the other MAJOR carrier
-  //    (USPS or FedEx only) rather than failing to EasyPost. This keeps Shippo
-  //    working (pay-on-scan) even when it only returns one carrier for an
-  //    address. We still avoid unregistered carriers like UPS.
-  //    Sep 14: USPS requests only. A FedEx request never becomes a USPS label —
-  //    with no FedEx rate it throws below (and has no EasyPost fallback).
-  if (!rate && carrierToken === 'usps') {
-    var okCarriers = ['usps', 'fedex'];
-    var usable = rates.filter(function(r) { return r.provider && okCarriers.indexOf(r.provider.toLowerCase()) !== -1; });
-    usable.sort(function(a, b) { return parseFloat(a.amount) - parseFloat(b.amount); });
-    rate = usable[0] || null;
-    if (rate) Logger.log('Shippo: requested ' + carrierToken + ' unavailable, using ' + rate.provider + ' $' + rate.amount);
-  }
+  // 3) Never cross carriers (Nov 23). This used to let a USPS request take the
+  //    cheapest FedEx rate when Shippo returned no USPS rate for the address —
+  //    the customer picked USPS and got a FedEx label. Now a USPS request with
+  //    no USPS rate throws, and generateAndSendLabel falls back to EasyPost USPS
+  //    (billed on creation, alert emailed); a FedEx request throws as before.
   if (!rate) {
     var avail = rates.map(function(r){ return r.provider + '/' + (r.servicelevel && r.servicelevel.token); }).join(', ');
-    throw new Error('Shippo: no usable ' + (carrierToken === 'fedex' ? 'FedEx' : 'USPS/FedEx') + ' rate (got: ' + avail + ')');
+    throw new Error('Shippo: no ' + (carrierToken === 'fedex' ? 'FedEx' : 'USPS') + ' rate (got: ' + avail + ')');
   }
 
   // Purchase the label via Transactions endpoint
